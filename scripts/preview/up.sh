@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Create or update the preview for one PR (ADR-0011). Idempotent: safe to re-run on every push.
+# Usage: PR_NUMBER=123 scripts/preview/up.sh   → prints the preview URL on stdout.
+source "$(dirname "$0")/lib.sh"
+: "${PR_NUMBER:?}"
+names_for "$PR_NUMBER"
+
+# 1. Neon branch from preview-seed (synthetic data only), in the separate preview project.
+if neon_branch_exists "$NEON_BRANCH"; then
+  log "reusing Neon branch $NEON_BRANCH"
+else
+  count="$(neon_branches_json | jq 'length')"
+  if [ "$count" -ge "$NEON_MAX_BRANCHES" ]; then
+    log "ERROR: preview slots exhausted ($count/$NEON_MAX_BRANCHES Neon branches). Close PRs or run the janitor."
+    exit 1
+  fi
+  log "creating Neon branch $NEON_BRANCH from $NEON_PREVIEW_PARENT_BRANCH"
+  neon branches create --project-id "$NEON_PREVIEW_PROJECT_ID" --name "$NEON_BRANCH" \
+    --parent "$NEON_PREVIEW_PARENT_BRANCH" --output json >/dev/null
+fi
+
+# Direct (non-pooler) URL: Hyperdrive does the pooling. Never printed.
+db_url="$(neon connection-string "$NEON_BRANCH" --project-id "$NEON_PREVIEW_PROJECT_ID" \
+  --database-name "$NEON_DATABASE" --role-name "$NEON_ROLE")"
+[ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$db_url"
+
+# 2. Migrations against the branch.
+log "migrating $NEON_BRANCH"
+DATABASE_URL="$db_url" pnpm --dir "$ROOT" db:migrate >&2
+
+# 3. Hyperdrive config for this PR, caching disabled (ADR-0004).
+hd_id="$(hyperdrive_id_by_name "$HYPERDRIVE_NAME")"
+if [ -z "$hd_id" ]; then
+  log "creating Hyperdrive $HYPERDRIVE_NAME"
+  wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string="$db_url" --caching-disabled >/dev/null
+  hd_id="$(hyperdrive_id_by_name "$HYPERDRIVE_NAME")"
+fi
+[ -n "$hd_id" ] || { log "ERROR: Hyperdrive $HYPERDRIVE_NAME not found after create"; exit 1; }
+
+# 4. Inject the id into the workspace wrangler.jsonc BEFORE the build (the Vite plugin bakes config).
+node "$ROOT/scripts/preview/inject-previews.mjs" "$ROOT/apps/web/wrangler.jsonc" "$hd_id"
+pnpm --dir "$ROOT" build >&2
+
+# 5. Deploy the preview.
+out="$(wrangler preview --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json)"
+url="$(printf '%s' "$out" | node -e '
+  const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
+  const d = JSON.parse(t.slice(i)); process.stdout.write(d.preview.urls[0]);')"
+[ -n "$url" ] || { log "ERROR: no preview URL in wrangler output"; exit 1; }
+
+# 6. Smoke test: the preview reaches its own database through Hyperdrive.
+for i in $(seq 1 10); do
+  if curl -fsS "$url/api/health" | jq -e '.ok == true' >/dev/null; then
+    log "health OK: $url/api/health"; echo "$url"; exit 0
+  fi
+  sleep 3
+done
+log "ERROR: $url/api/health did not become healthy"; exit 1

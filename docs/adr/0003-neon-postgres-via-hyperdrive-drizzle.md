@@ -21,6 +21,17 @@ We need a relational, transactional store for a multi-tenant model. D1 (SQLite) 
 
 ## Status of cloud resources (2026-09-27)
 
-- Neon project `saas-foundation` (`flat-cherry-23373668`), `aws-us-east-1`, Postgres 17, database `app`, role `app_owner`. Branches: `main` (production), `preview-seed` (no compute; parent for PR branches).
-- Hyperdrive `saas-foundation-prod` (`29b70e89b57945e1875c0a030b377243`), caching disabled, Neon direct host.
-- **Plan gap, blocks production:** the Neon organization is currently on the **Free** plan. The restore window is capped at **6 hours** (7 days needs Launch), and scale-to-zero **can't be disabled**. Upgrade to Launch, then set `history_retention_seconds = 604800` and the production endpoint's `suspend_timeout_seconds = -1`, before any production traffic.
+- **Production:** Neon project `saas-foundation` (`flat-cherry-23373668`), `aws-us-east-1`, Postgres 17, database `app`, role `app_owner`, branch `main`. Hyperdrive `saas-foundation-prod` (`29b70e89b57945e1875c0a030b377243`), caching disabled, Neon direct host.
+- **Previews:** a separate Neon project `saas-foundation-preview` (`withered-credit-11647832`) whose default branch is `preview-seed` (see ADR-0011).
+
+## Amendment: Neon stays on the Free plan (owner decision 2026-09-27)
+
+The Neon plan will not be upgraded. That replaces the Launch-plan assumptions above with these **accepted constraints** (per project):
+
+| Constraint                                                                                    | Consequence                                                                                                                |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Restore window **6 hours** (not 7 days)                                                       | Neon alone can only undo mistakes noticed within 6 h. A separate backup strategy is an **open decision** (not chosen here) |
+| Scale-to-zero after 5 min, **can't be disabled**                                              | The first request after idleness pays a compute cold start                                                                 |
+| **100 CU-hours/month**; when exceeded, compute is **suspended until the next billing period** | Previews must not share production's project (hence ADR-0011's separate preview project). Watch production usage           |
+| **0.5 GB storage**; writes fail beyond it                                                     | Monitor database size; it's a hard ceiling on data volume                                                                  |
+| 10 branches per project; up to 2 CU                                                           | Production is small by design                                                                                              |
