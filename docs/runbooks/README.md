@@ -4,6 +4,7 @@
 
 - Create/update by hand: `PR_NUMBER=<n> scripts/preview/up.sh` (needs the env vars from `.github/workflows/ci.yml`).
 - Delete: `PR_NUMBER=<n> scripts/preview/down.sh`. Orphans: `scripts/preview/janitor.sh` (runs daily in CI).
+- Known issue (Previews open beta, 2026-09-27): a Preview URL can keep serving after a successful `wrangler preview delete` (seen on pr-5; pr-3 worked). `down.sh` checks and warns. The branch and Hyperdrive config are still deleted, so the URL can't reach data. Report upstream if it persists.
 - "preview slots exhausted": 9 PR previews max (Neon Free: 10 branches per project). Close PRs or run the janitor.
 
 ### If a preview credential leaks

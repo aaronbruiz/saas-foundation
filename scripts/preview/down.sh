@@ -9,6 +9,24 @@ cf_token_preflight
 log "deleting preview $PREVIEW_NAME"
 wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation >&2 || log "no preview $PREVIEW_NAME"
 
+# Verify the URL actually stopped serving. Observed 2026-09-27 (Previews open beta): pr-5 kept
+# serving after a successful delete, while pr-3 returned 404. Warn loudly; the DB branch and
+# Hyperdrive config are still removed below, so a lingering URL can't reach data.
+subdomain="$(cf_api /workers/subdomain | jq -r '.result.subdomain')"
+preview_url="https://${PREVIEW_NAME}-${WORKER_NAME:-saas-foundation}.${subdomain}.workers.dev"
+status=""
+for _ in 1 2 3 4 5 6; do
+  status="$(curl -s -o /dev/null -w '%{http_code}' "$preview_url/api/health" || true)"
+  [ "$status" = 404 ] && break
+  sleep 5
+done
+if [ "$status" = 404 ]; then
+  log "verified: $preview_url returns 404"
+else
+  log "WARN: $preview_url still returns $status after delete (Cloudflare Previews beta issue); code only, no data access"
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=Preview URL still serving::$preview_url returned $status after wrangler preview delete"
+fi
+
 hd_id="$(hyperdrive_id_by_name "$HYPERDRIVE_NAME")"
 if [ -n "$hd_id" ]; then
   log "deleting Hyperdrive $HYPERDRIVE_NAME ($hd_id)"
