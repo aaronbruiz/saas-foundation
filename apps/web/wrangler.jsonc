@@ -1,0 +1,13 @@
+// Worker config. Changes only via PR; new bindings need an ADR (AGENTS.md invariants 13-14).
+// The Hyperdrive `DB` binding (caching disabled) and its `previews` override arrive in Phase 0 steps 2-3.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "saas-foundation",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-09-27",
+  "compatibility_flags": ["nodejs_compat"],
+  // Run SSR and server functions next to Neon (aws-us-east-1); static assets are still served at the edge.
+  "placement": { "region": "aws:us-east-1" },
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+}
