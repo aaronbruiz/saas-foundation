@@ -7,6 +7,7 @@
 source "$(dirname "$0")/lib.sh"
 : "${PR_NUMBER:?}"
 names_for "$PR_NUMBER"
+cf_token_preflight
 
 # 1. Neon branch from preview-seed (synthetic data only), in the separate preview project.
 if neon_branch_exists "$NEON_BRANCH"; then
