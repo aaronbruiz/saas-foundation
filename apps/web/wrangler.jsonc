@@ -19,4 +19,10 @@
       "localConnectionString": "postgres://app:app@localhost:5432/app",
     },
   ],
+  // Fail closed (ADR-0011): previews must never fall back to the production DB binding above.
+  // CI replaces this sentinel with the PR's own Hyperdrive config id before building. Any preview
+  // deployed without that injection fails, because the sentinel id doesn't exist.
+  "previews": {
+    "hyperdrive": [{ "binding": "DB", "id": "00000000000000000000000000000000" }],
+  },
 }
