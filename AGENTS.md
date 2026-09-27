@@ -30,6 +30,7 @@ pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
 pnpm test:e2e      # Playwright (arrives with Vertical Slice 001)
+scripts/preview/up.sh | down.sh   # per-PR preview lifecycle; normally run by CI (PR_NUMBER=<n>)
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet).
@@ -50,7 +51,7 @@ Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (
 12. Async side effects are idempotent with dedupe keys (once queues exist).
 13. Infra config (`wrangler.jsonc`) changes only via PR.
 14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override.
-15. Previews never bind production data. Each PR gets its own Neon branch (from `preview-seed`) and its own Hyperdrive config.
+15. Previews never bind production data. Each PR gets its own Neon branch in the **separate preview project** (from `preview-seed`) and its own Hyperdrive config.
 
 ## Recipes
 
