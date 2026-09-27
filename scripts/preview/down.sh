@@ -7,7 +7,17 @@ names_for "$PR_NUMBER"
 cf_token_preflight
 
 log "deleting preview $PREVIEW_NAME"
-wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation >&2 || log "no preview $PREVIEW_NAME"
+# Only a confirmed "not found" counts as already deleted; any other failure (auth, API, network)
+# fails the cleanup instead of reporting success with a live preview.
+if ! out="$(wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation 2>&1)"; then
+  if printf '%s' "$out" | grep -q 'Preview not found'; then
+    log "no preview $PREVIEW_NAME (already deleted)"
+  else
+    printf '%s\n' "$out" >&2
+    log "ERROR: deleting preview $PREVIEW_NAME failed"
+    exit 1
+  fi
+fi
 
 # Verify the URL actually stopped serving. Observed 2026-09-27 (Previews open beta): pr-5 kept
 # serving after a successful delete, while pr-3 returned 404. Warn loudly; the DB branch and

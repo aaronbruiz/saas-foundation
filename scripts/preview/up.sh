@@ -41,7 +41,8 @@ if [ -z "$hd_id" ]; then
 fi
 [ -n "$hd_id" ] || { log "ERROR: Hyperdrive $HYPERDRIVE_NAME not found after create"; exit 1; }
 
-# 4. Inject the id into the workspace wrangler.jsonc BEFORE the build (the Vite plugin bakes config).
+# 4. Point the committed fail-closed previews sentinel at this PR's Hyperdrive config, BEFORE the
+#    build (the Vite plugin bakes config). Idempotent: re-runs replace the id.
 node "$ROOT/scripts/preview/inject-previews.mjs" "$ROOT/apps/web/wrangler.jsonc" "$hd_id"
 pnpm --dir "$ROOT" build >&2
 
