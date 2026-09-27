@@ -37,6 +37,22 @@ cf_api() { # $1 = path under /accounts/:id, rest = curl args. Fails loudly with 
   printf '%s' "$body"
 }
 
+# Preflight: say which kind of token CLOUDFLARE_API_TOKEN is and whether it's active, without
+# printing it. User tokens verify at /user/tokens/verify, account-owned tokens at
+# /accounts/:id/tokens/verify.
+cf_token_preflight() {
+  local user acct
+  user="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    https://api.cloudflare.com/client/v4/user/tokens/verify | jq -r '.result.status // ("invalid: " + (.errors|tostring))')"
+  acct="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" | jq -r '.result.status // ("invalid: " + (.errors|tostring))')"
+  log "Cloudflare token check: as user token -> $user; as account-owned token for $CLOUDFLARE_ACCOUNT_ID -> $acct"
+  if [ "$user" != active ] && [ "$acct" != active ]; then
+    log "ERROR: CLOUDFLARE_API_TOKEN is not an active token (wrong/old secret value, expired, or a different account)"
+    return 1
+  fi
+}
+
 neon_branches_json() {
   neon branches list --project-id "$NEON_PREVIEW_PROJECT_ID" --output json |
     jq 'if type == "array" then . else .branches end'

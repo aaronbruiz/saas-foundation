@@ -4,6 +4,7 @@
 source "$(dirname "$0")/lib.sh"
 : "${PR_NUMBER:?}"
 names_for "$PR_NUMBER"
+cf_token_preflight
 
 log "deleting preview $PREVIEW_NAME"
 wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation >&2 || log "no preview $PREVIEW_NAME"
