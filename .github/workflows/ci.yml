@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (version from packageManager)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create test database (mirrors docker/postgres-init)
+        run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
+      - run: pnpm check
+      - run: pnpm test
+
+  preview:
+    name: preview (Neon branch + Hyperdrive + Worker Preview)
+    # ADR-0011. Same-repo PRs only (fork PRs get no secrets). Only after check + test pass.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
+      NEON_PREVIEW_PARENT_BRANCH: ${{ vars.NEON_PREVIEW_PARENT_BRANCH }}
+      NEON_DATABASE: ${{ vars.NEON_DATABASE }}
+      NEON_ROLE: ${{ vars.NEON_ROLE }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create or update preview
+        id: up
+        # Don't capture stdout: it carries ::add-mask:: commands. up.sh writes $GITHUB_OUTPUT itself.
+        run: scripts/preview/up.sh
+      - name: Comment preview URL on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.up.outputs.url }}
+        run: |
+          # Refuse to post anything that isn't a plain workers.dev URL (defense in depth).
+          [[ "$URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
+          marker='<!-- saas-foundation-preview -->'
+          body="$marker
+          **Preview** for ${GITHUB_SHA::7}: $URL
+          Health: $URL/api/health · Neon branch \`preview/pr-$PR_NUMBER\` (project \`$NEON_PREVIEW_PROJECT_ID\`) · Hyperdrive \`saas-pr-$PR_NUMBER\` (caching off)
+          Deleted automatically when the PR closes."
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body "$body"
+          fi
