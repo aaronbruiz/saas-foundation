@@ -21,10 +21,20 @@ names_for() { # $1 = PR number
 neon() { pnpm --dir "$ROOT" exec neonctl --api-key "$NEON_API_KEY" "$@"; }
 wrangler() { pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
 
-cf_api() { # $1 = path under /accounts/:id, rest = curl args
+cf_api() { # $1 = path under /accounts/:id, rest = curl args. Fails loudly with the API's reason.
   local path="$1"; shift
-  curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
-    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@"
+  local out code body
+  out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    -H 'Content-Type: application/json' \
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@")"
+  code="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  if [ "$code" -ge 400 ]; then
+    log "ERROR: Cloudflare API $path -> HTTP $code: $(printf '%s' "$body" | jq -c '.errors' 2>/dev/null)"
+    [ "$code" = 403 ] && log "hint: CLOUDFLARE_API_TOKEN needs Account > Hyperdrive: Edit and Account > Workers Scripts: Edit for account $CLOUDFLARE_ACCOUNT_ID"
+    return 1
+  fi
+  printf '%s' "$body"
 }
 
 neon_branches_json() {
