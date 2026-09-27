@@ -1,0 +1,20 @@
+node_modules
+dist
+dist-ssr
+.output
+.wrangler
+.tanstack
+.nitro
+.vinxi
+*.local
+.DS_Store
+coverage
+playwright-report
+test-results
+
+# secrets
+.env
+.env.*
+!.env.example
+.dev.vars*
+!.dev.vars.example

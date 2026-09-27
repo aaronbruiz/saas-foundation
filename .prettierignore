@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+**/routeTree.gen.ts
+**/worker-configuration.d.ts
+**/dist
+**/.wrangler
+**/.tanstack
