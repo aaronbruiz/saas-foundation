@@ -23,3 +23,5 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 - Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
 
 Planned: deploy & rollback, migrations.
+
+<!-- cleanup-on-close test; this PR is closed without merging -->
