@@ -1,3 +1,4 @@
 // Drizzle schema, migrations, client factory and tenant-scoped repositories.
 // The only way to touch tenant data (AGENTS.md invariant 2). Imports no workspace package.
-export {}
+export { createDb, type Db } from './client.ts'
+export { currentDatabase, ping } from './health.ts'

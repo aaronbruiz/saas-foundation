@@ -21,18 +21,18 @@ The import boundaries above are enforced by `eslint.config.js`.
 ## Commands
 
 ```
-pnpm dev           # local Worker (vite + workerd)
+pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
+pnpm dev           # local Worker (vite + workerd); DB via Hyperdrive localConnectionString
 pnpm check         # lint (ESLint v9) + format:check (Prettier) + typecheck (tsc --noEmit)
+pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
 pnpm format        # apply Prettier
 pnpm build         # production build
-# from Phase 0 step 2 onwards:
-pnpm test          # Vitest 4 in workerd (vitest-pool-workers)
-pnpm test:e2e      # Playwright
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
-pnpm db:migrate    # apply migrations
+pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
+pnpm test:e2e      # Playwright (arrives with Vertical Slice 001)
 ```
 
-Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (the pool doesn't support Vitest 5).
+Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet).
 
 ## Invariants (non-negotiable)
 

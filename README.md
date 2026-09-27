@@ -9,10 +9,12 @@ Multi-tenant SaaS foundation on Cloudflare Workers: TanStack Start, Neon Postgre
 
 Requires Node 24 and pnpm (version pinned in `package.json`; `corepack enable` picks it up).
 
+Also needs Docker (local Postgres 17).
+
 ```sh
 pnpm install
-pnpm dev      # http://localhost:3000
+pnpm db:up    # local Postgres: dev DB `app`, test DB `app_test`
+pnpm dev      # http://localhost:3000 (health: /api/health)
 pnpm check    # lint + format check + typecheck
+pnpm test     # Vitest inside workerd
 ```
-
-Local Postgres, Hyperdrive and tests are added in Phase 0 step 2.
