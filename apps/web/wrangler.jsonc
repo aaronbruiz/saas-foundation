@@ -9,13 +9,13 @@
   "placement": { "region": "aws:us-east-1" },
   "observability": { "enabled": true },
   "upload_source_maps": true,
-  // ADR-0003/0004: the only DB binding. The remote config is created with --caching-disabled in
-  // Phase 0 step 3 (the id below is a placeholder until then). Locally, wrangler connects directly
-  // to docker-compose Postgres (Hyperdrive pooling/caching don't apply locally).
+  // ADR-0003/0004: the only DB binding. Remote: Hyperdrive config `saas-foundation-prod`
+  // (caching disabled) → Neon project flat-cherry-23373668, branch `main`, direct host.
+  // Locally, wrangler connects directly to docker-compose Postgres (no pooling/caching).
   "hyperdrive": [
     {
       "binding": "DB",
-      "id": "00000000000000000000000000000000",
+      "id": "29b70e89b57945e1875c0a030b377243",
       "localConnectionString": "postgres://app:app@localhost:5432/app",
     },
   ],
