@@ -15,7 +15,7 @@ Preview branches inherit `app_owner`'s password from `preview-seed`, so one leak
 3. Reset `app_owner`'s password on `preview-seed` (Neon API `POST …/branches/<preview-seed>/roles/app_owner/reset_password`).
 4. Re-run the PR's CI to recreate the preview with the new password.
 
-Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output, so the `::add-mask::` command was never executed and the preview connection string was posted in the PR comment. Fixed: `up.sh` writes `$GITHUB_OUTPUT` itself, and URL-shape guards run in the script and in the workflow. Steps 1–3 above were done.
+Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output. The `::add-mask::` command was never executed, the preview connection string was posted in the PR comment, and the capture also **hid `up.sh`'s failure** (the step reported success). Fixed: `up.sh` writes `$GITHUB_OUTPUT` itself, and URL-shape guards run in the script and in the workflow. Steps 1–3 above were done.
 
 ## Database (ADR-0003, Neon Free)
 
