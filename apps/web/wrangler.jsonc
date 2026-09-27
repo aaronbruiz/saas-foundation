@@ -1,5 +1,4 @@
 // Worker config. Changes only via PR; new bindings need an ADR (AGENTS.md invariants 13-14).
-// The Hyperdrive `DB` binding (caching disabled) and its `previews` override arrive in Phase 0 steps 2-3.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "saas-foundation",
@@ -10,4 +9,14 @@
   "placement": { "region": "aws:us-east-1" },
   "observability": { "enabled": true },
   "upload_source_maps": true,
+  // ADR-0003/0004: the only DB binding. The remote config is created with --caching-disabled in
+  // Phase 0 step 3 (the id below is a placeholder until then). Locally, wrangler connects directly
+  // to docker-compose Postgres (Hyperdrive pooling/caching don't apply locally).
+  "hyperdrive": [
+    {
+      "binding": "DB",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgres://app:app@localhost:5432/app",
+    },
+  ],
 }
