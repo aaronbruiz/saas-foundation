@@ -70,12 +70,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Create or update preview
         id: up
-        run: echo "url=$(scripts/preview/up.sh)" >> "$GITHUB_OUTPUT"
+        # Don't capture stdout: it carries ::add-mask:: commands. up.sh writes $GITHUB_OUTPUT itself.
+        run: scripts/preview/up.sh
       - name: Comment preview URL on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           URL: ${{ steps.up.outputs.url }}
         run: |
+          # Refuse to post anything that isn't a plain workers.dev URL (defense in depth).
+          [[ "$URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
           marker='<!-- saas-foundation-preview -->'
           body="$marker
           **Preview** for ${GITHUB_SHA::7}: $URL

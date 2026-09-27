@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Create or update the preview for one PR (ADR-0011). Idempotent: safe to re-run on every push.
-# Usage: PR_NUMBER=123 scripts/preview/up.sh   → prints the preview URL on stdout.
+# Usage: PR_NUMBER=123 scripts/preview/up.sh
+# Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
+# SECURITY: stdout is reserved for workflow commands (::add-mask::). Never capture this script's
+# stdout, never print the connection string. (A captured stdout leaked a masked URL once: PR #4.)
 source "$(dirname "$0")/lib.sh"
 : "${PR_NUMBER:?}"
 names_for "$PR_NUMBER"
@@ -46,12 +49,16 @@ out="$(wrangler preview --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}"
 url="$(printf '%s' "$out" | node -e '
   const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
   const d = JSON.parse(t.slice(i)); process.stdout.write(d.preview.urls[0]);')"
-[ -n "$url" ] || { log "ERROR: no preview URL in wrangler output"; exit 1; }
+# Defense in depth: only a plain workers.dev URL may leave this script.
+[[ "$url" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] ||
+  { log "ERROR: unexpected preview URL shape; refusing to output it"; exit 1; }
 
 # 6. Smoke test: the preview reaches its own database through Hyperdrive.
 for i in $(seq 1 10); do
   if curl -fsS "$url/api/health" | jq -e '.ok == true' >/dev/null; then
-    log "health OK: $url/api/health"; echo "$url"; exit 0
+    log "health OK: $url/api/health"
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "url=$url" >>"$GITHUB_OUTPUT"; else echo "$url"; fi
+    exit 0
   fi
   sleep 3
 done
