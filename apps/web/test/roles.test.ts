@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getTenantContext } from '../src/server/context'
+import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { capabilitiesOf, CAPABILITIES, type Capability } from '../src/server/permissions'
 import { getTenant, inviteMember } from '../src/modules/organizations/service'
@@ -108,12 +109,19 @@ describe('Better Auth organization endpoints (default roles)', () => {
     const orgId = (await withDb((db) => getTenantContext(db, owner.headers, slug))).orgId
     return { owner, admin, member, slug, orgId }
   }
-  const memberId = (orgId: string, user: TestUser) =>
+  type Org = Awaited<ReturnType<typeof freshOrg>>
+  // Read back through Better Auth's own API as the owner (no direct table access).
+  const memberId = (o: Org, user: TestUser) =>
     withDb((db) =>
-      db.query.member.findFirst({
-        where: (m, { and, eq }) => and(eq(m.organizationId, orgId), eq(m.userId, user.userId)),
+      authFor(db).api.listMembers({ query: { organizationId: o.orgId }, headers: o.owner.headers }),
+    ).then((r) => r.members.find((m) => m.userId === user.userId)!.id)
+  const invitedEmails = (o: Org) =>
+    withDb((db) =>
+      authFor(db).api.listInvitations({
+        query: { organizationId: o.orgId },
+        headers: o.owner.headers,
       }),
-    ).then((m) => m!.id)
+    ).then((list) => list.map((i) => i.email))
   const roleIn = (slug: string, user: TestUser) =>
     withDb((db) => getTenantContext(db, user.headers, slug)).then((c) => c.role)
   const post = (as: TestUser, path: string, body: unknown) =>
@@ -136,12 +144,13 @@ describe('Better Auth organization endpoints (default roles)', () => {
       post(o.member, 'update', { data: { name: 'pwned' }, organizationId: o.orgId }),
       post(o.member, 'remove-member', { memberIdOrEmail: o.admin.email, organizationId: o.orgId }),
       post(o.member, 'update-member-role', {
-        memberId: await memberId(o.orgId, o.member),
+        memberId: await memberId(o, o.member),
         role: 'admin',
         organizationId: o.orgId,
       }),
     ]
     for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    await expect(invitedEmails(o)).resolves.not.toContain(email)
     await expect(getTenant(o.owner.headers, { tenant: o.slug })).resolves.toMatchObject({
       name: o.slug,
     })
@@ -152,16 +161,16 @@ describe('Better Auth organization endpoints (default roles)', () => {
   it('an admin cannot reach or touch the owner role', async () => {
     const o = await freshOrg()
     const email = `x-${crypto.randomUUID()}@test.local`
-    const ownerId = await memberId(o.orgId, o.owner)
+    const ownerId = await memberId(o, o.owner)
     const attempts = [
       post(o.admin, 'invite-member', { email, role: 'owner', organizationId: o.orgId }),
       post(o.admin, 'update-member-role', {
-        memberId: await memberId(o.orgId, o.member),
+        memberId: await memberId(o, o.member),
         role: 'owner',
         organizationId: o.orgId,
       }),
       post(o.admin, 'update-member-role', {
-        memberId: await memberId(o.orgId, o.admin),
+        memberId: await memberId(o, o.admin),
         role: 'owner',
         organizationId: o.orgId,
       }),
@@ -173,6 +182,7 @@ describe('Better Auth organization endpoints (default roles)', () => {
       post(o.admin, 'remove-member', { memberIdOrEmail: ownerId, organizationId: o.orgId }),
     ]
     for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    await expect(invitedEmails(o)).resolves.not.toContain(email)
     await expect(roleIn(o.slug, o.owner)).resolves.toBe('owner')
     await expect(roleIn(o.slug, o.admin)).resolves.toBe('admin')
     await expect(roleIn(o.slug, o.member)).resolves.toBe('member')
@@ -185,8 +195,16 @@ describe('Better Auth organization endpoints (default roles)', () => {
       organizationId: o.orgId,
     })
     expect(renamed.status).toBe(200)
+    const email = `x-${crypto.randomUUID()}@test.local`
+    const invited = await post(o.admin, 'invite-member', {
+      email,
+      role: 'member',
+      organizationId: o.orgId,
+    })
+    expect(invited.status).toBe(200)
+    await expect(invitedEmails(o)).resolves.toContain(email)
     const promoted = await post(o.admin, 'update-member-role', {
-      memberId: await memberId(o.orgId, o.member),
+      memberId: await memberId(o, o.member),
       role: 'admin',
       organizationId: o.orgId,
     })
