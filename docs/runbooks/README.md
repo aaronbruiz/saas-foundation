@@ -18,6 +18,18 @@ Preview branches inherit `app_owner`'s password from `preview-seed`, so one leak
 
 Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output. The `::add-mask::` command was never executed, the preview connection string was posted in the PR comment, and the capture also **hid `up.sh`'s failure** (the step reported success). Fixed: `up.sh` writes `$GITHUB_OUTPUT` itself, and URL-shape guards run in the script and in the workflow. Steps 1–3 above were done.
 
+## Observability (ADR-0015)
+
+Where to look when production fails:
+
+- **Dashboard:** Workers & Pages → `saas-foundation` → Observability (Logs / Events). Filter by `level = error`, by `event` (`server_fn.unhandled`, `health.db_down`, `better_auth`), or by `rayId`.
+  - A user-reported Cloudflare ray id (shown on Cloudflare error pages) matches `rayId`.
+  - Each request's invocation log shows its status and outcome.
+- **Live:** `pnpm --filter web exec wrangler tail saas-foundation --format pretty --search '"level":"error"'`. Don't rely on `--status error`: it filters on the invocation's outcome, and server-function failures are turned into responses, so those invocations end `ok`.
+- **Health:** `curl -s https://<domain>/api/health` returns `{ ok, db }`. A `503` means the database is unreachable; the reason is in the `health.db_down` event.
+- **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
+- **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
+
 ## Database (ADR-0003, Neon Free)
 
 - Restore within 6 h: Neon point-in-time restore of `main`.
@@ -46,7 +58,7 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
 2. **Owner:** production `BETTER_AUTH_SECRET`: `openssl rand -base64 32 | pnpm --filter web exec wrangler secret put BETTER_AUTH_SECRET` (never pasted into chat, never committed).
 3. **Owner:** production `BETTER_AUTH_URL` = `https://<custom domain>`, set with `wrangler secret put` (or as a var).
 4. **Owner:** custom domain on a Cloudflare zone, attached to the Worker (Workers → Settings → Domains & Routes).
-5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs must contain no secrets or PII (observability ADR pending).
+5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs must contain no secrets or PII (ADR-0015). Also set up the alerting requirement from ADR-0015 before the data gate is lifted.
 6. **Restore point, then migrations.**
    - Take a restore point **synchronously, right before migrating**. Don't rely on `db-backup.yml`: it's asynchronous and skips if today's `backup-YYYYMMDD` already exists. Instead run `pnpm exec neonctl branches create --project-id flat-cherry-23373668 --name "pre-migrate-$(date -u +%Y%m%d-%H%M)" --parent main --no-compute` and check it appears in `pnpm exec neonctl branches list --project-id flat-cherry-23373668` with a creation time from just now. Delete it once the release is verified; it uses one of Neon Free's 10 branches. On Neon Free, PITR only reaches back 6 h.
    - Migrate: `DATABASE_URL="$(pnpm exec neonctl connection-string main --project-id flat-cherry-23373668 --database-name app --role-name app_owner)" pnpm db:migrate`. Direct (non-pooler) URL, never printed or logged.
