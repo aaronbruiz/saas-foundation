@@ -1,0 +1,2 @@
+ALTER TABLE "billing_subscription" DROP CONSTRAINT "billing_subscription_provider_subscription_id_unique";--> statement-breakpoint
+ALTER TABLE "billing_subscription" ADD CONSTRAINT "billing_subscription_provider_subscription_unique" UNIQUE("provider","provider_subscription_id");

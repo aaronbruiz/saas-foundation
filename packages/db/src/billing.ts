@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { Db } from './client.ts'
 import { organization } from './schema/auth.ts'
 import {
@@ -67,14 +67,19 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
     const [holder] = await tx
       .select({ organizationId: billingSubscription.organizationId })
       .from(billingSubscription)
-      .where(eq(billingSubscription.providerSubscriptionId, sub.providerSubscriptionId))
+      .where(
+        and(
+          eq(billingSubscription.provider, event.provider),
+          eq(billingSubscription.providerSubscriptionId, sub.providerSubscriptionId),
+        ),
+      )
     if (holder && holder.organizationId !== org.id) return 'conflict'
 
     const [current] = await tx
       .select()
       .from(billingSubscription)
       .where(eq(billingSubscription.organizationId, org.id))
-    if (current && !supersedes(event.createdAt, sub, current)) return 'stale'
+    if (current && !supersedes(event, sub, current)) return 'stale'
 
     const values = {
       provider: event.provider,
@@ -103,9 +108,16 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
  * Another subscription never applies a cancellation, replaces a canceled one whenever it arrives,
  * and replaces a live one only if newer.
  */
-function supersedes(at: Date, incoming: SubscriptionSnapshot, current: BillingSubscription) {
-  if (incoming.providerSubscriptionId === current.providerSubscriptionId)
-    return at >= current.providerEventAt
+function supersedes(
+  event: BillingEvent,
+  incoming: SubscriptionSnapshot,
+  current: BillingSubscription,
+) {
+  const at = event.createdAt
+  const same =
+    event.provider === current.provider &&
+    incoming.providerSubscriptionId === current.providerSubscriptionId
+  if (same) return at >= current.providerEventAt
   if (TERMINAL.includes(incoming.status)) return false
   return TERMINAL.includes(current.status) || at > current.providerEventAt
 }

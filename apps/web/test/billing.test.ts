@@ -1,4 +1,5 @@
 import { billing, findOrganizationBySlug } from '@saas-foundation/db'
+import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   DEFAULT_ENTITLEMENTS,
@@ -6,6 +7,7 @@ import {
   getEntitlements,
 } from '../src/modules/billing/entitlements'
 import { handleStripeWebhook } from '../src/modules/billing/webhook'
+import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { authPost, createOrg, randomIp, signUp, type TestUser } from './helpers'
 
@@ -261,10 +263,41 @@ describe('organization deletion with billing state (ADR-0018)', () => {
   const deleteOrg = (owner: TestUser, organizationId: string) =>
     authPost('/organization/delete', { organizationId }, randomIp(), owner)
 
-  it('is refused with 409 while the organization has billing state', async () => {
+  const activeOrg = async (user: TestUser) => {
+    const res = await withDb((db) =>
+      authFor(db).handler(
+        new Request(`${env.BETTER_AUTH_URL}/api/auth/get-session`, { headers: user.headers }),
+      ),
+    )
+    return ((await res.json()) as { session: { activeOrganizationId: string | null } }).session
+      .activeOrganizationId
+  }
+
+  it('is refused with 409 while the organization has billing state, session untouched', async () => {
     const { owner, orgId } = await freshOrg()
     await deliver(subscriptionEvent({ orgId }))
-    expect((await deleteOrg(owner, orgId)).status).toBe(409)
+    const setActive = await authPost(
+      '/organization/set-active',
+      { organizationId: orgId },
+      randomIp(),
+      owner,
+    )
+    expect(setActive.status).toBe(200)
+    expect(await activeOrg(owner)).toBe(orgId)
+
+    const res = await deleteOrg(owner, orgId)
+    expect(res.status).toBe(409)
+    expect(await subscriptionOf(orgId)).not.toBeNull()
+    expect(await activeOrg(owner)).toBe(orgId)
+  })
+
+  it("doesn't reveal billing state to non-members", async () => {
+    const { orgId } = await freshOrg()
+    await deliver(subscriptionEvent({ orgId }))
+    const stranger = await signUp()
+    const res = await deleteOrg(stranger, orgId)
+    expect(res.status).not.toBe(409)
+    expect(res.status).toBeGreaterThanOrEqual(400)
     expect(await subscriptionOf(orgId)).not.toBeNull()
   })
 

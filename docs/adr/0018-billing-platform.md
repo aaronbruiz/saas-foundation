@@ -31,9 +31,11 @@ The owner split Phase 3: build the billing platform now, which needs no product 
   - The link is the subscription's metadata `organization_id`, which our own checkout will set. It's trusted only because the event is signed.
   - An event with no link, or naming an organization that doesn't exist, is recorded and acknowledged, not applied (`billing.webhook.unlinked`).
   - A subscription stays with the organization it was first linked to. An event linking it to another organization is recorded and acknowledged, not applied (`billing.webhook.conflict`).
-  - Deleting an organization that has billing state is refused with **409** (Better Auth `beforeDeleteOrganization` hook) until the owner decides what should happen. The foreign key (`ON DELETE RESTRICT`) is the backstop.
+  - Deleting an organization that has billing state is refused with **409** until the owner decides what should happen.
+    - A Better Auth `before` middleware on `/organization/delete` answers before the endpoint runs, since the endpoint clears the caller's active organization before its own hooks. It answers only for members; anyone else gets Better Auth's usual error, so billing state can't be probed.
+    - `beforeDeleteOrganization` and the foreign key (`ON DELETE RESTRICT`) are the backstops.
 - **Stored state:**
-  - provider ids (customer, subscription, first item's price);
+  - provider ids (customer, subscription, first item's price); a subscription id is unique per provider;
   - internal status: Stripe's `incomplete_expired` → `canceled`, and **unknown future statuses → `incomplete`** (non-entitled);
   - latest item period end, `cancel_at_period_end`, and the event time;
   - `plan_key`, which stays **null** until the catalog maps prices to plans.
