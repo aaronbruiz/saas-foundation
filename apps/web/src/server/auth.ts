@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { createAuth } from '@saas-foundation/auth'
 import type { Db } from '@saas-foundation/db'
+import { mailerFor, render, type EmailConfig } from './email'
 import { logBetterAuth } from './log'
 
 /**
@@ -22,13 +23,15 @@ export function signUpPolicy(mode: string | undefined, allowlist: string | undef
 const vars = env as unknown as { SIGNUP_MODE?: string; SIGNUP_ALLOWLIST?: string }
 
 export function authFor(db: Db) {
+  const mailer = mailerFor(env as unknown as EmailConfig)
   return createAuth({
     db,
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     allowSignUp: signUpPolicy(vars.SIGNUP_MODE, vars.SIGNUP_ALLOWLIST),
     log: logBetterAuth,
-    // No email provider yet (Q7): the inviter gets the link from inviteMember(); nothing is logged.
+    // ADR-0016. Invitations also return their link to the inviter (inviteMember).
+    sendEmail: (email) => mailer(render(email, invitationLink)),
   })
 }
 

@@ -17,3 +17,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0013](0013-ci-credential-tiers.md): CI credential tiers: no secrets where PR code runs (proposed)
 - [ADR-0014](0014-first-production-launch-gates.md): First production launch gates (data gate, backups, WAF)
 - [ADR-0015](0015-observability-baseline.md): Observability baseline: Cloudflare Workers Logs first, Sentry only for named gaps
+- [ADR-0016](0016-transactional-email.md): Transactional email: Cloudflare Email Service behind an app mailer

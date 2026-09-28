@@ -46,6 +46,11 @@ function Login() {
         </button>
       </form>
       <p className="mt-4 text-sm">
+        <Link to="/forgot-password" className="underline">
+          Forgot password?
+        </Link>
+      </p>
+      <p className="mt-2 text-sm">
         No account?{' '}
         <Link to="/signup" search={{ redirect }} className="underline">
           Sign up

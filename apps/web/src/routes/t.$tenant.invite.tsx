@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { inviteMemberFn } from '../modules/organizations/functions'
 import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
 
-// No email provider yet (Q7): the inviter shares the link shown here.
+// The invitee is also emailed when delivery is configured (ADR-0016); the link stays shareable here.
 export const Route = createFileRoute('/t/$tenant/invite')({ component: Invite })
 
 function Invite() {
