@@ -1,3 +1,4 @@
+import { APIError } from 'better-auth/api'
 import {
   AcceptInvitationInput,
   CreateOrganizationInput,
@@ -50,7 +51,11 @@ export async function acceptInvitation(
     // Wrong recipient, unknown, expired or already used: all the same non-disclosing 404.
     const result = await auth.api
       .acceptInvitation({ body: { invitationId }, headers })
-      .catch(() => null)
+      .catch((e: unknown) => {
+        // Only Better Auth's own 4xx rejections are "invalid invitation"; outages etc. propagate.
+        if (e instanceof APIError && e.statusCode >= 400 && e.statusCode < 500) return null
+        throw e
+      })
     if (!result?.invitation) throw new HttpError(404, 'not found')
     return { organizationId: result.invitation.organizationId }
   })
