@@ -15,6 +15,13 @@
       "when": 1790564278777,
       "tag": "0001_volatile_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790622114897,
+      "tag": "0002_classy_scorpion",
+      "breakpoints": true
     }
   ]
 }

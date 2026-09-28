@@ -11,7 +11,7 @@ Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, 
 | `apps/web/src/server/context.ts`     | `getTenantContext(request, env, slug)`: session → slug → org → membership    | `@saas-foundation/auth`, `@saas-foundation/db`                 |
 | `apps/web/src/server/permissions.ts` | role → capability matrix; `authorize(ctx, capability)` (403)                 | nothing internal                                               |
 | `apps/web/src/modules/<domain>/`     | domain logic and server functions                                            | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
-| `apps/web/src/modules/billing/`      | plans → entitlements; `providers/stripe` is the only place that knows Stripe | `@saas-foundation/db`, `@saas-foundation/contracts`            |
+| `apps/web/src/modules/billing/`      | plans → entitlements; `providers/stripe` is the only place that knows Stripe | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
 | `packages/db`                        | Drizzle schema, migrations, client factory, **tenant-scoped repositories**   | nothing internal                                               |
 | `packages/auth`                      | Better Auth config (server only)                                             | `@saas-foundation/db`                                          |
 | `packages/contracts`                 | Zod schemas shared by UI and server                                          | nothing internal                                               |
@@ -90,7 +90,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Migrations that drop, rename or retype columns in one step; edits to already-applied migrations.
 - New bindings in `wrangler.jsonc` without an ADR, or without a `previews` override.
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
-- Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent.
+- Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent; a billing webhook that works without its secret configured, or that lets an older or duplicate event change state (ADR-0018).
 - New tenant data without cross-tenant tests.
 - Email sent outside `server/email.ts`'s `Mailer`, a token placed in a URL path instead of the query string, or `EMAIL_DELIVERY=console` reachable outside localhost (ADR-0016).
 - Logging request bodies, headers, cookies, tokens, connection strings or user data (emails, names) anywhere; server-side logs go through `server/log.ts` with a stable `event` name (ADR-0015).
