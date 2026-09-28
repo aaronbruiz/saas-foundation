@@ -7,7 +7,7 @@ import {
 } from '../src/modules/billing/entitlements'
 import { handleStripeWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
-import { createOrg, signUp } from './helpers'
+import { authPost, createOrg, randomIp, signUp, type TestUser } from './helpers'
 
 // ADR-0018: verified, deduplicated, ordered webhooks; org-owned subscription state; entitlements
 // with a safe default. Signatures are computed independently of the Stripe SDK (Stripe's scheme:
@@ -94,10 +94,13 @@ const orgIdOf = async (slug: string) => (await withDb((db) => findOrganizationBy
 let orgA: string
 let orgB: string
 
+async function freshOrg(prefix = 'bill'): Promise<{ owner: TestUser; orgId: string }> {
+  const owner = await signUp()
+  return { owner, orgId: await orgIdOf(await createOrg(owner, prefix)) }
+}
+
 beforeAll(async () => {
-  const [alice, bob] = await Promise.all([signUp(), signUp()])
-  const [a, b] = await Promise.all([createOrg(alice, 'bill-a'), createOrg(bob, 'bill-b')])
-  ;[orgA, orgB] = await Promise.all([orgIdOf(a), orgIdOf(b)])
+  ;[orgA, orgB] = (await Promise.all([freshOrg('bill-a'), freshOrg('bill-b')])).map((o) => o.orgId)
 })
 
 describe('Stripe webhook: verification', () => {
@@ -123,8 +126,10 @@ describe('Stripe webhook: verification', () => {
     expect(await subscriptionOf(orgA)).toBeNull()
   })
 
-  it('rejects oversized payloads', async () => {
+  it('rejects oversized payloads, counted in bytes', async () => {
     expect((await deliver('x'.repeat(600 * 1024))).status).toBe(413)
+    // 300 Ki characters, 600 KiB of UTF-8.
+    expect((await deliver('é'.repeat(300 * 1024))).status).toBe(413)
   })
 
   it('rejects a verified event with an unexpected shape, without recording it', async () => {
@@ -202,6 +207,70 @@ describe('Stripe webhook: state', () => {
     }
     expect(await deliver(e)).toEqual({ status: 200, outcome: 'ignored' })
     expect(await eventRecorded(e.id)).toBe(true)
+  })
+
+  it('never moves a subscription to another organization (acknowledged, not applied)', async () => {
+    const held = (await subscriptionOf(orgA))!.providerSubscriptionId
+    const moved = subscriptionEvent({ orgId: orgB, subId: held, created: now() + 5 })
+    expect(await deliver(moved)).toEqual({ status: 200, outcome: 'conflict' })
+    expect(await subscriptionOf(orgB)).toBeNull()
+    expect((await subscriptionOf(orgA))?.providerSubscriptionId).toBe(held)
+  })
+})
+
+describe('Stripe webhook: replacing a subscription', () => {
+  it('orders per subscription, not per organization', async () => {
+    const { orgId } = await freshOrg()
+    const [old, next, late] = ['old', 'next', 'late'].map((n) => `sub_${n}_${crypto.randomUUID()}`)
+    const t = now() - 1000
+    await deliver(subscriptionEvent({ orgId, subId: old, created: t }))
+    await deliver(subscriptionEvent({ orgId, subId: old, created: t + 50, status: 'canceled' }))
+    // The replacement was created before the old one's cancellation event, and arrives after it.
+    expect(
+      (await deliver(subscriptionEvent({ orgId, subId: next, created: t + 30 }))).outcome,
+    ).toBe('applied')
+    // A late event for the canceled subscription doesn't take the organization back.
+    const lateCancel = subscriptionEvent({ orgId, subId: old, created: t + 60, status: 'canceled' })
+    expect((await deliver(lateCancel)).outcome).toBe('stale')
+    // A different live subscription replaces a live one only if newer.
+    expect(
+      (await deliver(subscriptionEvent({ orgId, subId: late, created: t + 20 }))).outcome,
+    ).toBe('stale')
+    expect(
+      (await deliver(subscriptionEvent({ orgId, subId: late, created: t + 70 }))).outcome,
+    ).toBe('applied')
+    expect(await subscriptionOf(orgId)).toMatchObject({
+      providerSubscriptionId: late,
+      status: 'active',
+    })
+  })
+
+  it('handles concurrent deliveries for one organization without errors', async () => {
+    const { orgId } = await freshOrg()
+    const t = now() - 1000
+    const older = subscriptionEvent({ orgId, created: t })
+    const newer = subscriptionEvent({ orgId, created: t + 10 })
+    const results = await Promise.all([deliver(older), deliver(newer), deliver(newer)])
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200])
+    expect(results.filter((r) => r.outcome === 'duplicate')).toHaveLength(1)
+    expect((await subscriptionOf(orgId))?.providerSubscriptionId).toBe(newer.data.object.id)
+  })
+})
+
+describe('organization deletion with billing state (ADR-0018)', () => {
+  const deleteOrg = (owner: TestUser, organizationId: string) =>
+    authPost('/organization/delete', { organizationId }, randomIp(), owner)
+
+  it('is refused with 409 while the organization has billing state', async () => {
+    const { owner, orgId } = await freshOrg()
+    await deliver(subscriptionEvent({ orgId }))
+    expect((await deleteOrg(owner, orgId)).status).toBe(409)
+    expect(await subscriptionOf(orgId)).not.toBeNull()
+  })
+
+  it('still works for an organization without billing state', async () => {
+    const { owner, orgId } = await freshOrg()
+    expect((await deleteOrg(owner, orgId)).status).toBe(200)
   })
 })
 

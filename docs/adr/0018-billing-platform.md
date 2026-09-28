@@ -15,17 +15,23 @@ The owner split Phase 3: build the billing platform now, which needs no product 
   - No Stripe API key and no outbound Stripe calls yet: checkout and the customer portal come with the plan catalog.
 - **Endpoint:** `POST /api/billing/webhooks/stripe` → `modules/billing/webhook.ts`.
   - Secret: the Worker secret `STRIPE_WEBHOOK_SECRET`. Unset means 503 for everything (fail closed); previews and local dev have none.
-  - Bad signature → 400. Unexpected shape after verification → 400. Body over 512 KiB → 413. None of these write anything.
+  - Bad signature → 400. Unexpected shape after verification → 400. Body over 512 KiB → 413 (bytes: `Content-Length` first, then counted while streaming). None of these write anything.
   - Database failure → 500, logged as `billing.webhook.failed`. Nothing is committed, so the provider's retry is processed normally.
   - Logs carry `event`, `rayId` and the event type only, never the payload (ADR-0015).
 - **Dedupe and ordering** (`packages/db/src/billing.ts`, `applyBillingEvent`), in one transaction:
-  1. insert `(provider, event_id)` into `billing_webhook_event`; a conflict means duplicate, acknowledged and not reapplied. Concurrent deliveries serialize on the primary key;
-  2. apply the subscription only if the event is at least as new (`created`) as the one the row reflects;
-  3. a terminal event (`canceled`) for a different subscription than the organization's current one is ignored, so ending a replaced subscription can't overwrite its successor.
+  1. insert `(provider, event_id)` into `billing_webhook_event`; a conflict means duplicate, acknowledged and not reapplied. Concurrent deliveries of one event serialize on that key;
+  2. lock the organization row (`FOR NO KEY UPDATE`), so all events for one organization apply one at a time, including its first;
+  3. ordering is **per subscription**:
+     - for the stored subscription, an event at least as new (`created`) applies;
+     - another subscription never applies a cancellation;
+     - another subscription replaces a canceled one whenever it arrives, and a live one only if newer.
+- **Every outcome except a database error is final** (acknowledged with 200), so no verified event makes the provider retry forever.
+- **Known limit:** Stripe's `created` has one-second resolution, so two events for one subscription in the same second apply in arrival order. The fix is Stripe's recommended pattern of re-fetching the subscription when an event arrives. It needs the Stripe API key, so it comes with checkout.
 - **Ownership:** the subscription belongs to the **organization**: one row per organization in `billing_subscription`.
   - The link is the subscription's metadata `organization_id`, which our own checkout will set. It's trusted only because the event is signed.
   - An event with no link, or naming an organization that doesn't exist, is recorded and acknowledged, not applied (`billing.webhook.unlinked`).
-  - The foreign key is `ON DELETE RESTRICT`: deleting an organization that has billing state fails until the owner decides what should happen.
+  - A subscription stays with the organization it was first linked to. An event linking it to another organization is recorded and acknowledged, not applied (`billing.webhook.conflict`).
+  - Deleting an organization that has billing state is refused with **409** (Better Auth `beforeDeleteOrganization` hook) until the owner decides what should happen. The foreign key (`ON DELETE RESTRICT`) is the backstop.
 - **Stored state:**
   - provider ids (customer, subscription, first item's price);
   - internal status: Stripe's `incomplete_expired` → `canceled`, and **unknown future statuses → `incomplete`** (non-entitled);
@@ -45,7 +51,7 @@ The owner split Phase 3: build the billing platform now, which needs no product 
 5. The features each plan unlocks (needs the real product resources; `projects` is only a reference domain).
 6. Lifecycle: grace period for `past_due`/`unpaid` (today they lose plan entitlements immediately); what cancelling does (read-only? data retention); refunds.
 7. Deleting an organization with billing state (today refused by the database).
-8. Whether an organization can ever hold more than one subscription (today one).
+8. Whether an organization can ever hold more than one subscription (today one), and whether a subscription may move between organizations (today refused).
 
 ## Consequences
 

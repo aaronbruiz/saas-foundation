@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth'
 import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { organization } from 'better-auth/plugins'
-import { schema, type Db } from '@saas-foundation/db'
+import { billing, schema, type Db } from '@saas-foundation/db'
 
 /**
  * Emails Better Auth asks the app to send (ADR-0016). The app renders and delivers them; links that
@@ -111,6 +111,15 @@ export function createAuth({
     },
     plugins: [
       organization({
+        organizationHooks: {
+          // ADR-0018: what deleting an organization with billing state does is an open product
+          // decision (the subscription would keep running). Until then it's refused explicitly;
+          // the database's foreign key (RESTRICT) is the backstop.
+          async beforeDeleteOrganization({ organization }) {
+            if (await billing(db, { orgId: organization.id }).subscription())
+              throw new APIError('CONFLICT', { message: 'Organization has billing state' })
+          },
+        },
         async sendInvitationEmail(data) {
           await sendEmail({
             kind: 'invitation',
