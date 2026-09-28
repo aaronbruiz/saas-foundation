@@ -21,7 +21,7 @@ fi
 log "deleting preview $PREVIEW_NAME"
 # Only a confirmed "not found" counts as already deleted; any other failure (auth, API, network)
 # fails the cleanup instead of reporting success with a live preview.
-if ! out="$(wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation 2>&1)"; then
+if ! out="$(wrangler preview delete --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --skip-confirmation 2>&1)"; then
   if printf '%s' "$out" | grep -q 'Preview not found'; then
     log "no preview $PREVIEW_NAME (already deleted)"
   else
@@ -34,7 +34,7 @@ fi
 # Verify the URL actually stopped serving. Observed 2026-09-27 (Previews open beta): pr-4 and pr-5
 # kept serving after a successful delete (pr-3 returned 404). Data resources are already gone above.
 subdomain="$(cf_api /workers/subdomain | jq -r '.result.subdomain')"
-preview_url="https://${PREVIEW_NAME}-${WORKER_NAME:-saas-foundation}.${subdomain}.workers.dev"
+preview_url="https://${PREVIEW_NAME}-${PREVIEW_WORKER}.${subdomain}.workers.dev"
 status=""
 for _ in 1 2 3 4 5 6; do
   status="$(curl -s -o /dev/null -w '%{http_code}' "$preview_url/api/health" || true)"

@@ -54,12 +54,12 @@ BETTER_AUTH_SECRET="$auth_secret" "$ROOT/scripts/scan-client-bundle.sh" "$ROOT/a
 #    is open there (ADR-0014; production defaults to closed). The URL is deterministic, so Better Auth's
 #    origin checks match it; the secret is random per deploy (never stored, sessions reset on push).
 subdomain="$(cf_api /workers/subdomain | jq -r '.result.subdomain')"
-auth_url="https://${PREVIEW_NAME}-${WORKER_NAME:-saas-foundation}.${subdomain}.workers.dev"
+auth_url="https://${PREVIEW_NAME}-${PREVIEW_WORKER}.${subdomain}.workers.dev"
 secrets_file="$(mktemp)"
 trap 'rm -f "$secrets_file"' EXIT
 chmod 600 "$secrets_file"
 printf 'BETTER_AUTH_SECRET=%s\n' "$auth_secret" >"$secrets_file"
-out="$(wrangler preview --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
+out="$(wrangler preview --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
   --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" --secrets-file "$secrets_file")"
 url="$(printf '%s' "$out" | node -e '
   const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");

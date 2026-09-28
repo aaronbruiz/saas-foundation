@@ -2,6 +2,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "saas-foundation",
+  // ADR-0017: the production account (it holds the production zone). Pinned so wrangler never
+  // targets another account.
+  "account_id": "17eeb935de129532d2bdea10a15d72ff",
+  // Production is served only on the custom domain (Cloudflare creates DNS + certificate on deploy).
+  // No production workers.dev URL: it would bypass the zone's WAF rule (ADR-0014).
+  "workers_dev": false,
+  // No per-version preview URLs on the production Worker either (they'd serve production bindings
+  // outside the WAF). PR previews run on the separate Worker `saas-foundation-preview` (ADR-0013);
+  // CI flips this to true only in its build copy for that Worker.
+  "preview_urls": false,
+  "routes": [{ "pattern": "app.aaronlabr.dev", "custom_domain": true }],
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2026-09-27",
   "compatibility_flags": ["nodejs_compat"],
@@ -16,13 +27,15 @@
     "logs": { "enabled": true, "invocation_logs": true },
   },
   "upload_source_maps": true,
-  // ADR-0003/0004: the only DB binding. Remote: Hyperdrive config `saas-foundation-prod`
-  // (caching disabled) → Neon project flat-cherry-23373668, branch `main`, direct host.
+  // ADR-0003/0004: the only DB binding. Remote: Hyperdrive config `saas-foundation-prod` in the
+  // account above (caching disabled) → Neon project flat-cherry-23373668, branch `main`, direct host.
+  // PENDING (ADR-0017): the owner creates that config; until its id replaces this all-f sentinel,
+  // a production deploy fails closed instead of binding anything else.
   // Locally, wrangler connects directly to docker-compose Postgres (no pooling/caching).
   "hyperdrive": [
     {
       "binding": "DB",
-      "id": "29b70e89b57945e1875c0a030b377243",
+      "id": "ffffffffffffffffffffffffffffffff",
       "localConnectionString": "postgres://app:app@localhost:5432/app",
     },
   ],

@@ -24,9 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -41,7 +39,13 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # ADR-0013: secrets only on the steps that use them; the Neon key is preview-scoped.
+          NEON_API_KEY: ${{ secrets.NEON_PREVIEW_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: scripts/preview/down.sh
       - name: Janitor (orphans of closed PRs)
         if: github.event_name != 'pull_request'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_PREVIEW_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: scripts/preview/janitor.sh

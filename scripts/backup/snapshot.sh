@@ -6,6 +6,11 @@
 # Usage: NEON_PROJECT_ID=... [NEON_API_KEY=...] [BACKUP_KEEP=3] [DRY_RUN=1] scripts/backup/snapshot.sh
 set -euo pipefail
 : "${NEON_PROJECT_ID:?}"
+# In CI the key must come from the `production` environment (ADR-0013); fail before any Neon call.
+if [ -n "${GITHUB_ACTIONS:-}" ] && [ -z "${NEON_API_KEY:-}" ]; then
+  echo "[backup] ERROR: NEON_BACKUP_API_KEY is not set in the production environment" >&2
+  exit 1
+fi
 KEEP="${BACKUP_KEEP:-3}"
 # Fail closed: 0 or garbage would prune every snapshot. Max 7 leaves room under Neon Free's
 # 10 branches for main plus a restore (see the runbook).

@@ -11,6 +11,16 @@ NEON_PREVIEW_PARENT_BRANCH="${NEON_PREVIEW_PARENT_BRANCH:-preview-seed}"
 NEON_MAX_BRANCHES="${NEON_MAX_BRANCHES:-10}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# ADR-0013: PR previews live on their own Worker, never as versions of the production Worker.
+PREVIEW_WORKER="${PREVIEW_WORKER:-saas-foundation-preview}"
+
+# Fail closed (ADR-0017): the account in CI must be the one pinned in wrangler.jsonc, so direct API
+# calls (Hyperdrive list/delete) can't target another account the token reaches.
+pinned_account="$(grep -oE '"account_id": *"[0-9a-f]{32}"' "$ROOT/apps/web/wrangler.jsonc" | grep -oE '[0-9a-f]{32}' || true)"
+if [ -z "$pinned_account" ] || [ "$pinned_account" != "$CLOUDFLARE_ACCOUNT_ID" ]; then
+  echo "[preview] ERROR: CLOUDFLARE_ACCOUNT_ID doesn't match account_id pinned in apps/web/wrangler.jsonc" >&2
+  exit 1
+fi
 
 names_for() { # $1 = PR number
   PREVIEW_NAME="pr-$1"

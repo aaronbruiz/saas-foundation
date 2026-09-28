@@ -21,5 +21,14 @@ if (!binding.test(tail)) {
   console.error(`${file}: no DB binding with a 32-hex id inside "previews"`)
   process.exit(1)
 }
-writeFileSync(file, head + tail.replace(binding, `$1${hyperdriveId}$2`))
+// The preview Worker needs preview URLs; the committed (production) config keeps them off.
+const urls = /"preview_urls":\s*false/
+if (!urls.test(head)) {
+  console.error(`${file}: expected "preview_urls": false at top level (ADR-0013)`)
+  process.exit(1)
+}
+writeFileSync(
+  file,
+  head.replace(urls, '"preview_urls": true') + tail.replace(binding, `$1${hyperdriveId}$2`),
+)
 console.error(`previews.hyperdrive DB -> ${hyperdriveId}`)
