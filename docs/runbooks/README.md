@@ -20,7 +20,12 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 
 ## Database (ADR-0003, Neon Free)
 
-- Restore: Neon point-in-time restore covers only the **last 6 hours**. Beyond that, see the open backup decision in ADR-0003.
+- Restore within 6 h: Neon point-in-time restore of `main`.
+- Restore from a daily snapshot (ADR-0003 option A; `backup-YYYYMMDD`, newest 3 kept):
+  1. Inspect first: `neonctl branches create --name restore-check --parent backup-YYYYMMDD` (with compute), query it, then delete it.
+  2. Restore: `neonctl branches restore main backup-YYYYMMDD --preserve-under-name main-before-restore`. The preserved branch counts toward the 10-branch limit; delete it once verified.
+  3. The production Hyperdrive config needs no change (same branch, same endpoint).
+- Snapshots run daily (`db-backup.yml`); run by hand with `gh workflow run db-backup.yml`.
 - Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
 
 Planned: deploy & rollback, migrations.
