@@ -21,10 +21,10 @@ type Plan = {
   features: readonly string[]
   /**
    * Provider prices that buy this plan, by lookup key (set on the price in the provider's
-   * dashboard; amounts and currency live there, not in code). Keep retired keys listed so
-   * existing subscribers keep their plan.
+   * dashboard; amounts and currency live there, not in code). When a price is retired, keep it
+   * here with `retired: true`: existing subscribers keep the plan, and it's no longer sold.
    */
-  prices: readonly { key: string; interval: 'month' | 'year' }[]
+  prices: readonly { key: string; interval: 'month' | 'year'; retired?: boolean }[]
 }
 
 export const PLANS = {
@@ -85,15 +85,21 @@ export function planForPrice(priceKey: string | null): PlanKey | null {
   return null
 }
 
-/** Prices a customer can start a subscription with (retired keys excluded by not listing them here). */
+/** Prices a customer can start a subscription with (retired prices still map to their plan). */
 export const purchasablePrices = () =>
   (Object.entries(PLANS) as [PlanKey, Plan][]).flatMap(([plan, p]) =>
-    p.prices.map((price) => ({ plan, planName: p.name, ...price })),
+    p.prices
+      .filter((price) => !price.retired)
+      .map(({ key, interval }) => ({ plan, planName: p.name, key, interval })),
   )
 
 /**
- * A subscription that can still charge the customer. While one exists the organization can't be
- * deleted (cancel it in the billing portal first) and can't start another checkout.
+ * The provider subscription still exists: it charges or retries (`active`, `trialing`, `past_due`,
+ * `incomplete`), keeps creating invoices (`unpaid`) or can resume (`paused`). While it does, the
+ * organization can't start another checkout (one subscription each) and can't be deleted (the
+ * subscription would outlive it); the owner cancels it in the billing portal first. `canceled` is
+ * final. (That `canceled` is terminal is also a platform invariant: the webhook's ordering rule in
+ * packages/db relies on it, independent of product policy.)
  */
 export const isLive = (subscription: { status: SubscriptionStatus } | null) =>
   subscription !== null && subscription.status !== 'canceled'

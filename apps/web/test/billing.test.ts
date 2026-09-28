@@ -402,6 +402,16 @@ describe('billing policy (pure)', () => {
       expect(entitlementsFor({ status, planKey: 'pro' }).planKey).toBe(DEFAULT_PLAN)
   })
 
+  it('keeps retired prices mapped to their plan but never sells them', () => {
+    // Every listed price maps to its plan; purchasable ones are the non-retired subset.
+    for (const [key, plan] of Object.entries(PLANS))
+      for (const p of plan.prices) expect(planForPrice(p.key)).toBe(key)
+    const sold = new Set(purchasablePrices().map((p) => p.key))
+    for (const plan of Object.values(PLANS))
+      for (const p of plan.prices as readonly { key: string; retired?: boolean }[])
+        expect(sold.has(p.key)).toBe(!p.retired)
+  })
+
   it('maps each price to exactly one plan', () => {
     const keys = purchasablePrices().map((p) => p.key)
     expect(new Set(keys).size).toBe(keys.length)

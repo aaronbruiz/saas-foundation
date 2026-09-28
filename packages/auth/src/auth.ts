@@ -144,13 +144,15 @@ export function createAuth({
           },
         },
         // Seat limits from the plan (ADR-0020). Accepting an invitation (or adding a member) fails
-        // at the limit; pending invitations can't exceed the free seats.
+        // at the limit; pending invitations can't exceed the free seats. Better Auth counts, then
+        // inserts, without a lock: simultaneous acceptances can exceed the cap by their number
+        // (accepted for flat pricing; per-seat billing would need a database-enforced cap).
         ...(billingPolicy && {
           membershipLimit: async (_user, org) =>
             (await billingPolicy.memberLimit(org.id)) ?? Number.MAX_SAFE_INTEGER,
           invitationLimit: async ({ organization: org }) => {
             const limit = await billingPolicy.memberLimit(org.id)
-            if (limit === null) return 100 // Better Auth's default for pending invitations
+            if (limit === null) return Number.MAX_SAFE_INTEGER // unlimited: no pending cap either
             return Math.max(0, limit - (await countMembers(db, org.id)))
           },
         }),

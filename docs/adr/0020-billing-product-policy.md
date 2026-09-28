@@ -47,11 +47,12 @@ No rules engine and no database-driven catalog: a single product needs one typed
    - **Pro**: unlimited projects, 50 members; monthly (`pro_monthly`) and yearly (`pro_yearly`) prices.
    - Amounts and currency live on the Stripe prices (USD for the reference setup), not in code.
    - **14-day trial**, only for an organization's first subscription; Checkout collects a payment method.
-   - Retired price keys stay listed under their plan so existing subscribers keep it.
+   - A retired price stays listed under its plan with `retired: true`: existing subscribers keep the plan, and Checkout no longer offers it.
 2. **What is billable:** a flat price per organization (quantity 1). No per-seat billing: seats are a limit, not a meter. No usage metering. **Tax:** Stripe Tax through Checkout (`automatic_tax`), which requires activating Stripe Tax and its registrations before going live. No Merchant of Record: ADR-0009's adapter keeps that option open.
 3. **Limits:**
    - hard stop on creating the resource at the cap: 403 with an upgrade message;
    - member invitations are refused when no seat is free, and acceptance is refused at the cap (for example after a downgrade);
+   - the project cap is exact (creation takes the organization row lock). The seat cap is exact per request, but Better Auth counts and then inserts without a lock, so simultaneous acceptances can exceed it by their number. That's accepted because seats are a limit, not a meter, under flat pricing. A product that bills per seat needs a database-enforced cap (a trigger on `member` inserts) first;
    - **a downgrade never deletes or hides data**: existing projects and members stay, and new ones are blocked until usage is under the limit.
 4. **Ownership and permissions:** the subscription belongs to the **organization** (unchanged).
    - `billing:read` (plan, usage) is granted to owner and admin.
@@ -64,7 +65,9 @@ No rules engine and no database-driven catalog: a single product needs one typed
    - Plan changes and proration happen in the portal with Stripe's defaults.
    - Refunds are manual in the Stripe dashboard: no refund code.
    - A price the product doesn't sell is stored and grants Free (`billing.webhook.unknown_price`).
-7. **Deleting an organization** is refused (409, "cancel it in Billing first") while its subscription is **live** (any status except `canceled`), because the provider would keep charging. Once the subscription has ended, deletion works and removes the billing record (`ON DELETE CASCADE`, migration 0004). The refusal runs before Better Auth's endpoint and only for members (ADR-0018).
+7. **Deleting an organization** is refused (409, "cancel it in Billing first") while its subscription is **live** (any status except `canceled`). The provider subscription still exists then: it charges or retries (`active`, `trialing`, `past_due`, `incomplete`), keeps creating invoices (`unpaid`), or can resume (`paused`), and it would outlive the organization.
+   - The same set blocks a second checkout (decision 8).
+   - That `canceled` is terminal is also a platform invariant: the webhook's per-subscription ordering relies on it (ADR-0018), so it isn't a product setting. Once the subscription has ended, deletion works and removes the billing record (`ON DELETE CASCADE`, migration 0004). The refusal runs before Better Auth's endpoint and only for members (ADR-0018).
 8. **One subscription per organization.** Checkout is refused while one is live; changes go through the portal. A subscription never moves between organizations (unchanged: `conflict`).
 
 **Implemented now:**
