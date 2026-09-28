@@ -1,21 +1,26 @@
 import { createServerFn } from '@tanstack/react-start'
-import { getRequestHeaders } from '@tanstack/react-start/server'
 import {
   AcceptInvitationInput,
   CreateOrganizationInput,
   InviteMemberInput,
+  TenantInput,
 } from '@saas-foundation/contracts'
+import { requestHeaders, serve } from '../../server/boundary'
 import { validateWith } from '../../server/validate'
-import { acceptInvitation, createOrganization, inviteMember } from './service'
+import { acceptInvitation, createOrganization, getTenant, getViewer, inviteMember } from './service'
 
-const headers = () => new Headers(getRequestHeaders() as HeadersInit)
-
+export const getViewerFn = createServerFn({ method: 'GET' }).handler(() =>
+  serve(() => getViewer(requestHeaders())),
+)
+export const getTenantFn = createServerFn({ method: 'GET' })
+  .validator(validateWith(TenantInput))
+  .handler(({ data }) => serve(() => getTenant(requestHeaders(), data)))
 export const createOrganizationFn = createServerFn({ method: 'POST' })
-  .inputValidator(validateWith(CreateOrganizationInput))
-  .handler(({ data }) => createOrganization(headers(), data))
+  .validator(validateWith(CreateOrganizationInput))
+  .handler(({ data }) => serve(() => createOrganization(requestHeaders(), data)))
 export const inviteMemberFn = createServerFn({ method: 'POST' })
-  .inputValidator(validateWith(InviteMemberInput))
-  .handler(({ data }) => inviteMember(headers(), data))
+  .validator(validateWith(InviteMemberInput))
+  .handler(({ data }) => serve(() => inviteMember(requestHeaders(), data)))
 export const acceptInvitationFn = createServerFn({ method: 'POST' })
-  .inputValidator(validateWith(AcceptInvitationInput))
-  .handler(({ data }) => acceptInvitation(headers(), data))
+  .validator(validateWith(AcceptInvitationInput))
+  .handler(({ data }) => serve(() => acceptInvitation(requestHeaders(), data)))

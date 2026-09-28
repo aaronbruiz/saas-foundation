@@ -4,6 +4,8 @@ import {
   CreateOrganizationInput,
   InviteMemberInput,
 } from '@saas-foundation/contracts'
+import { findOrganizationById } from '@saas-foundation/db'
+import { TenantInput } from '@saas-foundation/contracts'
 import { authFor, invitationLink } from '../../server/auth'
 import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
@@ -43,7 +45,7 @@ export async function inviteMember(
 export async function acceptInvitation(
   headers: Headers,
   input: unknown,
-): Promise<{ organizationId: string }> {
+): Promise<{ slug: string }> {
   const { invitationId } = parseInput(AcceptInvitationInput, input)
   return withDb(async (db) => {
     const auth = authFor(db)
@@ -57,6 +59,41 @@ export async function acceptInvitation(
         throw e
       })
     if (!result?.invitation) throw new HttpError(404, 'not found')
-    return { organizationId: result.invitation.organizationId }
+    const org = await findOrganizationById(db, result.invitation.organizationId)
+    if (!org) throw new HttpError(404, 'not found')
+    return { slug: org.slug }
+  })
+}
+
+export type Viewer = {
+  email: string
+  name: string
+  organizations: { slug: string; name: string }[]
+}
+
+/** The signed-in user and their organizations (for landing/navigation), or null if signed out. */
+export async function getViewer(headers: Headers): Promise<Viewer | null> {
+  return withDb(async (db) => {
+    const auth = authFor(db)
+    const session = await auth.api.getSession({ headers })
+    if (!session) return null
+    const orgs = await auth.api.listOrganizations({ headers })
+    return {
+      email: session.user.email,
+      name: session.user.name,
+      organizations: orgs.map((o) => ({ slug: o.slug, name: o.name })),
+    }
+  })
+}
+
+/** Tenant header info for /t/<slug> layouts; same boundary and 404 semantics as every call. */
+export async function getTenant(
+  headers: Headers,
+  input: unknown,
+): Promise<{ slug: string; name: string; role: string }> {
+  const { tenant } = parseInput(TenantInput, input)
+  return withDb(async (db) => {
+    const { slug, name, role } = await getTenantContext(db, headers, tenant)
+    return { slug, name, role }
   })
 }

@@ -25,12 +25,14 @@ export default defineConfig({
         bindings: {
           // Test-only values; real secrets come from Cloudflare (prod) or .dev.vars (local dev).
           BETTER_AUTH_SECRET: 'test-only-secret-not-used-anywhere-else-0123456789',
-          BETTER_AUTH_URL: 'http://localhost:3000',
+          BETTER_AUTH_URL: 'http://localhost:5173',
         },
       },
     }),
   ],
   test: {
+    // Workers tests only; e2e/ is Playwright's.
+    include: ['test/**/*.test.ts'],
     // Node-side: apply migrations to app_test before any workerd test runs.
     globalSetup: ['./test/global-setup.ts'],
   },
