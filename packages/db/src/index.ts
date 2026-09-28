@@ -5,6 +5,7 @@ export * as schema from './schema/index.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
   findMembership,
+  findOrganizationById,
   findOrganizationBySlug,
   projects,
   type ProjectFields,

@@ -3,7 +3,13 @@ import { TenantSlug } from '@saas-foundation/contracts'
 import { authFor } from './auth'
 import { HttpError, notFound } from './errors'
 
-export type TenantContext = { userId: string; orgId: string; slug: string; role: string }
+export type TenantContext = {
+  userId: string
+  orgId: string
+  slug: string
+  name: string
+  role: string
+}
 
 /**
  * The tenant boundary (AGENTS.md invariant 1, ADR-0010). The slug is a selector from the URL or a
@@ -22,5 +28,11 @@ export async function getTenantContext(
   const org = await findOrganizationBySlug(db, slug.data)
   const membership = org && (await findMembership(db, org.id, session.user.id))
   if (!org || !membership) throw notFound()
-  return { userId: session.user.id, orgId: org.id, slug: org.slug, role: membership.role }
+  return {
+    userId: session.user.id,
+    orgId: org.id,
+    slug: org.slug,
+    name: org.name,
+    role: membership.role,
+  }
 }

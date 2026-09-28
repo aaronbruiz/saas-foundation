@@ -15,6 +15,15 @@ export async function findOrganizationBySlug(db: Db, slug: string) {
   return org ?? null
 }
 
+export async function findOrganizationById(db: Db, id: string) {
+  const [org] = await db
+    .select({ id: organization.id, slug: organization.slug, name: organization.name })
+    .from(organization)
+    .where(eq(organization.id, id))
+    .limit(1)
+  return org ?? null
+}
+
 export async function findMembership(db: Db, orgId: string, userId: string) {
   const [m] = await db
     .select({ role: member.role })

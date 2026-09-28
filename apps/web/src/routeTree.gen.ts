@@ -10,12 +10,31 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as InviteIdRouteImport } from './routes/invite.$id'
+import { Route as OrgsNewRouteImport } from './routes/orgs.new'
+import { Route as TTenantRouteImport } from './routes/t.$tenant'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as TTenantIndexRouteImport } from './routes/t.$tenant.index'
+import { Route as TTenantInviteRouteImport } from './routes/t.$tenant.invite'
+import { Route as TTenantProjectsIndexRouteImport } from './routes/t.$tenant.projects.index'
+import { Route as TTenantProjectsIdRouteImport } from './routes/t.$tenant.projects.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -23,39 +42,141 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteIdRoute = InviteIdRouteImport.update({
+  id: '/invite/$id',
+  path: '/invite/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrgsNewRoute = OrgsNewRouteImport.update({
+  id: '/orgs/new',
+  path: '/orgs/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TTenantRoute = TTenantRouteImport.update({
+  id: '/t/$tenant',
+  path: '/t/$tenant',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TTenantIndexRoute = TTenantIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TTenantRoute,
+} as any)
+const TTenantInviteRoute = TTenantInviteRouteImport.update({
+  id: '/invite',
+  path: '/invite',
+  getParentRoute: () => TTenantRoute,
+} as any)
+const TTenantProjectsIndexRoute = TTenantProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => TTenantRoute,
+} as any)
+const TTenantProjectsIdRoute = TTenantProjectsIdRouteImport.update({
+  id: '/projects/$id',
+  path: '/projects/$id',
+  getParentRoute: () => TTenantRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/api/health': typeof ApiHealthRoute
+  '/invite/$id': typeof InviteIdRoute
+  '/orgs/new': typeof OrgsNewRoute
+  '/t/$tenant': typeof TTenantRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/invite': typeof TTenantInviteRoute
+  '/t/$tenant/': typeof TTenantIndexRoute
+  '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
+  '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/api/health': typeof ApiHealthRoute
+  '/invite/$id': typeof InviteIdRoute
+  '/orgs/new': typeof OrgsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/invite': typeof TTenantInviteRoute
+  '/t/$tenant': typeof TTenantIndexRoute
+  '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
+  '/t/$tenant/projects': typeof TTenantProjectsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/api/health': typeof ApiHealthRoute
+  '/invite/$id': typeof InviteIdRoute
+  '/orgs/new': typeof OrgsNewRoute
+  '/t/$tenant': typeof TTenantRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/invite': typeof TTenantInviteRoute
+  '/t/$tenant/': typeof TTenantIndexRoute
+  '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
+  '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/api/health'
+    | '/invite/$id'
+    | '/orgs/new'
+    | '/t/$tenant'
+    | '/api/auth/$'
+    | '/t/$tenant/invite'
+    | '/t/$tenant/'
+    | '/t/$tenant/projects/$id'
+    | '/t/$tenant/projects/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/health' | '/api/auth/$'
+  to:
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/api/health'
+    | '/invite/$id'
+    | '/orgs/new'
+    | '/api/auth/$'
+    | '/t/$tenant/invite'
+    | '/t/$tenant'
+    | '/t/$tenant/projects/$id'
+    | '/t/$tenant/projects'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/signup'
+    | '/api/health'
+    | '/invite/$id'
+    | '/orgs/new'
+    | '/t/$tenant'
+    | '/api/auth/$'
+    | '/t/$tenant/invite'
+    | '/t/$tenant/'
+    | '/t/$tenant/projects/$id'
+    | '/t/$tenant/projects/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
+  SignupRoute: typeof SignupRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  InviteIdRoute: typeof InviteIdRoute
+  OrgsNewRoute: typeof OrgsNewRoute
+  TTenantRoute: typeof TTenantRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -68,11 +189,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$id': {
+      id: '/invite/$id'
+      path: '/invite/$id'
+      fullPath: '/invite/$id'
+      preLoaderRoute: typeof InviteIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orgs/new': {
+      id: '/orgs/new'
+      path: '/orgs/new'
+      fullPath: '/orgs/new'
+      preLoaderRoute: typeof OrgsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/t/$tenant': {
+      id: '/t/$tenant'
+      path: '/t/$tenant'
+      fullPath: '/t/$tenant'
+      preLoaderRoute: typeof TTenantRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -82,14 +238,73 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/t/$tenant/': {
+      id: '/t/$tenant/'
+      path: '/'
+      fullPath: '/t/$tenant/'
+      preLoaderRoute: typeof TTenantIndexRouteImport
+      parentRoute: typeof TTenantRoute
+    }
+    '/t/$tenant/invite': {
+      id: '/t/$tenant/invite'
+      path: '/invite'
+      fullPath: '/t/$tenant/invite'
+      preLoaderRoute: typeof TTenantInviteRouteImport
+      parentRoute: typeof TTenantRoute
+    }
+    '/t/$tenant/projects/': {
+      id: '/t/$tenant/projects/'
+      path: '/projects'
+      fullPath: '/t/$tenant/projects/'
+      preLoaderRoute: typeof TTenantProjectsIndexRouteImport
+      parentRoute: typeof TTenantRoute
+    }
+    '/t/$tenant/projects/$id': {
+      id: '/t/$tenant/projects/$id'
+      path: '/projects/$id'
+      fullPath: '/t/$tenant/projects/$id'
+      preLoaderRoute: typeof TTenantProjectsIdRouteImport
+      parentRoute: typeof TTenantRoute
+    }
   }
 }
 
+interface TTenantRouteChildren {
+  TTenantInviteRoute: typeof TTenantInviteRoute
+  TTenantIndexRoute: typeof TTenantIndexRoute
+  TTenantProjectsIdRoute: typeof TTenantProjectsIdRoute
+  TTenantProjectsIndexRoute: typeof TTenantProjectsIndexRoute
+}
+
+const TTenantRouteChildren: TTenantRouteChildren = {
+  TTenantInviteRoute: TTenantInviteRoute,
+  TTenantIndexRoute: TTenantIndexRoute,
+  TTenantProjectsIdRoute: TTenantProjectsIdRoute,
+  TTenantProjectsIndexRoute: TTenantProjectsIndexRoute,
+}
+
+const TTenantRouteWithChildren =
+  TTenantRoute._addFileChildren(TTenantRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
+  SignupRoute: SignupRoute,
   ApiHealthRoute: ApiHealthRoute,
+  InviteIdRoute: InviteIdRoute,
+  OrgsNewRoute: OrgsNewRoute,
+  TTenantRoute: TTenantRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

@@ -20,7 +20,8 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --parallel typecheck",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck",
-    "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate"
+    "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate",
+    "test:e2e": "pnpm --filter web test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

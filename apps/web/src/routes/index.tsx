@@ -1,14 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { getViewerFn } from '../modules/organizations/functions'
 
-export const Route = createFileRoute('/')({ component: Home })
-
-function Home() {
-  return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
-      </p>
-    </div>
-  )
-}
+// Landing: signed out → /login; no organization yet → /orgs/new; otherwise the first tenant.
+export const Route = createFileRoute('/')({
+  loader: async () => {
+    const viewer = await getViewerFn()
+    if (!viewer) throw redirect({ to: '/login', search: { redirect: '/' } })
+    const first = viewer.organizations[0]
+    if (!first) throw redirect({ to: '/orgs/new' })
+    throw redirect({ to: '/t/$tenant/projects', params: { tenant: first.slug } })
+  },
+})

@@ -40,6 +40,8 @@ jobs:
         run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
       - run: pnpm check
       - run: pnpm test
+      - name: Build and scan the client bundle for secrets
+        run: pnpm build && scripts/scan-client-bundle.sh
 
   preview:
     name: preview (Neon branch + Hyperdrive + Worker Preview)
@@ -72,6 +74,12 @@ jobs:
         id: up
         # Don't capture stdout: it carries ::add-mask:: commands. up.sh writes $GITHUB_OUTPUT itself.
         run: scripts/preview/up.sh
+      - name: E2E against the preview (Playwright)
+        env:
+          BASE_URL: ${{ steps.up.outputs.url }}
+        run: |
+          pnpm --filter web exec playwright install --with-deps chromium
+          pnpm test:e2e
       - name: Comment preview URL on the PR
         env:
           GH_TOKEN: ${{ github.token }}
