@@ -2,6 +2,8 @@
 
 Status: Accepted (owner decisions 2026-09-28; rollout in progress, see "Rollout status") · Date: 2026-09-28
 
+Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): the T1 Cloudflare token scope, the production Neon key's name/location, and the rollout list.
+
 Supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md). Until the rollout completes, parts of the exposure below stay live.
 
 ## Context

@@ -2,6 +2,8 @@
 
 Status: Accepted · Date: 2026-09-27
 
+Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): per-PR Hyperdrive configs and Neon branches (preview slots).
+
 Proposed to be superseded in part by [ADR-0013](0013-ci-credential-tiers.md) (the CI credentials "accepted risk"), once ADR-0013 is accepted. Until then the current workflows still expose the secrets described there.
 
 ## Context
