@@ -89,6 +89,9 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await expect(carol).toHaveURL(new RegExp(`/t/${orgA}/projects$`))
   await expect(carol.getByRole('link', { name: 'Alpha' })).toBeVisible()
   await expect(carol.getByRole('link', { name: 'Invite' })).toHaveCount(0) // member role
+  await carol.getByRole('link', { name: 'Alpha' }).click()
+  await expect(carol.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect(carol.getByRole('button', { name: 'Delete project' })).toHaveCount(0) // member role
 
   // Bob: his own org B; none of A is reachable, by tenant URL or by project id.
   const { page: bob } = await signUp(browser, 'Bob')

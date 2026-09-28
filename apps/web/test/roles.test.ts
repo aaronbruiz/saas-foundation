@@ -20,7 +20,7 @@ type Role = 'owner' | 'admin' | 'member'
 const EXPECTED: Record<Role, Capability[]> = {
   owner: [...CAPABILITIES],
   admin: [...CAPABILITIES],
-  member: ['project:read', 'project:create', 'project:update', 'project:delete'],
+  member: ['project:read', 'project:create', 'project:update'],
 }
 
 let users: Record<Role, TestUser>

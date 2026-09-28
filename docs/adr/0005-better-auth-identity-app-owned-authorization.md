@@ -16,7 +16,8 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 
   | Capability                                              | owner | admin | member |
   | ------------------------------------------------------- | :---: | :---: | :----: |
-  | `project:read` / `create` / `update` / `delete`         |  yes  |  yes  |  yes   |
+  | `project:read` / `create` / `update`                    |  yes  |  yes  |  yes   |
+  | `project:delete` (hard delete, no audit trail yet)      |  yes  |  yes  |   no   |
   | `member:invite` (as `member` or `admin`)                |  yes  |  yes  |   no   |
   | _Better Auth HTTP endpoints (its default roles):_       |       |       |        |
   | organization update (name, slug)                        |  yes  |  yes  |   no   |
@@ -49,6 +50,8 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
 - Characteristics: IP. Rate: **10 requests per 10 s**. Action: **Block**, for 10 s (Pro: 1 min period and 10 min block; raise to 20 requests per 1 min).
 - Purpose: absorb bursts at the edge before they reach the Worker and Postgres. The app limit stays the authority; the WAF rule is looser than the app's for sign-in/sign-up POSTs.
 - Free-plan caveat: the expression can't match the method, so any request to those paths counts (GET etc. only return errors there). Accepted: the counter is per IP, so only the client's own traffic (or its NAT peers) can fill it, and the block lasts 10 s. On Pro and above, add the POST condition.
+
+**No test exemption** (owner decision 2026-09-28): E2E runs against the real limit; any bypass would be code or config that could reach production. Each run makes 3 sign-ups, so leave about a minute between local runs.
 
 **Accepted limits:** counting is per IP only, so distributed credential stuffing (many IPs) is not stopped by either layer; per-account lockout and bot protection (Turnstile) wait for a trigger (abuse observed or before public launch). Every `/api/auth/*` request costs one extra DB round-trip. Users behind one NAT share a bucket.
 
