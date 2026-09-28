@@ -14,6 +14,8 @@ export type AuthOptions = {
   onInvitation?: (notice: InvitationNotice) => Promise<void> | void
 }
 
+const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
+
 /**
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
@@ -24,6 +26,22 @@ export function createAuth({ db, secret, baseURL, onInvitation }: AuthOptions) {
     baseURL,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     emailAndPassword: { enabled: true },
+    // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
+    // Better Auth puts every client into one shared rate-limit bucket.
+    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
+    // Login rate limiting (ADR-0005): counters in Postgres, since memory is per isolate. Enabled in
+    // every environment (Better Auth's default is production only). Per IP and path.
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+      window: 60,
+      max: 100,
+      // POST only: other methods on these paths don't reach a handler and mustn't fill the bucket.
+      customRules: {
+        '/sign-in/email': loginRule,
+        '/sign-up/email': loginRule,
+      },
+    },
     plugins: [
       organization({
         async sendInvitationEmail(data) {

@@ -12,7 +12,31 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 - The schema is generated with `npx auth@latest generate` into `packages/db`; migrations go only through drizzle-kit.
 - Default roles: `owner`, `admin`, `member`. Members can't invite; only the owner can delete the org.
 - **Authorization is ours:** every tenant request resolves `{userId, orgId, role}` server-side by verifying membership (see ADR-0010).
-- Login rate limiting (Phase 2): Better Auth `rateLimit.storage: "database"` plus a WAF rule. The in-memory limiter doesn't work across Worker isolates, and the Workers Rate Limiting binding is per location and approximate.
+- Login rate limiting: Better Auth `rateLimit.storage: "database"` plus a WAF rule. The in-memory limiter doesn't work across Worker isolates, and the Workers Rate Limiting binding is per location and approximate. Details below.
+
+## Login rate limiting (Phase 2)
+
+**App layer (in code, `packages/auth/src/auth.ts`):**
+
+- `rateLimit: { enabled: true, storage: "database" }`. Counters live in the Better Auth `rate_limit` table (generated schema). Better Auth's check-and-increment is a conditional update, so concurrent requests can't all pass. `enabled: true` is explicit: Better Auth's default is production only, and we want dev, tests and previews to behave like prod.
+- Limits, per client IP and path: `POST /api/auth/sign-in/email` and `/sign-up/email` allow **5 per 60 s**. Other methods on those paths aren't counted (they reach no handler). Other auth endpoints allow 100 per 60 s, except Better Auth's built-in stricter rules: other `/sign-in*`, `/sign-up*`, `/change-password*` and `/change-email*` paths 3 per 10 s; password reset and verification email 3 per 60 s. Over the limit: **429** with `X-Retry-After`.
+- Client IP = `cf-connecting-ip` (`advanced.ipAddress.ipAddressHeaders`). Cloudflare's edge sets it and overwrites any value the client sends. Better Auth's default (`x-forwarded-for`) is absent on Workers. Without a trusted IP, Better Auth falls back to one shared bucket for all clients, which would let 5 bad logins lock everyone out.
+- Only HTTP requests through `/api/auth/*` are limited. Direct `auth.api.*` server calls are not, so login and sign-up must stay on the HTTP client (`authClient`).
+- Tests (`apps/web/test/rate-limit.test.ts`): sign-in and sign-up return 429 after 5 requests, a correct password is also refused while limited, other IPs are unaffected, and the counter row is in Postgres.
+
+**Edge layer: WAF rate limiting rule (owner applies in the dashboard; not in code, no new binding):**
+
+WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or preview URLs. Apply it when the production custom domain exists. On the Free zone plan: 1 rule, path-only expression, 10 s counting period, 10 s block, counted per IP (and per Cloudflare data center).
+
+- Security → WAF → Rate limiting rules → Create rule, name `auth-login-burst`.
+- Expression (Free):
+  `(http.request.uri.path in {"/api/auth/sign-in/email" "/api/auth/sign-up/email"})`
+  (Pro and above can add `and http.request.method eq "POST"`.)
+- Characteristics: IP. Rate: **10 requests per 10 s**. Action: **Block**, for 10 s (Pro: 1 min period and 10 min block; raise to 20 requests per 1 min).
+- Purpose: absorb bursts at the edge before they reach the Worker and Postgres. The app limit stays the authority; the WAF rule is looser than the app's for sign-in/sign-up POSTs.
+- Free-plan caveat: the expression can't match the method, so any request to those paths counts (GET etc. only return errors there). Accepted: the counter is per IP, so only the client's own traffic (or its NAT peers) can fill it, and the block lasts 10 s. On Pro and above, add the POST condition.
+
+**Accepted limits:** counting is per IP only, so distributed credential stuffing (many IPs) is not stopped by either layer; per-account lockout and bot protection (Turnstile) wait for a trigger (abuse observed or before public launch). Every `/api/auth/*` request costs one extra DB round-trip. Users behind one NAT share a bucket.
 
 ## Consequences
 
