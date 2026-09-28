@@ -10,6 +10,11 @@ export type AuthOptions = {
   db: Db
   secret: string
   baseURL: string
+  /**
+   * Receives Better Auth's own log lines (level + message only; its extra arguments can hold request
+   * data, so they're dropped). The app routes them to its structured logger (ADR-0015).
+   */
+  log?: (level: 'debug' | 'info' | 'warn' | 'error', message: unknown) => void
   /** Delivers invitation links. No email provider yet (Q7): the app logs/returns the link. */
   onInvitation?: (notice: InvitationNotice) => Promise<void> | void
 }
@@ -20,12 +25,16 @@ const loginRule = (request: Request) => request.method === 'POST' && { window: 6
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
  */
-export function createAuth({ db, secret, baseURL, onInvitation }: AuthOptions) {
+export function createAuth({ db, secret, baseURL, log, onInvitation }: AuthOptions) {
   return betterAuth({
     secret,
     baseURL,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     emailAndPassword: { enabled: true },
+    logger: {
+      level: 'warn',
+      ...(log && { log: (level, message: unknown) => log(level, message) }),
+    },
     // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
     // Better Auth puts every client into one shared rate-limit bucket.
     advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
