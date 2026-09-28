@@ -2,11 +2,13 @@
 // The artifact's `dist/server/wrangler.json` is data from PR code, so it's checked against what the
 // committed config can produce before `wrangler preview --config` gets it:
 //   - name and account are the committed ones; no build command; no_bundle;
-//   - main and assets stay inside the artifact's dist/;
+//   - main stays inside dist/server; assets are exactly dist/client (never the server bundle);
+//   - no vars (previews set theirs with --var);
 //   - the only binding is the Hyperdrive DB, with the fail-closed previews sentinel;
 //   - every other key is either known-harmless or empty (new wrangler keys must stay empty).
-// Then it points both DB ids at the PR's own Hyperdrive config, turns preview URLs on, and drops
-// routes and the build-machine redirect paths. Writes the file in place.
+// Then it points both DB ids at the PR's own Hyperdrive config, turns preview URLs on, turns source
+// map upload off (wrangler would follow a bundle's sourceMappingURL to files outside the artifact),
+// and drops routes and the build-machine redirect paths. Writes the file in place.
 // Usage: prepare-config.mjs <dist/server/wrangler.json> <pinned-account-id> [<hyperdrive-id>]
 // Without a Hyperdrive id it only validates.
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
@@ -38,19 +40,20 @@ const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'st
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
 const serverDir = dirname(resolve(file))
-const distDir = dirname(serverDir)
-const inside = (base, p) => {
-  const rel = relative(base, p)
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
-}
-// A path from the config must resolve to a real (non-symlinked) location inside dist/.
-const insideDist = (p, kind) => {
-  if (typeof p !== 'string' || isAbsolute(p)) return false
+// A relative path from the config, resolved to its real location (null if missing or wrong kind).
+const realPath = (p, kind) => {
+  if (typeof p !== 'string' || isAbsolute(p)) return null
   const abs = resolve(serverDir, p)
   const st = lstatSync(abs, { throwIfNoEntry: false })
-  if (!st || (kind === 'file' ? !st.isFile() : !st.isDirectory())) return false
-  return inside(realpathSync(distDir), realpathSync(abs))
+  if (!st || (kind === 'file' ? !st.isFile() : !st.isDirectory())) return null
+  return realpathSync(abs)
 }
+const inside = (base, p) => {
+  const rel = p === null ? '' : relative(realpathSync(base), p)
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
+const clientDir = realPath('../client', 'dir') // dist/client
+const isClientDir = (p) => clientDir !== null && realPath(p, 'dir') === clientDir
 
 const cfg = JSON.parse(readFileSync(file, 'utf8'))
 check(isPlain(cfg), 'config is not an object')
@@ -64,7 +67,7 @@ const rules = {
   definedEnvironments: (v) => sameJson(v, []),
   name: (v) => v === WORKER_NAME,
   account_id: (v) => v === accountId,
-  main: (v) => insideDist(v, 'file'),
+  main: (v) => inside(serverDir, realPath(v, 'file')),
   compatibility_date: (v) => typeof v === 'string',
   compatibility_flags: isStringArray,
   jsx_factory: (v) => typeof v === 'string',
@@ -76,14 +79,16 @@ const rules = {
   // Static assets only: no ASSETS binding (a binding needs an ADR like any other).
   assets: (v) =>
     isPlain(v) &&
-    Object.keys(v).every((k) =>
-      ['directory', 'html_handling', 'not_found_handling', 'run_worker_first'].includes(k),
-    ) &&
-    insideDist(v.directory, 'dir'),
+    isClientDir(v.directory) &&
+    Object.entries(v).every(
+      ([k, x]) =>
+        k === 'directory' ||
+        (['html_handling', 'not_found_handling'].includes(k) && typeof x === 'string') ||
+        (k === 'run_worker_first' && (typeof x === 'boolean' || isStringArray(x))),
+    ),
   placement: isPlain,
   workers_dev: (v) => v === false,
   preview_urls: (v) => v === false,
-  vars: (v) => isPlain(v) && Object.values(v).every((x) => typeof x === 'string'),
   hyperdrive: (v) =>
     Array.isArray(v) &&
     v.length === 1 &&
@@ -118,6 +123,7 @@ if (hyperdriveId === undefined) {
 for (const key of ['configPath', 'userConfigPath', 'topLevelName', 'definedEnvironments', 'routes'])
   delete cfg[key]
 cfg.preview_urls = true
+cfg.upload_source_maps = false
 cfg.hyperdrive = [{ binding: 'DB', id: hyperdriveId }]
 cfg.previews = { hyperdrive: [{ binding: 'DB', id: hyperdriveId }] }
 writeFileSync(file, JSON.stringify(cfg, null, 2))
