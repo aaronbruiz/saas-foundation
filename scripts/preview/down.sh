@@ -14,7 +14,10 @@ released=""
 if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
   entry="$(slot_branches | jq -c --arg s "/pr-$PR_NUMBER" '[.[] | select(.name | endswith($s))][0] // empty')"
   if [ -n "$entry" ]; then
-    release_slot "$(jq -r .slot <<<"$entry")" "$(jq -r .id <<<"$entry")" "$PR_NUMBER" || true
+    rc=0
+    release_slot "$(jq -r .slot <<<"$entry")" "$(jq -r .id <<<"$entry")" "$PR_NUMBER" || rc=$?
+    # Quarantine is a handled outcome; anything else fails the job (the janitor retries).
+    [ "$rc" = 0 ] || [ "$rc" = 2 ] || exit 1
     released=1
   fi
 fi
@@ -33,6 +36,10 @@ if neon_branch_exists "$NEON_BRANCH"; then
   log "deleting legacy Neon branch $NEON_BRANCH"
   neon branches delete "$NEON_BRANCH" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
 fi
-[ -n "$released" ] || delete_preview_verified "$PREVIEW_NAME" || true
+if [ -z "$released" ]; then
+  rc=0
+  delete_preview_verified "$PREVIEW_NAME" || rc=$?
+  [ "$rc" = 0 ] || [ "$rc" = 2 ] || exit 1
+fi
 
 log "done: pr-$PR_NUMBER"

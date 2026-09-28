@@ -5,8 +5,6 @@
 # - Legacy per-PR resources and recently closed PRs' previews → down.sh.
 source "$(dirname "$0")/lib.sh"
 
-open="$(open_prs | sort -u)"
-is_open() { printf '%s\n' "$open" | grep -qx "$1"; }
 
 if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
   while read -r slot id name; do
@@ -14,12 +12,15 @@ if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
     case "$name" in
       "preview/slot-$slot/pr-"*)
         pr="${name##*/pr-}"
-        is_open "$pr" || release_slot "$slot" "$id" "$pr" || true
+        # Asked per PR, right before releasing; any doubt keeps the slot (ADR-0019).
+        if pr_is_closed "$pr"; then release_slot "$slot" "$id" "$pr" || log "WARN: slot $slot not released; next run retries"; fi
         ;;
       "preview/slot-$slot/quarantine-pr-"*)
         pr="${name##*/quarantine-pr-}"
-        if delete_preview_verified "pr-$pr"; then
-          neon branches rename "$id" "preview/slot-$slot" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
+        rc=0
+        delete_preview_verified "pr-$pr" || rc=$?
+        if [ "$rc" = 0 ] &&
+          neon branches rename "$id" "preview/slot-$slot" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null; then
           log "slot $slot out of quarantine"
         fi
         ;;
@@ -34,7 +35,7 @@ candidates="$( {
   gh pr list --state closed --limit 30 --json number --jq '.[].number'
 } | sort -u)"
 for n in $candidates; do
-  is_open "$n" && continue
+  pr_is_closed "$n" || continue
   log "cleaning up closed PR #$n"
   PR_NUMBER="$n" "$(dirname "$0")/down.sh" || log "WARN: cleanup of #$n failed; will retry next run"
 done

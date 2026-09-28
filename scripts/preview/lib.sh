@@ -78,8 +78,8 @@ workers_subdomain() {
   else cf_api /workers/subdomain | jq -r '.result.subdomain'; fi
 }
 
-# Deletes the Worker Preview `$1` and checks its URL stopped serving. Returns 1 if it still serves
-# (Previews beta issue): callers keep its data resources quarantined then.
+# Deletes the Worker Preview `$1` and checks its URL stopped serving. Returns 2 if it still serves
+# (Previews beta issue): callers keep its data resources quarantined then. Exits on real errors.
 delete_preview_verified() {
   local name="$1" out url status=""
   if ! out="$(wrangler preview delete --worker-name "$PREVIEW_WORKER" --name "$name" --skip-confirmation 2>&1)"; then
@@ -91,7 +91,10 @@ delete_preview_verified() {
       exit 1
     fi
   fi
-  url="https://${name}-${PREVIEW_WORKER}.$(workers_subdomain).workers.dev"
+  local sub
+  sub="$(workers_subdomain)" && [ -n "$sub" ] && [ "$sub" != null ] ||
+    { log "ERROR: no workers.dev subdomain (set CLOUDFLARE_WORKERS_SUBDOMAIN)"; exit 1; }
+  url="https://${name}-${PREVIEW_WORKER}.${sub}.workers.dev"
   for _ in 1 2 3 4 5 6; do
     status="$(curl -s -o /dev/null -w '%{http_code}' "$url/api/health" || true)"
     [ "$status" = 404 ] && break
@@ -103,7 +106,7 @@ delete_preview_verified() {
   fi
   log "WARN: $url still returns $status after delete (Cloudflare Previews beta issue)"
   [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=Preview URL still serving::$url returned $status after wrangler preview delete"
-  return 1
+  return 2
 }
 
 # ---- Preview slots (ADR-0019) ----------------------------------------------------------------
@@ -126,27 +129,41 @@ slot_branches() {
     | {id, name, slot: (.name | capture("^preview/slot-(?<n>[0-9]+)").n | tonumber)}]'
 }
 
-open_prs() { gh pr list --state open --limit 200 --json number --jq '.[].number'; }
+# True only if GitHub says PR $1 is closed or merged, asked for that PR right now. Any error or
+# other answer counts as open (fail closed: never free a slot an open PR might hold).
+pr_is_closed() {
+  local state
+  state="$(gh pr view "$1" --json state --jq .state 2>/dev/null)" || return 1
+  [ "$state" = CLOSED ] || [ "$state" = MERGED ]
+}
 
-# Frees slot $1 (branch id $2) held by PR $3: wipe its data first, then delete the preview. If the
-# old URL still serves, the slot goes into quarantine instead (its binding reaches this slot).
+# Frees slot $1 (branch id $2) held by PR $3: wipe its data first, then delete the preview.
+# Returns 0 released, 2 quarantined (the old URL still serves, and its binding reaches this slot),
+# 1 on any failure, leaving the slot claimed so nothing reuses it. Every step is checked
+# explicitly: callers may run it in a condition, where `set -e` doesn't apply.
 release_slot() {
-  local slot="$1" id="$2" pr="$3"
+  local slot="$1" id="$2" pr="$3" rc=0
   log "releasing slot $slot (PR #$pr)"
-  neon branches reset "$id" --parent --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
-  if delete_preview_verified "pr-$pr"; then
-    neon branches rename "$id" "preview/slot-$slot" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
-    return 0
+  if ! neon branches reset "$id" --parent --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null; then
+    log "ERROR: resetting slot $slot failed; it stays claimed"
+    return 1
   fi
-  neon branches rename "$id" "preview/slot-$slot/quarantine-pr-$pr" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
-  log "slot $slot quarantined until pr-$pr's URL stops serving (the janitor re-checks)"
-  return 1
+  delete_preview_verified "pr-$pr" || rc=$?
+  local name="preview/slot-$slot"
+  [ "$rc" = 2 ] && name="preview/slot-$slot/quarantine-pr-$pr"
+  [ "$rc" = 0 ] || [ "$rc" = 2 ] || { log "ERROR: deleting pr-$pr's preview failed; slot $slot stays claimed"; return 1; }
+  if ! neon branches rename "$id" "$name" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null; then
+    log "ERROR: renaming slot $slot failed; it stays claimed"
+    return 1
+  fi
+  [ "$rc" = 2 ] && log "slot $slot quarantined until pr-$pr's URL stops serving (the janitor re-checks)"
+  return "$rc"
 }
 
 # The slot PR $1 holds, claiming one if needed (starting at PR mod slots, so PRs spread out). Slots
 # held by PRs that are no longer open are released on the way. Sets SLOT, SLOT_BRANCH_ID, HD_ID.
 claim_slot() {
-  local pr="$1" all mine open count i k entry name id holder
+  local pr="$1" all mine count i k entry name id holder rc
   load_slots
   count=${#SLOT_IDS[@]}
   SLOT=""
@@ -154,7 +171,6 @@ claim_slot() {
     all="$(slot_branches)"
     mine="$(jq -r --arg s "/pr-$pr" '[.[] | select(.name | endswith($s)) | select(.name | test("/quarantine-") | not)][0] // empty | "\(.slot) \(.id)"' <<<"$all")"
     if [ -n "$mine" ]; then read -r SLOT SLOT_BRANCH_ID <<<"$mine"; break; fi
-    open="$(open_prs)"
     for i in $(seq 0 $((count - 1))); do
       k=$(((pr + i) % count + 1))
       entry="$(jq -c --argjson k "$k" '[.[] | select(.slot == $k)][0] // empty' <<<"$all")"
@@ -165,8 +181,10 @@ claim_slot() {
         "preview/slot-$k") ;;
         "preview/slot-$k/pr-"*)
           holder="${name##*/pr-}"
-          if printf '%s\n' "$open" | grep -qx "$holder"; then continue; fi
-          release_slot "$k" "$id" "$holder" || continue
+          pr_is_closed "$holder" || continue
+          rc=0
+          release_slot "$k" "$id" "$holder" || rc=$?
+          [ "$rc" = 0 ] || continue
           ;;
         *) continue ;; # quarantined
       esac

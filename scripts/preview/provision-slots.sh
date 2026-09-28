@@ -8,6 +8,11 @@
 # Usage: NEON_PREVIEW_PROJECT_ID=... [PREVIEW_SLOTS=6] scripts/preview/provision-slots.sh
 # Output (stdout): the value for the CI variable PREVIEW_HYPERDRIVE_SLOTS (slot ids in order).
 set -euo pipefail
+# Never in CI (ADR-0019): it needs account-wide Hyperdrive access, which CI must not hold.
+if [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${CI:-}" ]; then
+  echo "[slots] ERROR: admin-only; refusing to run in CI" >&2
+  exit 1
+fi
 : "${NEON_PREVIEW_PROJECT_ID:?}"
 SLOTS="${PREVIEW_SLOTS:-6}"
 # Neon Free: 10 branches per project; the seed takes one, and one stays free for maintenance.
