@@ -95,32 +95,109 @@ describe('capability matrix', () => {
   })
 })
 
-describe('Better Auth organization endpoints agree with the matrix', () => {
+// Better Auth's own /api/auth/organization/* endpoints are reachable over HTTP and enforce its
+// default roles (ADR-0005 matrix, lower rows). Each test gets a fresh organization.
+describe('Better Auth organization endpoints (default roles)', () => {
+  async function freshOrg() {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'ba')
+    const [admin, member] = await Promise.all([
+      joinAs(owner, slug, 'admin'),
+      joinAs(owner, slug, 'member'),
+    ])
+    const orgId = (await withDb((db) => getTenantContext(db, owner.headers, slug))).orgId
+    return { owner, admin, member, slug, orgId }
+  }
+  const memberId = (orgId: string, user: TestUser) =>
+    withDb((db) =>
+      db.query.member.findFirst({
+        where: (m, { and, eq }) => and(eq(m.organizationId, orgId), eq(m.userId, user.userId)),
+      }),
+    ).then((m) => m!.id)
+  const roleIn = (slug: string, user: TestUser) =>
+    withDb((db) => getTenantContext(db, user.headers, slug)).then((c) => c.role)
+  const post = (as: TestUser, path: string, body: unknown) =>
+    authPost(`/organization/${path}`, body, undefined, as)
+
   it('only the owner can delete the organization', async () => {
-    const orgId = (await withDb((db) => getTenantContext(db, users.owner.headers, orgA))).orgId
-    for (const role of ['admin', 'member'] as const) {
-      const res = await authPost(
-        '/organization/delete',
-        { organizationId: orgId },
-        undefined,
-        users[role],
-      )
-      expect(res.status).toBe(403)
-    }
-    await expect(
-      withDb((db) => getTenantContext(db, users.owner.headers, orgA)),
-    ).resolves.toMatchObject({ role: 'owner' })
+    const o = await freshOrg()
+    for (const role of ['admin', 'member'] as const)
+      expect((await post(o[role], 'delete', { organizationId: o.orgId })).status).toBe(403)
+    await expect(roleIn(o.slug, o.owner)).resolves.toBe('owner')
+    expect((await post(o.owner, 'delete', { organizationId: o.orgId })).status).toBe(200)
+    await expectStatus(() => withDb((db) => getTenantContext(db, o.owner.headers, o.slug)), 404)
   })
 
-  it('a member cannot invite through the Better Auth API either', async () => {
-    const orgId = (await withDb((db) => getTenantContext(db, users.owner.headers, orgA))).orgId
-    const res = await authPost(
-      '/organization/invite-member',
-      { email: `x-${crypto.randomUUID()}@test.local`, role: 'member', organizationId: orgId },
-      undefined,
-      users.member,
-    )
-    expect(res.status).toBe(403)
+  it('a member can invite nobody, update nothing and remove nobody', async () => {
+    const o = await freshOrg()
+    const email = `x-${crypto.randomUUID()}@test.local`
+    const attempts = [
+      post(o.member, 'invite-member', { email, role: 'member', organizationId: o.orgId }),
+      post(o.member, 'update', { data: { name: 'pwned' }, organizationId: o.orgId }),
+      post(o.member, 'remove-member', { memberIdOrEmail: o.admin.email, organizationId: o.orgId }),
+      post(o.member, 'update-member-role', {
+        memberId: await memberId(o.orgId, o.member),
+        role: 'admin',
+        organizationId: o.orgId,
+      }),
+    ]
+    for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    await expect(getTenant(o.owner.headers, { tenant: o.slug })).resolves.toMatchObject({
+      name: o.slug,
+    })
+    await expect(roleIn(o.slug, o.admin)).resolves.toBe('admin')
+    await expect(roleIn(o.slug, o.member)).resolves.toBe('member')
+  })
+
+  it('an admin cannot reach or touch the owner role', async () => {
+    const o = await freshOrg()
+    const email = `x-${crypto.randomUUID()}@test.local`
+    const ownerId = await memberId(o.orgId, o.owner)
+    const attempts = [
+      post(o.admin, 'invite-member', { email, role: 'owner', organizationId: o.orgId }),
+      post(o.admin, 'update-member-role', {
+        memberId: await memberId(o.orgId, o.member),
+        role: 'owner',
+        organizationId: o.orgId,
+      }),
+      post(o.admin, 'update-member-role', {
+        memberId: await memberId(o.orgId, o.admin),
+        role: 'owner',
+        organizationId: o.orgId,
+      }),
+      post(o.admin, 'update-member-role', {
+        memberId: ownerId,
+        role: 'member',
+        organizationId: o.orgId,
+      }),
+      post(o.admin, 'remove-member', { memberIdOrEmail: ownerId, organizationId: o.orgId }),
+    ]
+    for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    await expect(roleIn(o.slug, o.owner)).resolves.toBe('owner')
+    await expect(roleIn(o.slug, o.admin)).resolves.toBe('admin')
+    await expect(roleIn(o.slug, o.member)).resolves.toBe('member')
+  })
+
+  it('an admin can update the organization and manage non-owner members (accepted default)', async () => {
+    const o = await freshOrg()
+    const renamed = await post(o.admin, 'update', {
+      data: { name: 'Renamed' },
+      organizationId: o.orgId,
+    })
+    expect(renamed.status).toBe(200)
+    const promoted = await post(o.admin, 'update-member-role', {
+      memberId: await memberId(o.orgId, o.member),
+      role: 'admin',
+      organizationId: o.orgId,
+    })
+    expect(promoted.status).toBe(200)
+    await expect(roleIn(o.slug, o.member)).resolves.toBe('admin')
+    const removed = await post(o.admin, 'remove-member', {
+      memberIdOrEmail: o.member.email,
+      organizationId: o.orgId,
+    })
+    expect(removed.status).toBe(200)
+    await expectStatus(() => roleIn(o.slug, o.member), 404)
   })
 })
 

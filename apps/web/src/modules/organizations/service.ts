@@ -88,8 +88,10 @@ export async function getViewer(headers: Headers): Promise<Viewer | null> {
 }
 
 /**
- * Tenant header info for /t/<slug> layouts; same boundary and 404 semantics as every call. The
- * capabilities only let the UI hide actions; every server function checks them again.
+ * Tenant header info for /t/<slug> layouts; same boundary and 404 semantics as every call.
+ * Membership alone is enough (no capability): it returns only what every member may see about
+ * their own tenant. The capabilities only let the UI hide actions; every server function checks
+ * them again.
  */
 export async function getTenant(
   headers: Headers,
