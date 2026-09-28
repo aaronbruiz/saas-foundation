@@ -2,6 +2,8 @@
 
 Status: Accepted · Date: 2026-09-27
 
+Superseded in part by [ADR-0014](0014-first-production-launch-gates.md): the trigger for backup option B.
+
 ## Context
 
 We need a relational, transactional store for a multi-tenant model. D1 (SQLite) was rejected as the primary store; "D1 in dev, Postgres in prod" was rejected because Drizzle schemas are dialect-specific.
@@ -41,4 +43,4 @@ The Neon plan will not be upgraded. That replaces the Launch-plan assumptions ab
 - **Adopted, option A: daily Neon snapshot branches.** `scripts/backup/snapshot.sh`, run by `.github/workflows/db-backup.yml` at 04:23 UTC, creates `backup-YYYYMMDD` from production `main` **without compute** and keeps the newest `BACKUP_KEEP` (default 3; branches and the 0.5 GB storage are per-project Free limits). It's idempotent. Restore (see `docs/runbooks/README.md`): snapshots are child branches, and Neon `branches restore` requires root branches, so recovery is a **selective copy** (`pg_dump` from the snapshot) or a **promote** (compute on the snapshot, rename it to `main`, repoint the Hyperdrive config). Both were tested on the preview project.
   - Covers: a bad migration, deleted rows, or app bugs noticed up to ~3 days later.
   - Doesn't cover: a Neon outage, account loss, or deletion of the project itself (same provider).
-- **Registered for later, option B: an off-provider dump.** A nightly `pg_dump` to Cloudflare R2, encrypted, with retention. R2 is a new product (ADR-0007) and the dumps contain customer data, so it needs its own ADR (encryption, access, retention, restore test). Trigger (owner decision 2026-09-28): **before the first real customer data is stored**. Neon Free's 6 h restore window plus option A are development-grade conveniences, not the complete production backup strategy. Enforced by the runbook's data gate: production holds only synthetic smoke-test accounts until option B is implemented and restore-tested.
+- **Registered for later, option B: an off-provider dump.** A nightly `pg_dump` to Cloudflare R2, encrypted, with retention. R2 is a new product (ADR-0007) and the dumps contain customer data, so it needs its own ADR (encryption, access, retention, restore test). Trigger [to confirm]: before the first real customer data is stored.
