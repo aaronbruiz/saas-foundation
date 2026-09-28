@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APIError } from 'better-auth/api'
 import { HttpError } from '../src/server/errors'
-import { logError, logUnexpected, redact } from '../src/server/log'
+import { logBetterAuth, logError, logUnexpected, redact } from '../src/server/log'
 
 // Observability baseline (ADR-0015): structured, PII-free error logs; only unexpected errors.
 afterEach(() => vi.restoreAllMocks())
@@ -50,6 +50,24 @@ describe('logError', () => {
     )
   })
 
+  it('redacts compound and camelCase secret keys, even with short values', () => {
+    expect(redact('client_secret=ab access_token=cd refreshToken: ef x-api-key=gh')).toBe(
+      'client_secret=[redacted] access_token=[redacted] refreshToken: [redacted] x-api-key=[redacted]',
+    )
+  })
+
+  it('redacts error name and string code too', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const err = Object.assign(new Error('x'), { code: 'user eve@example.com' })
+    err.name = 'Err token=abc'
+    logError('e', err)
+    expect(lines(spy)[0]!.error).toEqual({
+      name: 'Err token=[redacted]',
+      message: 'x',
+      code: 'user [email]',
+    })
+  })
+
   it('truncates long messages and stays fast on adversarial input', () => {
     expect(redact('x'.repeat(10_000)).length).toBeLessThanOrEqual(300)
     const start = Date.now()
@@ -95,5 +113,19 @@ describe('logUnexpected', () => {
   it('logs server-side library errors (5xx)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(logUnexpected('x', new APIError('INTERNAL_SERVER_ERROR'))).toBe(true)
+  })
+})
+
+describe('logBetterAuth', () => {
+  it('accepts Error and non-string messages without throwing, redacted', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    logBetterAuth('error', new Error('session failed for dan@example.com'))
+    logBetterAuth('error', { any: 'thing' })
+    logBetterAuth('error', 'plain token=abc')
+    expect(lines(spy).map((l) => l.message)).toEqual([
+      'Error: session failed for [email]',
+      'non-string log message (object)',
+      'plain token=[redacted]',
+    ])
   })
 })

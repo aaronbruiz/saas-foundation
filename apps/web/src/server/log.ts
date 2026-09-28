@@ -13,8 +13,9 @@ const MAX_MESSAGE = 300
 const EMAIL = /[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g
 const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi
 const AUTH_SCHEME = /\b(bearer|basic)\s+[^\s"',;]+/gi
+// Also compound and camelCase keys: client_secret, access_token, refreshToken, x-api-key, authCode.
 const SECRET_PAIR =
-  /\b(password|passwd|pwd|token|secret|api[_-]?key|authorization|cookie|session[_-]?id|code)(\s*[=:]\s*)[^\s"',;&]+/gi
+  /\b([A-Za-z0-9_-]*?(?:password|passwd|pwd|token|secret|api[_-]?key|authorization|cookie|session[_-]?id|code))(\s*[=:]\s*)[^\s"',;&]+/gi
 const QUERY = /\?[^\s"']*/g
 // Long opaque strings (tokens, keys, ids used as capabilities).
 const OPAQUE = /\b[A-Za-z0-9_-]{32,}\b/g
@@ -33,9 +34,13 @@ function describe(err: unknown) {
   if (!(err instanceof Error)) return { name: typeof err }
   const code = (err as { code?: unknown }).code
   return {
-    name: err.name,
+    name: redact(err.name),
     message: redact(err.message),
-    ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
+    ...(typeof code === 'number'
+      ? { code }
+      : typeof code === 'string'
+        ? { code: redact(code) }
+        : {}),
   }
 }
 
@@ -59,4 +64,20 @@ export function logUnexpected(event: string, err: unknown, fields: Fields = {}):
   if (isClientError(err)) return false
   logError(event, err, fields)
   return true
+}
+
+/**
+ * Better Auth's own log lines. It sometimes passes an Error (or other value) instead of a string;
+ * only a redacted name/message is kept either way.
+ */
+export function logBetterAuth(level: 'debug' | 'info' | 'warn' | 'error', message: unknown) {
+  const text =
+    typeof message === 'string'
+      ? message
+      : message instanceof Error
+        ? `${message.name}: ${message.message}`
+        : `non-string log message (${typeof message})`
+  const line = JSON.stringify({ level, event: 'better_auth', message: redact(text) })
+  if (level === 'error') console.error(line)
+  else console.warn(line)
 }
