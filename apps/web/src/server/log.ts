@@ -13,9 +13,12 @@ const MAX_MESSAGE = 300
 const EMAIL = /[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g
 const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi
 const AUTH_SCHEME = /\b(bearer|basic)\s+[^\s"',;]+/gi
-// Also compound and camelCase keys: client_secret, access_token, refreshToken, x-api-key, authCode.
+// Also compound and camelCase keys (client_secret, access_token, refreshToken, x-api-key,
+// authCode), quoted keys (JSON) and quoted or bare values.
 const SECRET_PAIR =
-  /\b([A-Za-z0-9_-]*?(?:password|passwd|pwd|token|secret|api[_-]?key|authorization|cookie|session[_-]?id|code))(\s*[=:]\s*)[^\s"',;&]+/gi
+  /\b([A-Za-z0-9_-]*?(?:password|passwd|pwd|token|secret|api[_-]?key|authorization|cookie|session[_-]?id|code))(["']?\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s"',;&}]+)/gi
+const redactValue = (_: string, key: string, sep: string, value: string) =>
+  `${key}${sep}${/^["']/.test(value) ? `${value[0]}[redacted]${value[0]}` : '[redacted]'}`
 const QUERY = /\?[^\s"']*/g
 // Long opaque strings (tokens, keys, ids used as capabilities).
 const OPAQUE = /\b[A-Za-z0-9_-]{32,}\b/g
@@ -25,7 +28,7 @@ export const redact = (text: string) =>
     .slice(0, MAX_MESSAGE)
     .replace(URL_CREDENTIALS, '$1[redacted]@')
     .replace(AUTH_SCHEME, '$1 [redacted]')
-    .replace(SECRET_PAIR, '$1$2[redacted]')
+    .replace(SECRET_PAIR, redactValue)
     .replace(QUERY, '?[redacted]')
     .replace(EMAIL, '[email]')
     .replace(OPAQUE, '[redacted]')

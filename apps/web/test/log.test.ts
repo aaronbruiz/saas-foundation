@@ -56,6 +56,15 @@ describe('logError', () => {
     )
   })
 
+  it('redacts quoted values and JSON-style quoted keys', () => {
+    expect(redact('token="abc def" and pwd=\'x\'')).toBe(
+      'token="[redacted]" and pwd=\'[redacted]\'',
+    )
+    expect(redact('{"access_token":"abc","user":"u1"}')).toBe(
+      '{"access_token":"[redacted]","user":"u1"}',
+    )
+  })
+
   it('redacts error name and string code too', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const err = Object.assign(new Error('x'), { code: 'user eve@example.com' })
