@@ -35,6 +35,7 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
 2. **Separate preview Worker:**
    - Previews move from versions of `saas-foundation` to a Worker named `saas-foundation-preview`.
    - **The owner creates it once:** a per-Worker token can't create a Worker.
+   - The owner then **rotates** (revokes) the current `CLOUDFLARE_API_TOKEN`, which can deploy production.
    - Its token is an account-owned token scoped to that Worker, plus the Hyperdrive permissions previews need.
    - The production Worker is then out of the preview token's reach.
    - The trusted deploy job targets that Worker itself: `wrangler preview --config dist/server/wrangler.json --worker-name saas-foundation-preview` (both flags exist in the pinned Wrangler 4.142.0). It never relies on the artifact's `name`.
@@ -59,7 +60,7 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
    - **`preview-cleanup.yml`:** `pull_request_target` (closed) and the daily janitor, both running only default-branch code.
 4. **Production credentials:**
    - Deploy credentials never go to GitHub on the current plan. The first deploy is manual from the owner's machine (runbook "First production deploy").
-   - The backup key is today's only production credential in CI. It stays reachable by a same-repo PR that edits a workflow until either:
+   - Today CI holds two production-capable credentials: the backup Neon key, and the preview Cloudflare token (until step 2 rotates it and scopes it to `saas-foundation-preview`). After step 2, the backup key is the only one. It stays reachable by a same-repo PR that edits a workflow until either:
      - **(a)** GitHub Pro: an environment limited to deployment branch `main` holds it; or
      - **(b)** backups run outside GitHub Actions.
    - Owner decision.
