@@ -22,7 +22,7 @@ export const CreateProjectInput = z.strictObject({ tenant: TenantSlug, project: 
 export const UpdateProjectInput = z.strictObject({
   tenant: TenantSlug,
   id: ProjectId,
-  project: ProjectFields.partial(),
+  project: ProjectFields.partial().refine((p) => Object.keys(p).length > 0, 'nothing to update'),
 })
 
 export const CreateOrganizationInput = z.strictObject({

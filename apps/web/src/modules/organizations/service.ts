@@ -47,7 +47,10 @@ export async function acceptInvitation(
   return withDb(async (db) => {
     const auth = authFor(db)
     if (!(await auth.api.getSession({ headers }))) throw new HttpError(401, 'unauthorized')
-    const result = await auth.api.acceptInvitation({ body: { invitationId }, headers })
+    // Wrong recipient, unknown, expired or already used: all the same non-disclosing 404.
+    const result = await auth.api
+      .acceptInvitation({ body: { invitationId }, headers })
+      .catch(() => null)
     if (!result?.invitation) throw new HttpError(404, 'not found')
     return { organizationId: result.invitation.organizationId }
   })

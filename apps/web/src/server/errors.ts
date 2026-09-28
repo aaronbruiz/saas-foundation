@@ -11,12 +11,20 @@ export class HttpError extends Error {
 
 export const notFound = () => new HttpError(404, 'not found')
 
-/** Validates input against a Zod schema; failures become 400 (never a partial parse). */
-export function parseInput<T>(
-  schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } },
-  input: unknown,
-): T {
+type Issue = { path: PropertyKey[] }
+type Schema<T> = {
+  safeParse: (
+    v: unknown,
+  ) => { success: true; data: T } | { success: false; error: { issues: Issue[] } }
+}
+
+/**
+ * Validates input against a Zod contract; never a partial parse. An invalid `tenant` selector is
+ * a 404 like any unknown tenant (invariant 5); any other invalid input is a 400.
+ */
+export function parseInput<T>(schema: Schema<T>, input: unknown): T {
   const r = schema.safeParse(input)
-  if (!r.success) throw new HttpError(400, 'invalid input')
-  return r.data
+  if (r.success) return r.data
+  if (r.error.issues.some((i) => i.path[0] === 'tenant')) throw notFound()
+  throw new HttpError(400, 'invalid input')
 }

@@ -116,6 +116,19 @@ describe('cross-tenant matrix: Bob vs org A', () => {
 })
 
 describe('input contracts (invariant 9)', () => {
+  it('treats a malformed tenant selector as an unknown tenant (404, not 400)', async () => {
+    await expectStatus(() => listProjects(alice.headers, { tenant: 'NOT A SLUG' }), 404)
+    await expectStatus(() => getProject(alice.headers, { tenant: '', id: projectA.id }), 404)
+  })
+
+  it('rejects an empty update (400) and a malformed project id (400)', async () => {
+    await expectStatus(
+      () => updateProject(alice.headers, { tenant: orgA, id: projectA.id, project: {} }),
+      400,
+    )
+    await expectStatus(() => getProject(alice.headers, { tenant: orgA, id: 'not-a-uuid' }), 400)
+  })
+
   it('rejects organizationId inside project fields', async () => {
     await expectStatus(
       () =>
@@ -166,7 +179,16 @@ describe('invitations', () => {
   it("an invitation can't be accepted by a different user", async () => {
     const dave = await signUp()
     const { invitationId } = await inviteMember(alice.headers, { tenant: orgA, email: dave.email })
-    await expect(acceptInvitation(bob.headers, { invitationId })).rejects.toBeDefined()
+    // Wrong recipient: the same non-disclosing 404 as an unknown invitation, and no membership.
+    await expectStatus(() => acceptInvitation(bob.headers, { invitationId }), 404)
+    await expectStatus(
+      () => acceptInvitation(bob.headers, { invitationId: 'no-such-invitation' }),
+      404,
+    )
     await expectStatus(() => listProjects(bob.headers, { tenant: orgA }), 404)
+    // The intended invitee can still accept the same invitation afterwards.
+    await acceptInvitation(dave.headers, { invitationId })
+    const names = (await listProjects(dave.headers, { tenant: orgA })).map((p) => p.name)
+    expect(names).toContain('Alpha')
   })
 })
