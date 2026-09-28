@@ -38,6 +38,7 @@ describe('sign-up through the real handler with an allowlist', () => {
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: signUpPolicy(undefined, allowed),
+        sendEmail: async () => {},
       })
       const res = await auth.handler(
         new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-up/email`, {

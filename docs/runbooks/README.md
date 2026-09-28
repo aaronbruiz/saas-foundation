@@ -71,7 +71,7 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
 8. Smoke test on the custom domain:
    - `/api/health` returns `ok`
    - sign-up, login, create an organization
-   - invitation flow, if email is ready (ADR-0005, Q7)
+   - invitation and password-reset emails, if delivery is activated (ADR-0016, "Activation")
    - login rate limit: 6 wrong-password POSTs to `/api/auth/sign-in/email` from one IP within 60 s; the 6th returns **429**
 9. **Owner:** add the WAF rule `auth-login-burst` (ADR-0014).
 10. Smoke-test the WAF on its own: more than 10 POSTs to `/api/auth/sign-in/email` within 10 s from one IP are blocked at the edge (Cloudflare block page, visible in Security → Events). Wait 60 s so the app's own limit resets, and check that a normal login still works.

@@ -92,6 +92,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent.
 - New tenant data without cross-tenant tests.
+- Email sent outside `server/email.ts`'s `Mailer`, a token placed in a URL path instead of the query string, or `EMAIL_DELIVERY=console` reachable outside localhost (ADR-0016).
 - Logging request bodies, headers, cookies, tokens, connection strings or user data (emails, names) anywhere; server-side logs go through `server/log.ts` with a stable `event` name (ADR-0015).
 - A server function that changes tenant data without `authorize(ctx, …)`, role checks written inline instead of through the capability matrix, or a matrix change without per-role tests.
 - Sign-in/sign-up done through `auth.api.*` server calls instead of the `/api/auth/*` HTTP handler (bypasses login rate limiting, ADR-0005), or changes to `rateLimit` / `advanced.ipAddress` without updating ADR-0005.

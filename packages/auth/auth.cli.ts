@@ -9,4 +9,5 @@ export const auth = createAuth({
   secret: 'cli-only-not-a-secret-0123456789',
   baseURL: 'http://localhost:3000',
   allowSignUp: () => true,
+  sendEmail: async () => {},
 })

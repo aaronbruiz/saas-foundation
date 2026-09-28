@@ -4,7 +4,14 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { organization } from 'better-auth/plugins'
 import { schema, type Db } from '@saas-foundation/db'
 
-export type InvitationNotice = { id: string; email: string; organizationName: string }
+/**
+ * Emails Better Auth asks the app to send (ADR-0016). The app renders and delivers them; links that
+ * carry a token put it in the query string, which logs redact (ADR-0015).
+ */
+export type AuthEmail =
+  | { kind: 'invitation'; to: string; invitationId: string; organizationName: string }
+  | { kind: 'password-reset'; to: string; url: string }
+  | { kind: 'verification'; to: string; url: string }
 
 export type AuthOptions = {
   /** Per-request Drizzle client (ADR-0003: one pg client per request, uncached `DB` binding). */
@@ -21,8 +28,14 @@ export type AuthOptions = {
    * data, so they're dropped). The app routes them to its structured logger (ADR-0015).
    */
   log?: (level: 'debug' | 'info' | 'warn' | 'error', message: unknown) => void
-  /** Delivers invitation links. No email provider yet (Q7): the app logs/returns the link. */
-  onInvitation?: (notice: InvitationNotice) => Promise<void> | void
+  /** Delivers auth emails (invitation, password reset, verification). */
+  sendEmail: (email: AuthEmail) => Promise<void>
+  /**
+   * Runs Better Auth's background work (email sends among it) after the response, e.g. the Worker's
+   * `waitUntil`. Without it Better Auth awaits the send, and a reset request for an existing account
+   * would take measurably longer than for an unknown one (account enumeration by timing).
+   */
+  runInBackground?: (promise: Promise<unknown>) => void
 }
 
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
@@ -31,12 +44,37 @@ const loginRule = (request: Request) => request.method === 'POST' && { window: 6
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
  */
-export function createAuth({ db, secret, baseURL, allowSignUp, log, onInvitation }: AuthOptions) {
+export function createAuth({
+  db,
+  secret,
+  baseURL,
+  allowSignUp,
+  log,
+  sendEmail,
+  runInBackground,
+}: AuthOptions) {
   return betterAuth({
     secret,
     baseURL,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      // Our own page, token in the query string (Better Auth's default link has it in the path,
+      // which request logs keep).
+      async sendResetPassword({ user, token }) {
+        const url = `${baseURL}/reset-password?token=${encodeURIComponent(token)}`
+        await sendEmail({ kind: 'password-reset', to: user.email, url })
+      },
+      revokeSessionsOnPasswordReset: true,
+    },
+    // Sent on sign-up; not yet required to sign in (ADR-0016: enforced once production email works).
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: false,
+      async sendVerificationEmail({ user, url }) {
+        await sendEmail({ kind: 'verification', to: user.email, url })
+      },
+    },
     databaseHooks: {
       user: {
         create: {
@@ -54,7 +92,10 @@ export function createAuth({ db, secret, baseURL, allowSignUp, log, onInvitation
     },
     // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
     // Better Auth puts every client into one shared rate-limit bucket.
-    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
+    advanced: {
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
+      ...(runInBackground && { backgroundTasks: { handler: runInBackground } }),
+    },
     // Login rate limiting (ADR-0005): counters in Postgres, since memory is per isolate. Enabled in
     // every environment (Better Auth's default is production only). Per IP and path.
     rateLimit: {
@@ -71,9 +112,10 @@ export function createAuth({ db, secret, baseURL, allowSignUp, log, onInvitation
     plugins: [
       organization({
         async sendInvitationEmail(data) {
-          await onInvitation?.({
-            id: data.id,
-            email: data.email,
+          await sendEmail({
+            kind: 'invitation',
+            to: data.email,
+            invitationId: data.id,
             organizationName: data.organization.name,
           })
         },
