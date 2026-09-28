@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useLoaderData, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { deleteProjectFn, getProjectFn, updateProjectFn } from '../modules/projects/functions'
@@ -13,6 +13,8 @@ export const Route = createFileRoute('/t/$tenant/projects/$id')({
 function ProjectDetail() {
   const hydrated = useHydrated()
   const project = Route.useLoaderData()
+  // UI hint only; the server refuses a delete without `project:delete` (403).
+  const canDelete = useLoaderData({ from: '/t/$tenant' }).capabilities.includes('project:delete')
   const { tenant, id } = Route.useParams()
   const router = useRouter()
   const update = useServerFn(updateProjectFn)
@@ -75,14 +77,16 @@ function ProjectDetail() {
           <button type="submit" disabled={!hydrated} className={buttonClass}>
             Save
           </button>
-          <button
-            type="button"
-            disabled={!hydrated}
-            onClick={onDelete}
-            className="rounded border border-red-700 px-4 py-2 text-red-700"
-          >
-            Delete project
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              disabled={!hydrated}
+              onClick={onDelete}
+              className="rounded border border-red-700 px-4 py-2 text-red-700"
+            >
+              Delete project
+            </button>
+          )}
         </div>
       </form>
     </section>

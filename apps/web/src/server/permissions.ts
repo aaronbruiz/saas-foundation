@@ -15,11 +15,12 @@ export const CAPABILITIES = [
 ] as const
 export type Capability = (typeof CAPABILITIES)[number]
 
-// Vertical Slice 001: every member CRUDs projects; owner and admin invite.
+// Members read, create and update projects; deleting (hard, no audit trail) and inviting are
+// owner/admin only (owner decision 2026-09-28).
 const MATRIX = {
   owner: CAPABILITIES,
   admin: CAPABILITIES,
-  member: ['project:read', 'project:create', 'project:update', 'project:delete'],
+  member: ['project:read', 'project:create', 'project:update'],
 } as const satisfies Record<string, readonly Capability[]>
 
 /**
