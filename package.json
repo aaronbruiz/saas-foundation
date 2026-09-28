@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
-    "deploy": "pnpm --filter web deploy",
+    "deploy": "pnpm --filter web run deploy",
     "test": "pnpm -r --if-present test",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",

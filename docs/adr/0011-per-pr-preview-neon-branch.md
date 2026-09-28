@@ -2,6 +2,8 @@
 
 Status: Accepted · Date: 2026-09-27
 
+Proposed to be superseded in part by [ADR-0013](0013-ci-credential-tiers.md) (the CI credentials "accepted risk"), once ADR-0013 is accepted. Until then the current workflows still expose the secrets described there.
+
 ## Context
 
 - Workers Previews share production storage bindings by default.

@@ -34,4 +34,32 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 - Snapshots run daily (`db-backup.yml`); run by hand with `gh workflow run db-backup.yml`.
 - Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
 
-Planned: deploy & rollback, migrations.
+## First production deploy (owner sequence, 2026-09-28)
+
+Never deployed yet. Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
+
+**Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. It's enforced by the production sign-up allowlist. **No deploy without it**: step 7 is blocked until the allowlist is implemented and configured with the smoke-test addresses. Remove those accounts before real users arrive.
+
+0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
+
+1. **Owner decision first:** a GitHub `production` environment with a required reviewer isn't possible on the current plan. GitHub Free with a private repo has no environment secrets or deployment-branch rules (Pro+), and required reviewers need a public repo or Enterprise (ADR-0013). Runnable on the current plan: deploys are manual by the owner (step 7), which is itself the human gate. Today CI still holds two production-capable credentials: the backup job's Neon key, and the preview job's Cloudflare token, which can deploy the production Worker. ADR-0013 removes the second: the owner rotates the current token and replaces it with one scoped to `saas-foundation-preview`. With GitHub Pro: an environment `production` restricted to `main` for any CI-held production credential.
+2. **Owner:** production `BETTER_AUTH_SECRET`: `openssl rand -base64 32 | pnpm --filter web exec wrangler secret put BETTER_AUTH_SECRET` (never pasted into chat, never committed).
+3. **Owner:** production `BETTER_AUTH_URL` = `https://<custom domain>`, set with `wrangler secret put` (or as a var).
+4. **Owner:** custom domain on a Cloudflare zone, attached to the Worker (Workers → Settings → Domains & Routes).
+5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs must contain no secrets or PII (observability ADR pending).
+6. **Restore point, then migrations.**
+   - Take a restore point **synchronously, right before migrating**. Don't rely on `db-backup.yml`: it's asynchronous and skips if today's `backup-YYYYMMDD` already exists. Instead run `pnpm exec neonctl branches create --project-id flat-cherry-23373668 --name "pre-migrate-$(date -u +%Y%m%d-%H%M)" --parent main --no-compute` and check it appears in `pnpm exec neonctl branches list --project-id flat-cherry-23373668` with a creation time from just now. Delete it once the release is verified; it uses one of Neon Free's 10 branches. On Neon Free, PITR only reaches back 6 h.
+   - Migrate: `DATABASE_URL="$(pnpm exec neonctl connection-string main --project-id flat-cherry-23373668 --database-name app --role-name app_owner)" pnpm db:migrate`. Direct (non-pooler) URL, never printed or logged.
+   - Pending now: `0000` (slice schema) and `0001` (`rate_limit`); both only create tables.
+7. First deploy: `pnpm run deploy` (not `pnpm deploy`, which is a pnpm built-in) from the step 0 checkout, using the owner's logged-in `wrangler`. The deploy itself uses the owner's local credentials, not CI. Until ADR-0013 is implemented (token scoped to the preview Worker, old token rotated), CI still holds a Cloudflare token that could deploy production, and the backup job's Neon key; see ADR-0013.
+8. Smoke test on the custom domain:
+   - `/api/health` returns `ok`
+   - sign-up, login, create an organization
+   - invitation flow, if email is ready (ADR-0005, Q7)
+   - login rate limit: 6 wrong-password POSTs to `/api/auth/sign-in/email` from one IP within 60 s; the 6th returns **429**
+9. **Owner:** add the WAF rule `auth-login-burst` (ADR-0014).
+10. Smoke-test the WAF on its own: more than 10 POSTs to `/api/auth/sign-in/email` within 10 s from one IP are blocked at the edge (Cloudflare block page, visible in Security → Events). Wait 60 s so the app's own limit resets, and check that a normal login still works.
+
+Rollback: `wrangler rollback` to the previous Worker version (code only). Migrations are forward-only (expand → migrate → contract). For data, use the Database section below.
+
+Planned: routine deploys, migrations after launch.

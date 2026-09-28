@@ -2,6 +2,8 @@
 
 Status: Accepted · Date: 2026-09-27
 
+Superseded in part by [ADR-0014](0014-first-production-launch-gates.md): the edge-layer WAF rule.
+
 ## Context
 
 Authentication and authorization/tenancy are separate problems. Candidates were Better Auth, Auth.js, Clerk, WorkOS and custom auth.
