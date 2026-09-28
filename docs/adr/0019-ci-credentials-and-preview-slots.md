@@ -40,7 +40,7 @@ Investigated 2026-09-28, with evidence.
 
 - Production: a key **scoped to the production project**, stored only in the `production` environment (deployment branch `main`) as **`NEON_API_KEY`**. That's the name every script already uses, so there's no second name.
   - `db-backup.yml` reads it from there.
-  - The repo-level `NEON_API_KEY` is deleted, and the unused production key and the old personal key are revoked.
+  - The repo-level `NEON_API_KEY` is deleted, and the unused production key and the old personal key are revoked. **Until then, any same-repo PR workflow can still read the repo-level copy.** An environment secret doesn't shadow a repo secret for jobs outside the environment.
   - The key's reach is limited to the project it backs up. The environment keeps it away from PR code.
 - Previews: `NEON_PREVIEW_API_KEY` (scoped to the preview project), repo-level, T1. It is never used for production.
 
@@ -51,6 +51,8 @@ Investigated 2026-09-28, with evidence.
   - nothing else: no Hyperdrive, no zone, no account settings, and no other Worker (production `saas-foundation` included).
   - The previous user token (which could deploy production) is revoked.
 - To make that sufficient, CI stops creating Hyperdrive configs (decision 4). The account's `workers.dev` subdomain comes from the CI variable `CLOUDFLARE_WORKERS_SUBDOMAIN` instead of an account-level API call.
+- **Prerequisite:** the Worker `saas-foundation-preview` must already exist. A per-Worker token can't create Workers, and `wrangler preview` tries `POST …/workers/workers` when the parent is missing. `provision-slots.sh` (admin) checks it, and the deploy script fails with a clear message if it's gone.
+- The claim "nothing in CI can reach production" holds only **after** this rollout: slots in use, token replaced, old token revoked. Until then, CI's Cloudflare token can create, list and delete Hyperdrive configs account-wide and deploy any Worker.
 
 **4. Preview slots replace per-PR Hyperdrive configs and branches.**
 
@@ -66,7 +68,7 @@ Investigated 2026-09-28, with evidence.
 - Consequences:
   - At most `PREVIEW_SLOTS` open PRs have previews at once. Neon Free's 10 branches per project hold the seed, the slots and room for maintenance.
   - Preview data is fresh on every push. It already was effectively, since sessions reset with each deploy's new auth secret.
-  - A lingering Preview URL (Previews beta issue) can reach whatever later occupies its slot. Previews hold synthetic data and have open sign-up, so this exposes nothing that isn't already public.
+  - **Slot quarantine:** a lingering Preview URL (Previews beta issue) keeps its old code _and_ its slot's Hyperdrive binding. A released slot therefore goes into quarantine (`preview/slot-n/quarantine`) until that URL returns 404. The janitor re-checks quarantined slots, and claims never pick them. If every slot is busy or quarantined, the deploy fails with "no free preview slot".
   - Claims aren't atomic. Two PRs starting at the same moment can rarely pick the same slot; the loser notices on re-read and retries. Write access is owner-only, and the worst case is two previews sharing synthetic data.
   - Rotating `app_owner`'s preview password means running `provision-slots.sh` again, since it updates the slot configs.
 
