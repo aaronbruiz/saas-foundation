@@ -12,6 +12,16 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 - The schema is generated with `npx auth@latest generate` into `packages/db`; migrations go only through drizzle-kit.
 - Default roles: `owner`, `admin`, `member`. Members can't invite; only the owner can delete the org.
 - **Authorization is ours:** every tenant request resolves `{userId, orgId, role}` server-side by verifying membership (see ADR-0010).
+- **Capability matrix** (`apps/web/src/server/permissions.ts`): server functions call `authorize(ctx, capability)` right after `getTenantContext`, so outsiders get 404 before any role check and members with an insufficient role get 403. Unknown roles grant nothing; comma-separated Better Auth multi-roles get the union.
+
+  | Capability                                           | owner | admin | member |
+  | ---------------------------------------------------- | :---: | :---: | :----: |
+  | `project:read` / `create` / `update` / `delete`      |  yes  |  yes  |  yes   |
+  | `member:invite` (as `member` or `admin`)             |  yes  |  yes  |   no   |
+  | organization delete (Better Auth endpoint, not ours) |  yes  |  no   |   no   |
+
+  Better Auth's `/api/auth/organization/*` endpoints enforce its default roles on their own; the matrix must stay consistent with them (tests check invite and delete). The UI gets the capabilities from `getTenant` to hide actions; it never decides.
+
 - Login rate limiting: Better Auth `rateLimit.storage: "database"` plus a WAF rule. The in-memory limiter doesn't work across Worker isolates, and the Workers Rate Limiting binding is per location and approximate. Details below.
 
 ## Login rate limiting (Phase 2)

@@ -12,7 +12,7 @@ export const Route = createFileRoute('/t/$tenant')({
 function TenantLayout() {
   const tenant = Route.useLoaderData()
   const router = useRouter()
-  const canInvite = tenant.role === 'owner' || tenant.role === 'admin'
+  const canInvite = tenant.capabilities.includes('member:invite')
 
   async function signOut() {
     await authClient.signOut()
