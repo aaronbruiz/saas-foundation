@@ -22,7 +22,7 @@ The import boundaries above are enforced by `eslint.config.js`.
 
 ```
 pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
-pnpm dev           # local Worker on http://localhost:5173 (strict port); DB via Hyperdrive localConnectionString
+pnpm dev           # local Worker on http://localhost:3000 (strict port); DB via Hyperdrive localConnectionString
 pnpm check         # lint (ESLint v9) + format:check (Prettier) + typecheck (tsc --noEmit)
 pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
 pnpm format        # apply Prettier
@@ -35,6 +35,12 @@ scripts/preview/up.sh | down.sh   # per-PR preview lifecycle; normally run by CI
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet).
+
+**Port 3000 busy:** `pnpm dev` uses `--strictPort` and fails if port 3000 is taken (auth origins depend on it). Don't switch ports and don't kill processes yourself. Stop and tell the user that port 3000 is in use, and recommend they free it with:
+
+```
+kill -9 $(lsof -t -i:3000)
+```
 
 ## Invariants (non-negotiable)
 

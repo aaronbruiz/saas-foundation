@@ -25,7 +25,7 @@ export default defineConfig({
         bindings: {
           // Test-only values; real secrets come from Cloudflare (prod) or .dev.vars (local dev).
           BETTER_AUTH_SECRET: 'test-only-secret-not-used-anywhere-else-0123456789',
-          BETTER_AUTH_URL: 'http://localhost:5173',
+          BETTER_AUTH_URL: 'http://localhost:3000',
         },
       },
     }),
