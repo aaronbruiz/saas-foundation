@@ -44,8 +44,11 @@ fi
 # 4. Point the committed fail-closed previews sentinel at this PR's Hyperdrive config, BEFORE the
 #    build (the Vite plugin bakes config). Idempotent: re-runs replace the id.
 node "$ROOT/scripts/preview/inject-previews.mjs" "$ROOT/apps/web/wrangler.jsonc" "$hd_id"
+# Per-deploy preview auth secret, generated before the build so the bundle scan checks it too.
+auth_secret="$(openssl rand -base64 32)"
+[ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$auth_secret"
 pnpm --dir "$ROOT" build >&2
-"$ROOT/scripts/scan-client-bundle.sh" "$ROOT/apps/web/dist/client"
+BETTER_AUTH_SECRET="$auth_secret" "$ROOT/scripts/scan-client-bundle.sh" "$ROOT/apps/web/dist/client"
 
 # 5. Deploy the preview with its own auth settings. The URL is deterministic, so Better Auth's
 #    origin checks match it; the secret is random per deploy (never stored, sessions reset on push).
@@ -54,8 +57,6 @@ auth_url="https://${PREVIEW_NAME}-${WORKER_NAME:-saas-foundation}.${subdomain}.w
 secrets_file="$(mktemp)"
 trap 'rm -f "$secrets_file"' EXIT
 chmod 600 "$secrets_file"
-auth_secret="$(openssl rand -base64 32)"
-[ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$auth_secret"
 printf 'BETTER_AUTH_SECRET=%s\n' "$auth_secret" >"$secrets_file"
 out="$(wrangler preview --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
   --var "BETTER_AUTH_URL:$auth_url" --secrets-file "$secrets_file")"

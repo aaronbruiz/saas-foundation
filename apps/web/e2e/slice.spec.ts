@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
 // Vertical Slice 001 end to end (spec §8/§11): sign-up → organization → project → invite →
 // accept, and cross-tenant isolation through real URLs (404 page, never data).
@@ -7,11 +7,21 @@ const PASSWORD = 'correct-horse-battery-staple'
 const notFound = (page: Page) =>
   expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible()
 
+// Every context/page the test opens is tracked, so the password-in-URL regression covers all of
+// them (a pre-hydration native submit once put the password into the URL).
+const contexts: BrowserContext[] = []
 const visited: string[] = []
 
-async function signUp(browser: Browser, name: string, path = '/signup') {
-  const page = await (await browser.newContext()).newPage()
+async function newPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext()
+  contexts.push(context)
+  const page = await context.newPage()
   page.on('framenavigated', (f) => visited.push(f.url()))
+  return page
+}
+
+async function signUp(browser: Browser, name: string, path = '/signup') {
+  const page = await newPage(browser)
   const email = `${name.toLowerCase()}-${rand()}@e2e.test`
   await page.goto(path)
   await page.getByLabel('Name').fill(name)
@@ -31,9 +41,11 @@ async function createOrg(page: Page, prefix: string) {
   return slug
 }
 
-// Regression: a pre-hydration native submit once put the password into the URL.
-test.afterEach(async ({ context }) => {
-  for (const page of context.pages()) expect(page.url()).not.toContain(PASSWORD)
+test.afterEach(async () => {
+  expect(visited.length).toBeGreaterThan(0)
+  expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
+  await Promise.all(contexts.splice(0).map((c) => c.close()))
+  visited.length = 0
 })
 
 test('sign-up, organization, projects, invitation and tenant isolation', async ({ browser }) => {
@@ -64,7 +76,7 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   expect(link).toBeTruthy()
   const invitePath = new URL(link!).pathname
 
-  const carol = await (await browser.newContext()).newPage()
+  const carol = await newPage(browser)
   await carol.goto(invitePath)
   await expect(carol).toHaveURL(/\/login\?redirect=/)
   await carol.getByRole('link', { name: 'Sign up' }).click()
@@ -90,11 +102,8 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await bob.goto(`/t/${orgB}/projects`)
   await expect(bob.getByText('No projects yet.')).toBeVisible()
 
-  // No page ever navigated to a URL containing the password.
-  expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
-
   // Signed out → login.
-  const anon = await (await browser.newContext()).newPage()
+  const anon = await newPage(browser)
   await anon.goto(`/t/${orgA}/projects`)
   await expect(anon).toHaveURL(/\/login/)
 })
