@@ -33,7 +33,8 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
   `(http.request.uri.path in {"/api/auth/sign-in/email" "/api/auth/sign-up/email"})`
   (Pro and above can add `and http.request.method eq "POST"`.)
 - Characteristics: IP. Rate: **10 requests per 10 s**. Action: **Block**, for 10 s (Pro: 1 min period and 10 min block; raise to 20 requests per 1 min).
-- Purpose: absorb bursts at the edge before they reach the Worker and Postgres. The app limit stays the authority; the WAF rule is looser so it never blocks a user the app would allow.
+- Purpose: absorb bursts at the edge before they reach the Worker and Postgres. The app limit stays the authority; the WAF rule is looser than the app's for sign-in/sign-up POSTs.
+- Free-plan caveat: the expression can't match the method, so any request to those paths counts (GET etc. only return errors there). Accepted: the counter is per IP, so only the client's own traffic (or its NAT peers) can fill it, and the block lasts 10 s. On Pro and above, add the POST condition.
 
 **Accepted limits:** counting is per IP only, so distributed credential stuffing (many IPs) is not stopped by either layer; per-account lockout and bot protection (Turnstile) wait for a trigger (abuse observed or before public launch). Every `/api/auth/*` request costs one extra DB round-trip. Users behind one NAT share a bucket.
 

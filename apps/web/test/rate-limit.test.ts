@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { env } from 'cloudflare:workers'
+import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { authPost, PASSWORD, randomIp, signUp } from './helpers'
 
@@ -40,6 +42,25 @@ describe('login rate limiting', () => {
     expect(
       (await authPost('/sign-in/email', { email, password: PASSWORD }, randomIp())).status,
     ).toBe(200)
+  })
+
+  it('still limits (never errors or skips) a request without cf-connecting-ip', async () => {
+    // No trusted IP: Better Auth uses a fallback bucket (127.0.0.1 in dev/test, one shared bucket
+    // in production). The bucket may already be warm from an earlier run, so only the shape is fixed.
+    const { email } = await signUp()
+    const signIn = () =>
+      withDb((db) =>
+        authFor(db).handler(
+          new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-in/email`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', origin: env.BETTER_AUTH_URL },
+            body: JSON.stringify({ email, password: 'wrong-password-123' }),
+          }),
+        ),
+      )
+    const codes = (await statuses(LIMIT + 1, signIn)).map((r) => r.status)
+    expect(codes.every((c) => c === 401 || c === 429)).toBe(true)
+    expect(codes.at(-1)).toBe(429)
   })
 
   it('limits sign-up per IP and returns 429', async () => {
