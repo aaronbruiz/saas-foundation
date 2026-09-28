@@ -65,7 +65,7 @@ kill -9 $(lsof -t -i:3000)
 
 **Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → add repository functions in `packages/db/src/<table>.ts` that filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL.
 
-**Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → first line `const ctx = await getTenantContext(request, env, input.tenant)` → `authorize(ctx, '<capability>')` (add the capability to the matrix in `server/permissions.ts` and a test per role in `test/roles.test.ts`) → call repositories with `ctx`.
+**Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → first line `const ctx = await getTenantContext(request, env, input.tenant)` → for an operation on a resource id, first confirm the resource exists in this tenant (404) → `authorize(ctx, '<capability>')` (add the capability to the matrix in `server/permissions.ts` and a test per role in `test/roles.test.ts`) → call repositories with `ctx`.
 
 **Add a Cloudflare binding:** write `docs/adr/NNNN-<binding>.md` (trigger, alternatives, preview isolation) → add it to `wrangler.jsonc` **and** its `previews` block → `pnpm --filter web cf-typegen`.
 

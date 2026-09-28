@@ -23,6 +23,9 @@ const EXPECTED: Record<Role, Capability[]> = {
   member: ['project:read', 'project:create', 'project:update'],
 }
 
+// Capabilities that act on a project id: another tenant's id must be a 404 before any role check.
+const ID_BASED: Capability[] = ['project:read', 'project:update', 'project:delete']
+
 let users: Record<Role, TestUser>
 let outsider: TestUser
 let orgA: string
@@ -75,13 +78,22 @@ describe('capability matrix', () => {
             project: { name: `${role}-${capability}` },
           })
           const run = () => attempt(users[role], orgA, capability, id)
-          if (allowed) await expect(run()).resolves.toBeDefined()
-          else await expectStatus(run, 403)
+          if (allowed) return expect(run()).resolves.toBeDefined()
+          await expectStatus(run, 403)
+          // Refused means untouched.
+          await expect(
+            getProject(users.owner.headers, { tenant: orgA, id }),
+          ).resolves.toMatchObject({ name: `${role}-${capability}` })
         })
 
         it(`gets 404 for ${capability} in a foreign tenant`, async () => {
           await expectStatus(() => attempt(users[role], orgB, capability, projectB.id), 404)
         })
+
+        if (ID_BASED.includes(capability))
+          it(`gets 404 (not 403) for ${capability} on a foreign project id via its own slug`, async () => {
+            await expectStatus(() => attempt(users[role], orgA, capability, projectB.id), 404)
+          })
       }
     })
   }
