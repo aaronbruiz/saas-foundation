@@ -8,4 +8,5 @@ export const auth = createAuth({
   db: drizzle.mock({ schema }),
   secret: 'cli-only-not-a-secret-0123456789',
   baseURL: 'http://localhost:3000',
+  allowSignUp: () => true,
 })

@@ -26,6 +26,8 @@ export default defineConfig({
           // Test-only values; real secrets come from Cloudflare (prod) or .dev.vars (local dev).
           BETTER_AUTH_SECRET: 'test-only-secret-not-used-anywhere-else-0123456789',
           BETTER_AUTH_URL: 'http://localhost:3000',
+          // ADR-0014: tests sign up many users; the closed/allowlist modes are tested explicitly.
+          SIGNUP_MODE: 'open',
         },
       },
     }),

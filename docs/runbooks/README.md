@@ -50,7 +50,11 @@ Where to look when production fails:
 
 Never deployed yet. Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
 
-**Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. It's enforced by the production sign-up allowlist. **No deploy without it**: step 7 is blocked until the allowlist is implemented and configured with the smoke-test addresses. Remove those accounts before real users arrive.
+**Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. It's enforced in code: with `SIGNUP_MODE` unset (the production default), sign-up is **closed** except for the exact addresses in `SIGNUP_ALLOWLIST`.
+
+- **Before step 7:** `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with the comma-separated smoke-test addresses. Don't set `SIGNUP_MODE` in production.
+- Lifting the gate (`SIGNUP_MODE=open`) is an owner decision recorded in a new ADR.
+- Remove the smoke-test accounts before real users arrive.
 
 0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
 
