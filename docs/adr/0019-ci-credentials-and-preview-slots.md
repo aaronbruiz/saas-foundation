@@ -52,7 +52,7 @@ Investigated 2026-09-28, with evidence.
   - The previous user token (which could deploy production) is revoked.
 - To make that sufficient, CI stops creating Hyperdrive configs (decision 4). The account's `workers.dev` subdomain comes from the CI variable `CLOUDFLARE_WORKERS_SUBDOMAIN` instead of an account-level API call.
 - **Prerequisite:** the Worker `saas-foundation-preview` must already exist. A per-Worker token can't create Workers, and `wrangler preview` tries `POST …/workers/workers` when the parent is missing. `provision-slots.sh` (admin) checks it, and the deploy script fails with a clear message if it's gone.
-- The claim "nothing in CI can reach production" holds only **after** this rollout: slots in use, token replaced, old token revoked. Until then, CI's Cloudflare token can create, list and delete Hyperdrive configs account-wide and deploy any Worker.
+- After this rollout, **the preview credentials** can't deploy the production Worker or change production Hyperdrive. (`db-backup.yml`'s production Neon key reaches the production project by design, fenced by the environment.) This holds only **after** the rollout: slots in use, token replaced, old token revoked. Until then, CI's Cloudflare token can create, list and delete Hyperdrive configs account-wide and deploy any Worker.
 
 **4. Preview slots replace per-PR Hyperdrive configs and branches.**
 
@@ -80,7 +80,7 @@ Investigated 2026-09-28, with evidence.
   - the snapshot's read-only compute showed the pre-change state and refused writes (SQLSTATE 25006);
   - a writable branch restored from the snapshot showed the same state and accepted writes;
   - drill branches and the marker schema were removed afterwards.
-- [ ] Owner: create the production-scoped key and store it in `production` (runbook "CI credentials"); dispatch `db-backup.yml` and see a green run; then delete the repo-level `NEON_API_KEY` and revoke the unused production key and the personal key.
+- [ ] Owner, in this order (runbook "CI credentials"): delete the repo-level `NEON_API_KEY`; create the production-scoped key and store it in `production`; dispatch `db-backup.yml` and see a green run; revoke the unused production key and the personal key.
 - [ ] Preview slots provisioned (`provision-slots.sh`) and scripts switched (PR "preview slots").
 - [ ] Preview job split (ADR-0013 step 3, PR 2).
 - [ ] Owner: create the per-Worker token above, replace `CLOUDFLARE_API_TOKEN`, revoke the old user token. Verify with a PR preview run.

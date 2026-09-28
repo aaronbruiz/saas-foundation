@@ -42,9 +42,14 @@ Where to look when production fails:
 
 Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `PREVIEW_HYPERDRIVE_SLOTS`, the `NEON_*` ids.
 
-- **Production Neon key (owner):** Neon console → Organization settings → API keys → _Create key_ → type _Project-scoped_, project = the production project, name `saas-foundation-production-ci`. Then store it without echoing it: `gh secret set NEON_API_KEY --env production` (paste at the prompt). Check it: `gh workflow run db-backup.yml`, and the run is green. Then `gh secret delete NEON_API_KEY` (the repo-level copy) and revoke the unused older production-scoped key and the personal key in the Neon console.
+- **Production Neon key (owner), in this order** (a repo-level secret with the same name would otherwise answer for the environment and make the check meaningless):
+  1. `gh secret delete NEON_API_KEY` (the repo-level copy);
+  2. Neon console → Organization settings → API keys → _Create key_ → _Project-scoped_, project = the production project, name `saas-foundation-production-ci`;
+  3. `gh secret set NEON_API_KEY --env production` (paste at the prompt; nothing is echoed);
+  4. `gh workflow run db-backup.yml` and see the run succeed;
+  5. revoke the unused older production-scoped key and the personal key in the Neon console.
 - **Preview Cloudflare token (owner):** dashboard → Manage Account → Account API Tokens → _Create token_ → Workers → role **Editor**, scope **Specified Workers**: `saas-foundation-preview`. No other permissions. `gh secret set CLOUDFLARE_API_TOKEN` (paste at the prompt), then revoke the old user token. Check it: re-run a PR's preview job. The deploy step logs "account-owned token → active".
-- **After** the rollout in ADR-0019 (slots in use, token replaced, old token revoked), nothing in CI can deploy the production Worker or touch production Hyperdrive. **Until then** CI's `CLOUDFLARE_API_TOKEN` is the old account-wide token, and the repo-level `NEON_API_KEY` stays readable by PR workflows until it's deleted. Production deploys run from the owner's machine (runbook "First production deploy").
+- **After** the rollout in ADR-0019 (slots in use, token replaced, old token revoked), the preview credentials can't deploy the production Worker or touch production Hyperdrive (the backup key reaches the production Neon project by design, fenced by the environment). **Until then** CI's `CLOUDFLARE_API_TOKEN` is the old account-wide token, and the repo-level `NEON_API_KEY` stays readable by PR workflows until it's deleted. Production deploys run from the owner's machine (runbook "First production deploy").
 
 ## Database (ADR-0003, Neon Free)
 
