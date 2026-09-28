@@ -24,6 +24,21 @@ export function createAuth({ db, secret, baseURL, onInvitation }: AuthOptions) {
     baseURL,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     emailAndPassword: { enabled: true },
+    // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
+    // Better Auth puts every client into one shared rate-limit bucket.
+    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
+    // Login rate limiting (ADR-0005): counters in Postgres, since memory is per isolate. Enabled in
+    // every environment (Better Auth's default is production only). Per IP and path.
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+      window: 60,
+      max: 100,
+      customRules: {
+        '/sign-in/email': { window: 60, max: 5 },
+        '/sign-up/email': { window: 60, max: 5 },
+      },
+    },
     plugins: [
       organization({
         async sendInvitationEmail(data) {

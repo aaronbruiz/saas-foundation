@@ -91,5 +91,6 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent.
 - New tenant data without cross-tenant tests.
+- Sign-in/sign-up done through `auth.api.*` server calls instead of the `/api/auth/*` HTTP handler (bypasses login rate limiting, ADR-0005), or changes to `rateLimit` / `advanced.ipAddress` without updating ADR-0005.
 
 Safe to ignore: generated files (`schema/auth.ts`, `routeTree.gen.ts`, `worker-configuration.d.ts`).

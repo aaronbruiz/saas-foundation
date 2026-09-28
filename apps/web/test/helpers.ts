@@ -5,18 +5,36 @@ import { createOrganization } from '../src/modules/organizations/service'
 
 export type TestUser = { headers: Headers; userId: string; email: string }
 
-/** Signs up through the real Better Auth HTTP handler and returns the session cookie. */
-export async function signUp(): Promise<TestUser> {
-  const email = `u-${crypto.randomUUID()}@test.local`
-  const res = await withDb((db) =>
+export const PASSWORD = 'correct-horse-battery-staple'
+
+/**
+ * A random client IP. Login rate limits count per IP (ADR-0005), so each simulated client gets
+ * its own; rows persist in `app_test` across runs, so a fixed IP would carry counts over.
+ */
+export const randomIp = () =>
+  `10.${Array.from(crypto.getRandomValues(new Uint8Array(3))).join('.')}`
+
+/** POSTs JSON to a Better Auth endpoint through the real HTTP handler, as client `ip`. */
+export function authPost(path: string, body: unknown, ip = randomIp()) {
+  return withDb((db) =>
     authFor(db).handler(
-      new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-up/email`, {
+      new Request(`${env.BETTER_AUTH_URL}/api/auth${path}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', origin: env.BETTER_AUTH_URL },
-        body: JSON.stringify({ email, password: 'correct-horse-battery-staple', name: email }),
+        headers: {
+          'content-type': 'application/json',
+          origin: env.BETTER_AUTH_URL,
+          'cf-connecting-ip': ip,
+        },
+        body: JSON.stringify(body),
       }),
     ),
   )
+}
+
+/** Signs up through the real Better Auth HTTP handler and returns the session cookie. */
+export async function signUp(): Promise<TestUser> {
+  const email = `u-${crypto.randomUUID()}@test.local`
+  const res = await authPost('/sign-up/email', { email, password: PASSWORD, name: email })
   if (!res.ok) throw new Error(`sign-up failed: ${res.status} ${await res.text()}`)
   const cookie = res.headers
     .getSetCookie()
