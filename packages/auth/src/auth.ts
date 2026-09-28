@@ -1,8 +1,8 @@
 import { betterAuth } from 'better-auth'
-import { APIError } from 'better-auth/api'
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { organization } from 'better-auth/plugins'
-import { schema, type Db } from '@saas-foundation/db'
+import { billing, findMembership, schema, type Db } from '@saas-foundation/db'
 
 /**
  * Emails Better Auth asks the app to send (ADR-0016). The app renders and delivers them; links that
@@ -75,6 +75,19 @@ export function createAuth({
         await sendEmail({ kind: 'verification', to: user.email, url })
       },
     },
+    hooks: {
+      // ADR-0018: refuse deleting an organization with billing state BEFORE Better Auth's endpoint
+      // runs (it clears the caller's active organization before its own hooks). Only for members:
+      // anyone else gets Better Auth's usual error, so billing state can't be probed.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/organization/delete') return
+        const orgId = (ctx.body as { organizationId?: unknown } | undefined)?.organizationId
+        if (typeof orgId !== 'string' || !orgId) return
+        const session = await getSessionFromCtx(ctx)
+        if (!session || !(await findMembership(db, orgId, session.user.id))) return
+        if (await billing(db, { orgId }).subscription()) throw billingStateConflict()
+      }),
+    },
     databaseHooks: {
       user: {
         create: {
@@ -111,6 +124,13 @@ export function createAuth({
     },
     plugins: [
       organization({
+        organizationHooks: {
+          // Backstop for deletions that don't come through the HTTP middleware above.
+          async beforeDeleteOrganization({ organization }) {
+            if (await billing(db, { orgId: organization.id }).subscription())
+              throw billingStateConflict()
+          },
+        },
         async sendInvitationEmail(data) {
           await sendEmail({
             kind: 'invitation',
@@ -123,5 +143,11 @@ export function createAuth({
     ],
   })
 }
+
+// ADR-0018: what deleting an organization with billing state does is an open product decision
+// (the subscription would keep running). Until then it's refused; the database's foreign key
+// (RESTRICT) is the last backstop.
+const billingStateConflict = () =>
+  new APIError('CONFLICT', { message: 'Organization has billing state' })
 
 export type Auth = ReturnType<typeof createAuth>

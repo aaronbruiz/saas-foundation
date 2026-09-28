@@ -2,3 +2,4 @@
 // live next to it and reference `organization.id` (AGENTS.md: tenant-owned table recipe).
 export * from './auth.ts'
 export * from './projects.ts'
+export * from './billing.ts'

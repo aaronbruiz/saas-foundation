@@ -21,6 +21,7 @@ import { Route as TTenantRouteImport } from './routes/t.$tenant'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as TTenantIndexRouteImport } from './routes/t.$tenant.index'
 import { Route as TTenantInviteRouteImport } from './routes/t.$tenant.invite'
+import { Route as ApiBillingWebhooksStripeRouteImport } from './routes/api/billing/webhooks/stripe'
 import { Route as TTenantProjectsIndexRouteImport } from './routes/t.$tenant.projects.index'
 import { Route as TTenantProjectsIdRouteImport } from './routes/t.$tenant.projects.$id'
 
@@ -84,6 +85,12 @@ const TTenantInviteRoute = TTenantInviteRouteImport.update({
   path: '/invite',
   getParentRoute: () => TTenantRoute,
 } as any)
+const ApiBillingWebhooksStripeRoute =
+  ApiBillingWebhooksStripeRouteImport.update({
+    id: '/api/billing/webhooks/stripe',
+    path: '/api/billing/webhooks/stripe',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const TTenantProjectsIndexRoute = TTenantProjectsIndexRouteImport.update({
   id: '/projects/',
   path: '/projects/',
@@ -108,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
+  '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant': typeof TTenantIndexRoute
+  '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects': typeof TTenantProjectsIndexRoute
 }
@@ -140,6 +149,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
+  '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
 }
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
+    | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects/'
   fileRoutesByTo: FileRoutesByTo
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/t/$tenant/invite'
     | '/t/$tenant'
+    | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects'
   id:
@@ -189,6 +201,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
+    | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects/'
   fileRoutesById: FileRoutesById
@@ -204,6 +217,7 @@ export interface RootRouteChildren {
   OrgsNewRoute: typeof OrgsNewRoute
   TTenantRoute: typeof TTenantRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBillingWebhooksStripeRoute: typeof ApiBillingWebhooksStripeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -292,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTenantInviteRouteImport
       parentRoute: typeof TTenantRoute
     }
+    '/api/billing/webhooks/stripe': {
+      id: '/api/billing/webhooks/stripe'
+      path: '/api/billing/webhooks/stripe'
+      fullPath: '/api/billing/webhooks/stripe'
+      preLoaderRoute: typeof ApiBillingWebhooksStripeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/t/$tenant/projects/': {
       id: '/t/$tenant/projects/'
       path: '/projects'
@@ -337,6 +358,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrgsNewRoute: OrgsNewRoute,
   TTenantRoute: TTenantRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBillingWebhooksStripeRoute: ApiBillingWebhooksStripeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
