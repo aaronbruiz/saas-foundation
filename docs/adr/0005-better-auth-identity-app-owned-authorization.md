@@ -39,17 +39,20 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 - Only HTTP requests through `/api/auth/*` are limited. Direct `auth.api.*` server calls are not, so login and sign-up must stay on the HTTP client (`authClient`).
 - Tests (`apps/web/test/rate-limit.test.ts`): sign-in and sign-up return 429 after 5 requests, a correct password is also refused while limited, other IPs are unaffected, and the counter row is in Postgres.
 
-**Edge layer: WAF rate limiting rule (owner applies in the dashboard; not in code, no new binding):**
+**Edge layer: WAF rate limiting rule (owner applies in the dashboard; not in code, no new binding).** Defense in depth: the app limiter above stays the primary, deterministic control.
 
-WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or preview URLs. Apply it when the production custom domain exists. On the Free zone plan: 1 rule, path-only expression, 10 s counting period, 10 s block, counted per IP (and per Cloudflare data center).
+**Blocked until the production custom domain (zone) exists:** WAF rules apply to requests on a zone, not to `*.workers.dev` or preview URLs.
 
-- Security → WAF → Rate limiting rules → Create rule, name `auth-login-burst`.
-- Expression (Free):
+Rule for the Free zone plan (owner decision 2026-09-28):
+
+- Security → WAF → Rate limiting rules → Create rule, name `auth-login-burst`. Free allows one rate limiting rule.
+- Expression (path only; Free rule expressions can't use other fields):
   `(http.request.uri.path in {"/api/auth/sign-in/email" "/api/auth/sign-up/email"})`
-  (Pro and above can add `and http.request.method eq "POST"`.)
-- Characteristics: IP. Rate: **10 requests per 10 s**. Action: **Block**, for 10 s (Pro: 1 min period and 10 min block; raise to 20 requests per 1 min).
-- Purpose: absorb bursts at the edge before they reach the Worker and Postgres. The app limit stays the authority; the WAF rule is looser than the app's for sign-in/sign-up POSTs.
-- Free-plan caveat: the expression can't match the method, so any request to those paths counts (GET etc. only return errors there). Accepted: the counter is per IP, so only the client's own traffic (or its NAT peers) can fill it, and the block lasts 10 s. On Pro and above, add the POST condition.
+- Counting characteristic: IP. Counting period: **10 s**. Mitigation (block) period: **10 s**. Both are the only values Free offers.
+- Requests per period: **10**. This is our choice, not a plan limit. It sits above what the app allows (5 per 60 s), so the edge rule only absorbs bursts before they reach the Worker and Postgres.
+- Method: Free (and Pro) can't match `http.request.method`; that field needs **Business**. So any request to those paths counts. Accepted: the counter is per IP, so only the client's own traffic (or its NAT peers) can fill it, and the block lasts 10 s. On Business, add `and http.request.method eq "POST"`.
+- After applying: smoke-test it on its own (runbook "First production deploy", step 10).
+- Plan limits source: Cloudflare WAF docs, "Rate limiting rules: availability by plan" (checked 2026-09-28).
 
 **No test exemption** (owner decision 2026-09-28): E2E runs against the real limit; any bypass would be code or config that could reach production. Each run makes 3 sign-ups, so leave about a minute between local runs.
 
