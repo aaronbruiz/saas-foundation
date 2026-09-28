@@ -63,6 +63,21 @@ describe('login rate limiting', () => {
     expect(codes.at(-1)).toBe(429)
   })
 
+  it('counts only POSTs toward the sign-in limit', async () => {
+    const { email } = await signUp()
+    const ip = randomIp()
+    const get = () =>
+      withDb((db) =>
+        authFor(db).handler(
+          new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-in/email`, {
+            headers: { origin: env.BETTER_AUTH_URL, 'cf-connecting-ip': ip },
+          }),
+        ),
+      )
+    await statuses(LIMIT + 1, get)
+    expect((await authPost('/sign-in/email', { email, password: PASSWORD }, ip)).status).toBe(200)
+  })
+
   it('limits sign-up per IP and returns 429', async () => {
     const ip = randomIp()
     const res = await statuses(LIMIT + 1, () => {

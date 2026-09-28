@@ -14,6 +14,8 @@ export type AuthOptions = {
   onInvitation?: (notice: InvitationNotice) => Promise<void> | void
 }
 
+const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
+
 /**
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
@@ -34,9 +36,10 @@ export function createAuth({ db, secret, baseURL, onInvitation }: AuthOptions) {
       storage: 'database',
       window: 60,
       max: 100,
+      // POST only: other methods on these paths don't reach a handler and mustn't fill the bucket.
       customRules: {
-        '/sign-in/email': { window: 60, max: 5 },
-        '/sign-up/email': { window: 60, max: 5 },
+        '/sign-in/email': loginRule,
+        '/sign-up/email': loginRule,
       },
     },
     plugins: [
