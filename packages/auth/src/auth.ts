@@ -30,6 +30,12 @@ export type AuthOptions = {
   log?: (level: 'debug' | 'info' | 'warn' | 'error', message: unknown) => void
   /** Delivers auth emails (invitation, password reset, verification). */
   sendEmail: (email: AuthEmail) => Promise<void>
+  /**
+   * Runs Better Auth's background work (email sends among it) after the response, e.g. the Worker's
+   * `waitUntil`. Without it Better Auth awaits the send, and a reset request for an existing account
+   * would take measurably longer than for an unknown one (account enumeration by timing).
+   */
+  runInBackground?: (promise: Promise<unknown>) => void
 }
 
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
@@ -38,7 +44,15 @@ const loginRule = (request: Request) => request.method === 'POST' && { window: 6
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
  */
-export function createAuth({ db, secret, baseURL, allowSignUp, log, sendEmail }: AuthOptions) {
+export function createAuth({
+  db,
+  secret,
+  baseURL,
+  allowSignUp,
+  log,
+  sendEmail,
+  runInBackground,
+}: AuthOptions) {
   return betterAuth({
     secret,
     baseURL,
@@ -78,7 +92,10 @@ export function createAuth({ db, secret, baseURL, allowSignUp, log, sendEmail }:
     },
     // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
     // Better Auth puts every client into one shared rate-limit bucket.
-    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
+    advanced: {
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
+      ...(runInBackground && { backgroundTasks: { handler: runInBackground } }),
+    },
     // Login rate limiting (ADR-0005): counters in Postgres, since memory is per isolate. Enabled in
     // every environment (Better Auth's default is production only). Per IP and path.
     rateLimit: {

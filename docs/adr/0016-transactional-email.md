@@ -17,10 +17,10 @@ Auth needs three emails: invitations, password reset, and email verification. Th
   - changing provider means one new `Mailer`, no auth changes.
 - **Delivery by `EMAIL_DELIVERY`:**
   - `cloudflare`: the `EMAIL` binding, from `EMAIL_FROM`.
-  - `console`: local dev only; prints the message and links. Refused unless `BETTER_AUTH_URL` is `http://localhost`, so tokens can't reach production logs.
-  - unset: disabled. Nothing is sent; a warning without the address is logged. This is the default for previews and for production until activation.
+  - `console`: local dev only; prints the message and links. Refused unless it's a Vite dev build (`import.meta.env.DEV`, false in every production bundle) **and** `BETTER_AUTH_URL` is `http://localhost`, so tokens can't reach deployed logs even if misconfigured.
+  - unset: disabled. Nothing is sent; a warning with only the email kind is logged (subjects can contain organization names). This is the default for previews and for production until activation.
   - A misconfiguration fails the send and is logged; it doesn't break every auth request.
-- **Synchronous sending, no Queues.** Enough for the first slice. If reliable asynchronous delivery or retries become a requirement, that gets its own ADR (ADR-0007 trigger for Queues).
+- **No Queues.** Sends run after the response via the Worker's `waitUntil` (Better Auth `advanced.backgroundTasks`), not in a queue. This also removes a timing oracle: awaiting the send only for existing accounts would reveal which addresses have one. A failed send is logged (`email.send_failed`) and not retried. If reliable asynchronous delivery or retries become a requirement, that gets its own ADR (ADR-0007 trigger for Queues).
 - **Tokens only in query strings** (ADR-0015 logs keep URL paths):
   - Reset emails link to our page `/reset-password?token=…`, which moves the token into memory and drops it from the address bar. Better Auth's default link has the token in the path.
   - Verification links use Better Auth's `/api/auth/verify-email?token=…`.

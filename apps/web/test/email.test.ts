@@ -43,7 +43,13 @@ describe('render', () => {
 })
 
 describe('mailerFor', () => {
-  const msg: EmailMessage = { to: 'secret-person@test.local', subject: 'S', text: 't', html: 'h' }
+  const msg: EmailMessage = {
+    kind: 'invitation',
+    to: 'secret-person@test.local',
+    subject: 'Invited to Secret Org',
+    text: 't',
+    html: 'h',
+  }
 
   it('is disabled by default: sends nothing, logs a warning without the address', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -51,6 +57,8 @@ describe('mailerFor', () => {
     expect(warn).toHaveBeenCalledOnce()
     expect(String(warn.mock.calls[0]![0])).toContain('email.delivery_disabled')
     expect(String(warn.mock.calls[0]![0])).not.toContain('secret-person')
+    expect(String(warn.mock.calls[0]![0])).not.toContain('Secret Org')
+    expect(String(warn.mock.calls[0]![0])).toContain('"kind":"invitation"')
   })
 
   it('refuses console delivery outside localhost', async () => {
@@ -58,6 +66,18 @@ describe('mailerFor', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     await expect(
       mailerFor({ EMAIL_DELIVERY: 'console', BETTER_AUTH_URL: 'https://app.test' })(msg),
+    ).rejects.toThrow(/only allowed on localhost/)
+    expect(info).not.toHaveBeenCalled()
+  })
+
+  it('refuses console delivery in a non-dev build, even on localhost', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    await expect(
+      mailerFor(
+        { EMAIL_DELIVERY: 'console', BETTER_AUTH_URL: 'http://localhost:3000' },
+        false,
+      )(msg),
     ).rejects.toThrow(/only allowed on localhost/)
     expect(info).not.toHaveBeenCalled()
   })
@@ -80,7 +100,7 @@ describe('mailerFor', () => {
     expect(send).toHaveBeenCalledWith({
       to: 'secret-person@test.local',
       from: { email: 'no-reply@app.test', name: 'SaaS Foundation' },
-      subject: 'S',
+      subject: 'Invited to Secret Org',
       text: 't',
       html: 'h',
     })
@@ -171,6 +191,41 @@ describe('auth email flows through the real handler', () => {
     expect(
       (await post('/reset-password', { newPassword: 'third-password-123', token })).status,
     ).toBe(400)
+  })
+
+  it('sends reset emails in the background when a runner is given (no timing oracle)', async () => {
+    const email = `t-${crypto.randomUUID()}@test.local`
+    expect((await post('/sign-up/email', { email, password: PASSWORD, name: 't' })).status).toBe(
+      200,
+    )
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const background: Promise<unknown>[] = []
+    const res = await withDb((db) =>
+      createAuth({
+        db,
+        secret: env.BETTER_AUTH_SECRET,
+        baseURL: env.BETTER_AUTH_URL,
+        allowSignUp: () => true,
+        sendEmail: () => gate, // a provider that hasn't answered yet
+        runInBackground: (p) => void background.push(p),
+      }).handler(
+        new Request(`${env.BETTER_AUTH_URL}/api/auth/request-password-reset`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: env.BETTER_AUTH_URL,
+            'cf-connecting-ip': randomIp(),
+          },
+          body: JSON.stringify({ email, redirectTo: '/reset-password' }),
+        }),
+      ),
+    )
+    // The response came back while the send is still pending.
+    expect(res.status).toBe(200)
+    expect(background.length).toBeGreaterThan(0)
+    release()
+    await Promise.all(background)
   })
 
   it('does not reveal whether an account exists', async () => {

@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers'
+import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth } from '@saas-foundation/auth'
 import type { Db } from '@saas-foundation/db'
 import { mailerFor, render, type EmailConfig } from './email'
@@ -32,6 +32,8 @@ export function authFor(db: Db) {
     log: logBetterAuth,
     // ADR-0016. Invitations also return their link to the inviter (inviteMember).
     sendEmail: (email) => mailer(render(email, invitationLink)),
+    // Failures are already logged by the mailer; don't let them surface as unhandled rejections.
+    runInBackground: (p) => waitUntil(p.catch(() => {})),
   })
 }
 

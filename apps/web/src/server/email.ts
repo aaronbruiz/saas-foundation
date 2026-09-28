@@ -5,7 +5,13 @@ import { logError, logWarn } from './log'
  * Transactional email behind one seam (ADR-0016): templates here, delivery chosen by configuration,
  * so the provider can change without touching auth code. Sending is synchronous (no Queues).
  */
-export type EmailMessage = { to: string; subject: string; text: string; html: string }
+export type EmailMessage = {
+  kind: AuthEmail['kind']
+  to: string
+  subject: string
+  text: string
+  html: string
+}
 export type Mailer = (message: EmailMessage) => Promise<void>
 
 /** The subset of Cloudflare's `send_email` binding we use (Email Service, Workers Paid). */
@@ -21,12 +27,18 @@ export type SendEmailBinding = {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
-function message(to: string, subject: string, lines: string[], url: string): EmailMessage {
+function message(
+  kind: AuthEmail['kind'],
+  to: string,
+  subject: string,
+  lines: string[],
+  url: string,
+): EmailMessage {
   const text = [...lines, '', url].join('\n')
   const html =
     lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('') +
     `<p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`
-  return { to, subject, text, html }
+  return { kind, to, subject, text, html }
 }
 
 /** Renders an auth email. `invitationUrl` builds the accept link for an invitation id. */
@@ -34,6 +46,7 @@ export function render(email: AuthEmail, invitationUrl: (id: string) => string):
   switch (email.kind) {
     case 'invitation':
       return message(
+        email.kind,
         email.to,
         `You're invited to ${email.organizationName}`,
         [
@@ -44,6 +57,7 @@ export function render(email: AuthEmail, invitationUrl: (id: string) => string):
       )
     case 'password-reset':
       return message(
+        email.kind,
         email.to,
         'Reset your password',
         [
@@ -54,6 +68,7 @@ export function render(email: AuthEmail, invitationUrl: (id: string) => string):
       )
     case 'verification':
       return message(
+        email.kind,
         email.to,
         'Verify your email address',
         ['Confirm this email address for your account:'],
@@ -72,8 +87,9 @@ export type EmailConfig = {
 /**
  * Delivery by `EMAIL_DELIVERY`:
  * - `cloudflare`: the `EMAIL` binding, from `EMAIL_FROM` (production, once the domain is onboarded).
- * - `console`: local development only. Prints the message, links included, and is refused unless
- *   the app runs on localhost, so tokens can't reach production logs.
+ * - `console`: local development only. Prints the message, links included. Refused unless this is a
+ *   Vite dev build (`import.meta.env.DEV`, false in every production bundle) **and** the app URL is
+ *   localhost, so tokens can't reach deployed logs even if misconfigured.
  * - unset: disabled. Nothing is sent; a warning without the address is logged. Invitations still
  *   return their link to the inviter.
  * A misconfiguration fails the send (logged), not every auth request.
@@ -86,7 +102,7 @@ function misconfigured(reason: string): Mailer {
   }
 }
 
-export function mailerFor(config: EmailConfig): Mailer {
+export function mailerFor(config: EmailConfig, isDevBuild = import.meta.env.DEV): Mailer {
   const mode = config.EMAIL_DELIVERY
   if (mode === 'cloudflare') {
     const binding = config.EMAIL
@@ -103,15 +119,16 @@ export function mailerFor(config: EmailConfig): Mailer {
           html: m.html,
         })
       } catch (e) {
-        logError('email.send_failed', e, { subject: m.subject })
+        logError('email.send_failed', e, { kind: m.kind })
         throw e
       }
     }
   }
   if (mode === 'console') {
-    if (!/^http:\/\/localhost(:\d+)?$/.test(config.BETTER_AUTH_URL))
+    if (!isDevBuild || !/^http:\/\/localhost(:\d+)?$/.test(config.BETTER_AUTH_URL))
       return misconfigured('EMAIL_DELIVERY=console is only allowed on localhost')
     return async (m) => console.info(`[email] to=${m.to} subject=${m.subject}\n${m.text}`)
   }
-  return async (m) => logWarn('email.delivery_disabled', { subject: m.subject })
+  // Logs the kind only: subjects can contain user data (organization names).
+  return async (m) => logWarn('email.delivery_disabled', { kind: m.kind })
 }
