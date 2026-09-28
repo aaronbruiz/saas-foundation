@@ -18,8 +18,10 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    # ADR-0013 T2: the production-scoped key lives only in the `production` environment, which
-    # GitHub restricts to `main`. PR workflows can't read it.
+    # ADR-0019: the production-project key lives only in the `production` environment, which
+    # GitHub restricts to `main`. The environment doesn't fence a repo-level secret of the same name:
+    # until the owner deletes the old repo-level NEON_API_KEY (runbook "CI credentials"), PR
+    # workflows can still read that one.
     environment: production
     timeout-minutes: 10
     steps:
@@ -32,7 +34,7 @@ jobs:
       - name: Snapshot production main
         # Secrets only reach this step, not checkout/setup/install (dependency lifecycle scripts).
         env:
-          NEON_API_KEY: ${{ secrets.NEON_BACKUP_API_KEY }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           BACKUP_KEEP: ${{ vars.BACKUP_KEEP || '3' }}
         run: scripts/backup/snapshot.sh

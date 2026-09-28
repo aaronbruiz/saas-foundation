@@ -2,6 +2,8 @@
 
 Status: Accepted (owner 2026-09-28) · Date: 2026-09-28
 
+Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): who creates the production Hyperdrive config (created 2026-09-28).
+
 Supersedes in part [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md) (the production Hyperdrive config id, which belonged to the previous account).
 
 ## Context
