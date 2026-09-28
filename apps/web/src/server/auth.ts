@@ -1,6 +1,7 @@
 import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth } from '@saas-foundation/auth'
-import type { Db } from '@saas-foundation/db'
+import { billing, type Db } from '@saas-foundation/db'
+import { entitlementsFor, isLive } from '../modules/billing/policy'
 import { mailerFor, render, type EmailConfig } from './email'
 import { logBetterAuth } from './log'
 
@@ -34,6 +35,12 @@ export function authFor(db: Db) {
     sendEmail: (email) => mailer(render(email, invitationLink)),
     // Failures are already logged by the mailer; don't let them surface as unhandled rejections.
     runInBackground: (p) => waitUntil(p.catch(() => {})),
+    // Better Auth's organization endpoints ask the billing policy (ADR-0020).
+    billing: {
+      memberLimit: async (orgId) =>
+        entitlementsFor(await billing(db, { orgId }).subscription()).limits.members,
+      blocksDeletion: async (orgId) => isLive(await billing(db, { orgId }).subscription()),
+    },
   })
 }
 

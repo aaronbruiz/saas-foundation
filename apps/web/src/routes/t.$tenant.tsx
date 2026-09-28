@@ -13,6 +13,7 @@ function TenantLayout() {
   const tenant = Route.useLoaderData()
   const router = useRouter()
   const canInvite = tenant.capabilities.includes('member:invite')
+  const canSeeBilling = tenant.capabilities.includes('billing:read')
 
   async function signOut() {
     await authClient.signOut()
@@ -34,6 +35,11 @@ function TenantLayout() {
           {canInvite && (
             <Link to="/t/$tenant/invite" params={{ tenant: tenant.slug }} className="underline">
               Invite
+            </Link>
+          )}
+          {canSeeBilling && (
+            <Link to="/t/$tenant/billing" params={{ tenant: tenant.slug }} className="underline">
+              Billing
             </Link>
           )}
           <button type="button" onClick={signOut} className="underline">

@@ -21,3 +21,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0017](0017-production-account-and-custom-domain.md): Production Cloudflare account and custom domain
 - [ADR-0018](0018-billing-platform.md): Billing platform: verified webhooks, organization-owned subscription state, default entitlements
 - [ADR-0019](0019-ci-credentials-and-preview-slots.md): CI credentials by resource, and pre-provisioned preview slots
+- [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults

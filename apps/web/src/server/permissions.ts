@@ -12,14 +12,18 @@ export const CAPABILITIES = [
   'project:update',
   'project:delete',
   'member:invite',
+  'billing:read',
+  'billing:manage',
 ] as const
 export type Capability = (typeof CAPABILITIES)[number]
 
 // Members read, create and update projects; deleting (hard, no audit trail) and inviting are
-// owner/admin only (owner decision 2026-09-28).
+// owner/admin only (owner decision 2026-09-28). Billing (ADR-0020): owner and admin see the plan
+// and usage; only the owner, who also alone can delete the organization, starts or changes a paid
+// subscription.
 const MATRIX = {
   owner: CAPABILITIES,
-  admin: CAPABILITIES,
+  admin: CAPABILITIES.filter((c) => c !== 'billing:manage'),
   member: ['project:read', 'project:create', 'project:update'],
 } as const satisfies Record<string, readonly Capability[]>
 

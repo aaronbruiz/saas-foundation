@@ -35,3 +35,9 @@ export const InviteMemberInput = z.strictObject({
   role: z.enum(['member', 'admin']).default('member'),
 })
 export const AcceptInvitationInput = z.strictObject({ invitationId: z.string().min(1) })
+
+// Billing (ADR-0020). The price is a key from the product policy, checked by the server.
+export const StartCheckoutInput = z.strictObject({
+  tenant: TenantSlug,
+  price: z.string().min(1).max(64),
+})

@@ -16,6 +16,8 @@ export type SubscriptionSnapshot = {
   providerCustomerId: string
   providerSubscriptionId: string
   providerPriceId: string | null
+  /** Our plan for that price (the app's product policy decides); null for a price we don't sell. */
+  planKey: string | null
   status: SubscriptionStatus
   currentPeriodEnd: Date | null
   cancelAtPeriodEnd: boolean
@@ -86,6 +88,7 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
       providerCustomerId: sub.providerCustomerId,
       providerSubscriptionId: sub.providerSubscriptionId,
       providerPriceId: sub.providerPriceId,
+      planKey: sub.planKey,
       status: sub.status,
       currentPeriodEnd: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,

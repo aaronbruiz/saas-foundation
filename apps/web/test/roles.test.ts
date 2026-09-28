@@ -11,7 +11,17 @@ import {
   listProjects,
   updateProject,
 } from '../src/modules/projects/service'
-import { authPost, createOrg, expectStatus, joinAs, signUp, type TestUser } from './helpers'
+import type { BillingProvider } from '../src/modules/billing/provider'
+import { getBillingOverview, openBillingPortal } from '../src/modules/billing/service'
+import {
+  authPost,
+  createOrg,
+  expectStatus,
+  joinAs,
+  onPaidPlan,
+  signUp,
+  type TestUser,
+} from './helpers'
 
 // Phase 2 capability matrix (server/permissions.ts, AGENTS.md invariants 4 and 5): inside the
 // caller's own tenant an insufficient role is 403; outside it everything is 404, whatever the role.
@@ -19,8 +29,13 @@ import { authPost, createOrg, expectStatus, joinAs, signUp, type TestUser } from
 type Role = 'owner' | 'admin' | 'member'
 const EXPECTED: Record<Role, Capability[]> = {
   owner: [...CAPABILITIES],
-  admin: [...CAPABILITIES],
+  admin: CAPABILITIES.filter((c) => c !== 'billing:manage'),
   member: ['project:read', 'project:create', 'project:update'],
+}
+
+const fakeProvider: BillingProvider = {
+  checkout: async () => 'https://checkout.example',
+  portal: async () => 'https://portal.example',
 }
 
 // Capabilities that act on a project id: another tenant's id must be a 404 before any role check.
@@ -36,6 +51,8 @@ beforeAll(async () => {
   const owner = await signUp()
   outsider = await signUp()
   ;[orgA, orgB] = await Promise.all([createOrg(owner, 'roles'), createOrg(outsider, 'other')])
+  // Many projects and members below: stay clear of the default plan's limits (ADR-0020).
+  await Promise.all([onPaidPlan(orgA), onPaidPlan(orgB)])
   const [admin, member] = await Promise.all([
     joinAs(owner, orgA, 'admin'),
     joinAs(owner, orgA, 'member'),
@@ -59,6 +76,10 @@ async function attempt(user: TestUser, tenant: string, capability: Capability, i
       return deleteProject(h, { tenant, id })
     case 'member:invite':
       return inviteMember(h, { tenant, email: `i-${crypto.randomUUID()}@test.local` })
+    case 'billing:read':
+      return getBillingOverview(h, { tenant })
+    case 'billing:manage':
+      return openBillingPortal(h, { tenant }, fakeProvider)
   }
 }
 
@@ -111,9 +132,11 @@ describe('capability matrix', () => {
 // Better Auth's own /api/auth/organization/* endpoints are reachable over HTTP and enforce its
 // default roles (ADR-0005 matrix, lower rows). Each test gets a fresh organization.
 describe('Better Auth organization endpoints (default roles)', () => {
-  async function freshOrg() {
+  // `paid`: clear of the default plan's seat limit; the deletion test needs no live subscription.
+  async function freshOrg({ paid = true } = {}) {
     const owner = await signUp()
     const slug = await createOrg(owner, 'ba')
+    if (paid) await onPaidPlan(slug)
     const [admin, member] = await Promise.all([
       joinAs(owner, slug, 'admin'),
       joinAs(owner, slug, 'member'),
@@ -140,7 +163,7 @@ describe('Better Auth organization endpoints (default roles)', () => {
     authPost(`/organization/${path}`, body, undefined, as)
 
   it('only the owner can delete the organization', async () => {
-    const o = await freshOrg()
+    const o = await freshOrg({ paid: false })
     for (const role of ['admin', 'member'] as const)
       expect((await post(o[role], 'delete', { organizationId: o.orgId })).status).toBe(403)
     await expect(roleIn(o.slug, o.owner)).resolves.toBe('owner')

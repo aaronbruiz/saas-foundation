@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq } from 'drizzle-orm'
 import type { Db } from './client.ts'
 import { member, organization } from './schema/auth.ts'
 import { project, type Project } from './schema/projects.ts'
@@ -22,6 +22,12 @@ export async function findOrganizationById(db: Db, id: string) {
     .where(eq(organization.id, id))
     .limit(1)
   return org ?? null
+}
+
+/** Members of an organization (for plan limits; Better Auth enforces the member limit itself). */
+export async function countMembers(db: Db, orgId: string): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(member).where(eq(member.organizationId, orgId))
+  return row?.n ?? 0
 }
 
 export async function findMembership(db: Db, orgId: string, userId: string) {
@@ -50,6 +56,36 @@ export function projects(db: Db, scope: TenantScope) {
         .orderBy(desc(project.createdAt)),
     get: async (id: string): Promise<Project | null> =>
       (await db.select().from(project).where(inTenant(id)).limit(1))[0] ?? null,
+    count: async (): Promise<number> =>
+      (
+        await db.select({ n: count() }).from(project).where(eq(project.organizationId, scope.orgId))
+      )[0]?.n ?? 0,
+    /**
+     * Creates a project unless the tenant already has `limit` (null = unlimited). Creations for one
+     * tenant serialize on its organization row, so concurrent requests can't overshoot the limit.
+     * Returns null at the limit.
+     */
+    createWithinLimit: (fields: ProjectFields, createdBy: string, limit: number | null) =>
+      db.transaction(async (tx): Promise<Project | null> => {
+        await tx
+          .select({ id: organization.id })
+          .from(organization)
+          .where(eq(organization.id, scope.orgId))
+          .for('no key update')
+        if (limit !== null) {
+          const [row] = await tx
+            .select({ n: count() })
+            .from(project)
+            .where(eq(project.organizationId, scope.orgId))
+          if ((row?.n ?? 0) >= limit) return null
+        }
+        const [created] = await tx
+          .insert(project)
+          .values({ ...fields, organizationId: scope.orgId, createdBy })
+          .returning()
+        if (!created) throw new Error('insert returned no row')
+        return created
+      }),
     create: async (fields: ProjectFields, createdBy: string): Promise<Project> => {
       const [row] = await db
         .insert(project)

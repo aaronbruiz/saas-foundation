@@ -55,6 +55,10 @@ export async function acceptInvitation(
     const result = await auth.api
       .acceptInvitation({ body: { invitationId }, headers })
       .catch((e: unknown) => {
+        // The plan's seat limit (ADR-0020). Better Auth checks it only after confirming the caller
+        // is the invitation's recipient, so saying so discloses nothing.
+        if (e instanceof APIError && e.body?.code === 'ORGANIZATION_MEMBERSHIP_LIMIT_REACHED')
+          throw new HttpError(403, 'This organization has no free seats on its plan')
         // Only Better Auth's own 4xx rejections are "invalid invitation"; outages etc. propagate.
         if (e instanceof APIError && e.statusCode >= 400 && e.statusCode < 500) return null
         throw e

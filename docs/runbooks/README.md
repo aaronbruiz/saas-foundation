@@ -51,6 +51,17 @@ Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`,
 - **Preview Cloudflare token (owner), only after the preview-slot scripts and the split workflow are on `main`** (the current scripts still need account-wide Hyperdrive access): dashboard → Manage Account → Account API Tokens → _Create token_ → Workers → role **Editor**, scope **Specified Workers**: `saas-foundation-preview`. No other permissions. `gh secret set CLOUDFLARE_API_TOKEN` (paste at the prompt), then revoke the old user token. Check it: re-run a PR's preview job. The deploy step logs "account-owned token → active".
 - **After** the rollout in ADR-0019 (slots in use, token replaced, old token revoked), the preview credentials can't deploy the production Worker or touch production Hyperdrive (the backup key reaches the production Neon project by design, fenced by the environment). **Until then** CI's `CLOUDFLARE_API_TOKEN` is the old account-wide token, and the repo-level `NEON_API_KEY` stays readable by PR workflows until it's deleted. Production deploys run from the owner's machine (runbook "First production deploy").
 
+## Stripe (ADR-0018, ADR-0020)
+
+Not connected yet: without the secrets below, the billing actions and the webhook answer 503. To go live (test mode first):
+
+1. Stripe dashboard → Product "Pro" with two recurring prices (USD in the reference setup) whose **lookup keys** are `pro_monthly` and `pro_yearly`, matching `PLANS` in `apps/web/src/modules/billing/policy.ts`. Amounts live only in Stripe.
+2. Customer portal settings: allow cancel (at period end), switching between those two prices, payment method updates and invoice history.
+3. Stripe Tax: activate it and add registrations. `CHECKOUT.automaticTax` is on, so Checkout fails without it.
+4. Webhook endpoint `https://<production hostname>/api/billing/webhooks/stripe`, events `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed`, `.trial_will_end`.
+5. Worker secrets (owner): `pnpm --filter web exec wrangler secret put STRIPE_SECRET_KEY` (a restricted key with write access to Checkout Sessions and Customer Portal sessions and read access to Prices is enough), and `… STRIPE_WEBHOOK_SECRET` (the endpoint's signing secret).
+6. Check it: as the owner, Billing → Upgrade → Stripe test card → back on Billing, the plan shows Pro; then Manage billing → cancel → at period end the plan returns to Free.
+
 ## Database (ADR-0003, Neon Free)
 
 - Restore within 6 h: Neon point-in-time restore of `main`.

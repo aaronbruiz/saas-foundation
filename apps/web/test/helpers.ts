@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { authFor } from '../src/server/auth'
+import { findOrganizationBySlug } from '@saas-foundation/db'
 import { withDb } from '../src/server/db'
 import {
   acceptInvitation,
@@ -82,4 +83,25 @@ export async function expectStatus(fn: () => Promise<unknown>, status: number) {
     throw new Error(`expected HTTP ${status}, got ${actual ?? String(e)}`)
   }
   throw new Error(`expected HTTP ${status}, but the call succeeded`)
+}
+
+/**
+ * Test fixture: puts an organization on a paid plan with room for many projects and members, so
+ * tests about other rules aren't limited by the default plan (ADR-0020). In the app, billing state
+ * comes only from verified webhooks (test/billing.test.ts covers that path).
+ */
+export async function onPaidPlan(slug: string, planKey = 'pro') {
+  await withDb(async (db) => {
+    const org = await findOrganizationBySlug(db, slug)
+    if (!org) throw new Error(`no organization ${slug}`)
+    await (
+      db as unknown as { $client: { query: (q: string, p: unknown[]) => Promise<unknown> } }
+    ).$client.query(
+      `INSERT INTO billing_subscription (organization_id, provider, provider_customer_id,
+           provider_subscription_id, plan_key, status, provider_event_at)
+         VALUES ($1, 'test', $2, $3, $4, 'active', now())
+         ON CONFLICT (organization_id) DO UPDATE SET plan_key = $4, status = 'active'`,
+      [org.id, `cus_fixture_${org.id}`, `sub_fixture_${org.id}`, planKey],
+    )
+  })
 }

@@ -1,7 +1,7 @@
 /** Errors with an HTTP meaning. 404 for anything outside the caller's tenant (AGENTS.md invariant 5). */
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 503,
     message: string,
   ) {
     super(message)

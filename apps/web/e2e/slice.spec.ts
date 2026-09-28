@@ -92,6 +92,16 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await carol.getByRole('link', { name: 'Alpha' }).click()
   await expect(carol.getByRole('button', { name: 'Save' })).toBeVisible()
   await expect(carol.getByRole('button', { name: 'Delete project' })).toHaveCount(0) // member role
+  await expect(carol.getByRole('link', { name: 'Billing' })).toHaveCount(0) // member role
+
+  // Billing (ADR-0020): the owner sees the default plan and its usage. No provider is configured
+  // locally or in previews, so starting a checkout fails closed with a clear message.
+  await alice.getByRole('link', { name: 'Billing' }).click()
+  await expect(alice.getByTestId('plan-name')).toHaveText('Free')
+  await expect(alice.getByText('Projects: 1 of 3')).toBeVisible()
+  await expect(alice.getByText('Members: 2 of 3')).toBeVisible()
+  await alice.getByRole('button', { name: /^Upgrade to Pro \(monthly\)/ }).click()
+  await expect(alice.getByRole('alert')).toHaveText('Billing is not configured')
 
   // Bob: his own org B; none of A is reachable, by tenant URL or by project id.
   const { page: bob } = await signUp(browser, 'Bob')
