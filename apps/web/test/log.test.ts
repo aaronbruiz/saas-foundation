@@ -32,6 +32,31 @@ describe('logError', () => {
       'connect postgres://[redacted]@host/db failed',
     )
   })
+
+  it('redacts auth headers, secret key/value pairs, query strings and long opaque tokens', () => {
+    // Over-redaction is fine: the scheme name goes too.
+    expect(redact('Authorization: Bearer abc.def.ghi rejected')).toBe(
+      'Authorization: [redacted] [redacted] rejected',
+    )
+    expect(redact('sent Bearer abc.def.ghi')).toBe('sent Bearer [redacted]')
+    expect(redact('bad password=hunter2; token: t0k3n')).toBe(
+      'bad password=[redacted]; token: [redacted]',
+    )
+    expect(redact('GET /api/auth/reset?token=xyz&email=a%40b.co failed')).toBe(
+      'GET /api/auth/reset?[redacted] failed',
+    )
+    expect(redact('invalid key sk_live_0123456789abcdefghijklmnopqrstuv')).toBe(
+      'invalid key [redacted]',
+    )
+  })
+
+  it('truncates long messages and stays fast on adversarial input', () => {
+    expect(redact('x'.repeat(10_000)).length).toBeLessThanOrEqual(300)
+    const start = Date.now()
+    redact(('a'.repeat(50) + '@').repeat(200))
+    redact('postgres://' + ':'.repeat(5000))
+    expect(Date.now() - start).toBeLessThan(200)
+  })
 })
 
 // serve() (server/boundary.ts) delegates to logUnexpected; boundary itself needs TanStack's
@@ -59,6 +84,12 @@ describe('logUnexpected', () => {
     ])
       expect(logUnexpected('server_fn.unhandled', e)).toBe(false)
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('logs library errors whose status is not 4xx', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const statusCode of [0, 200, 302, 399, 500])
+      expect(logUnexpected('x', Object.assign(new Error('odd'), { statusCode }))).toBe(true)
   })
 
   it('logs server-side library errors (5xx)', () => {

@@ -8,9 +8,11 @@
   // Run SSR and server functions next to Neon (aws-us-east-1); static assets are still served at the edge.
   "placement": { "region": "aws:us-east-1" },
   // ADR-0015: Workers Logs (console output + one invocation log per request), all requests sampled.
+  // Query strings are stripped from logged URLs (tokens, emails); path segments are not.
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
+    "redact_query_string": true,
     "logs": { "enabled": true, "invocation_logs": true },
   },
   "upload_source_maps": true,
