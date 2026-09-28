@@ -21,10 +21,15 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 ## Database (ADR-0003, Neon Free)
 
 - Restore within 6 h: Neon point-in-time restore of `main`.
-- Restore from a daily snapshot (ADR-0003 option A; `backup-YYYYMMDD`, newest 3 kept):
-  1. Inspect first: `neonctl branches create --name restore-check --parent backup-YYYYMMDD` (with compute), query it, then delete it.
-  2. Restore: `neonctl branches restore main backup-YYYYMMDD --preserve-under-name main-before-restore`. The preserved branch counts toward the 10-branch limit; delete it once verified.
-  3. The production Hyperdrive config needs no change (same branch, same endpoint).
+- Restore from a daily snapshot (ADR-0003 option A; `backup-YYYYMMDD`, newest 3 kept). Snapshots are **child branches** of `main`, and Neon's `branches restore` only works between root branches, so **don't use `neonctl branches restore`**. Procedure tested end to end on the preview project (2026-09-28). Auth: `neonctl auth` (or `NEON_API_KEY`); set `export NEON_PROJECT_ID=flat-cherry-23373668` and pass `--project-id "$NEON_PROJECT_ID"` to every command.
+  1. **Inspect:** `neonctl branches add-compute backup-YYYYMMDD --project-id "$NEON_PROJECT_ID"` (read-only compute), then `neonctl connection-string backup-YYYYMMDD --project-id "$NEON_PROJECT_ID"` and query it (e.g. `docker run --rm postgres:17-alpine psql "<url>"`).
+  2. **Selective recovery** (preferred; keeps newer writes): `docker run --rm postgres:17-alpine pg_dump "<backup url>" --data-only --table=<t>` piped into `psql "<main url>"`. Resolve conflicts manually.
+  3. **Full rollback ("promote"; loses writes made after the snapshot):**
+     - `neonctl branches add-compute backup-YYYYMMDD --type read_write --project-id "$NEON_PROJECT_ID"`
+     - `neonctl branches rename main main-before-restore-YYYYMMDD --project-id "$NEON_PROJECT_ID"`, then `neonctl branches rename backup-YYYYMMDD main --project-id "$NEON_PROJECT_ID"`, then `neonctl branches set-default main --project-id "$NEON_PROJECT_ID"`
+     - `wrangler hyperdrive update 29b70e89b57945e1875c0a030b377243 --connection-string="$(neonctl connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner)"` (caching stays disabled; the id and binding are unchanged, so no redeploy)
+     - verify `/api/health`. Keep `main-before-restore-*` for forensics; it counts toward the 10-branch limit, so delete it (`neonctl branches delete …`) when no longer needed. Snapshots keep working because the new production branch is named `main` again.
+- Neon's snapshot feature (one-step restore that keeps the connection string) is limited on Free to **1 manual snapshot, no schedules**. Registered as a possible complement, not adopted.
 - Snapshots run daily (`db-backup.yml`); run by hand with `gh workflow run db-backup.yml`.
 - Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
 

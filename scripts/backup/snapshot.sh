@@ -7,6 +7,9 @@
 set -euo pipefail
 : "${NEON_PROJECT_ID:?}"
 KEEP="${BACKUP_KEEP:-3}"
+# Fail closed: 0 or garbage would prune every snapshot. Max 7 leaves room under Neon Free's
+# 10 branches for main plus a restore (see the runbook).
+if ! [[ "$KEEP" =~ ^[1-7]$ ]]; then echo "[backup] ERROR: BACKUP_KEEP must be an integer 1-7 (got '$KEEP')" >&2; exit 1; fi
 NAME="backup-$(date -u +%Y%m%d)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 log() { echo "[backup] $*" >&2; }
