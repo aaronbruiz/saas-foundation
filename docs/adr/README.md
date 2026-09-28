@@ -14,7 +14,8 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0010](0010-path-based-tenancy.md): Address tenants by URL path (`/t/<slug>`), not subdomain
 - [ADR-0011](0011-per-pr-preview-neon-branch.md): Each PR preview gets its own Neon branch and Hyperdrive config
 - [ADR-0012](0012-claude-implements-codex-reviews.md): Claude Code implements, Codex reviews, in separate working trees
-- [ADR-0013](0013-ci-credential-tiers.md): CI credential tiers: no secrets where PR code runs (proposed)
+- [ADR-0013](0013-ci-credential-tiers.md): CI credential tiers: no secrets where PR code runs
 - [ADR-0014](0014-first-production-launch-gates.md): First production launch gates (data gate, backups, WAF)
 - [ADR-0015](0015-observability-baseline.md): Observability baseline: Cloudflare Workers Logs first, Sentry only for named gaps
 - [ADR-0016](0016-transactional-email.md): Transactional email: Cloudflare Email Service behind an app mailer
+- [ADR-0017](0017-production-account-and-custom-domain.md): Production Cloudflare account and custom domain
