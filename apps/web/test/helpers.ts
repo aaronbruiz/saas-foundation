@@ -1,7 +1,11 @@
 import { env } from 'cloudflare:workers'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
-import { createOrganization } from '../src/modules/organizations/service'
+import {
+  acceptInvitation,
+  createOrganization,
+  inviteMember,
+} from '../src/modules/organizations/service'
 
 export type TestUser = { headers: Headers; userId: string; email: string }
 
@@ -15,7 +19,7 @@ export const randomIp = () =>
   `10.${Array.from(crypto.getRandomValues(new Uint8Array(3))).join('.')}`
 
 /** POSTs JSON to a Better Auth endpoint through the real HTTP handler, as client `ip`. */
-export function authPost(path: string, body: unknown, ip = randomIp()) {
+export function authPost(path: string, body: unknown, ip = randomIp(), as?: TestUser) {
   return withDb((db) =>
     authFor(db).handler(
       new Request(`${env.BETTER_AUTH_URL}/api/auth${path}`, {
@@ -24,6 +28,7 @@ export function authPost(path: string, body: unknown, ip = randomIp()) {
           'content-type': 'application/json',
           origin: env.BETTER_AUTH_URL,
           'cf-connecting-ip': ip,
+          ...(as && { cookie: as.headers.get('cookie')! }),
         },
         body: JSON.stringify(body),
       }),
@@ -53,6 +58,18 @@ export async function createOrg(user: TestUser, prefix = 'org'): Promise<string>
   const slug = `${prefix}-${crypto.randomUUID().slice(0, 8)}`
   await createOrganization(user.headers, { name: slug, slug })
   return slug
+}
+
+/** Signs up a new user and makes them a `role` member of `slug` through a real invitation. */
+export async function joinAs(owner: TestUser, slug: string, role: 'admin' | 'member') {
+  const user = await signUp()
+  const { invitationId } = await inviteMember(owner.headers, {
+    tenant: slug,
+    email: user.email,
+    role,
+  })
+  await acceptInvitation(user.headers, { invitationId })
+  return user
 }
 
 /** Asserts that `fn` rejects with an HttpError of the given status. */

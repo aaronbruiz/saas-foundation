@@ -10,6 +10,7 @@ import { authFor, invitationLink } from '../../server/auth'
 import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
 import { HttpError, parseInput } from '../../server/errors'
+import { authorize, capabilitiesOf, type Capability } from '../../server/permissions'
 
 export async function createOrganization(
   headers: Headers,
@@ -25,7 +26,7 @@ export async function createOrganization(
   })
 }
 
-/** Owner/admin only (Better Auth default roles). Returns the link; no email provider yet (Q7). */
+/** Needs `member:invite` (owner/admin). Returns the link; no email provider yet (Q7). */
 export async function inviteMember(
   headers: Headers,
   input: unknown,
@@ -33,7 +34,7 @@ export async function inviteMember(
   const { tenant, email, role } = parseInput(InviteMemberInput, input)
   return withDb(async (db) => {
     const ctx = await getTenantContext(db, headers, tenant)
-    if (ctx.role !== 'owner' && ctx.role !== 'admin') throw new HttpError(403, 'forbidden')
+    authorize(ctx, 'member:invite')
     const invitation = await authFor(db).api.createInvitation({
       body: { email, role, organizationId: ctx.orgId },
       headers,
@@ -86,14 +87,19 @@ export async function getViewer(headers: Headers): Promise<Viewer | null> {
   })
 }
 
-/** Tenant header info for /t/<slug> layouts; same boundary and 404 semantics as every call. */
+/**
+ * Tenant header info for /t/<slug> layouts; same boundary and 404 semantics as every call.
+ * Membership alone is enough (no capability): it returns only what every member may see about
+ * their own tenant. The capabilities only let the UI hide actions; every server function checks
+ * them again.
+ */
 export async function getTenant(
   headers: Headers,
   input: unknown,
-): Promise<{ slug: string; name: string; role: string }> {
+): Promise<{ slug: string; name: string; role: string; capabilities: Capability[] }> {
   const { tenant } = parseInput(TenantInput, input)
   return withDb(async (db) => {
     const { slug, name, role } = await getTenantContext(db, headers, tenant)
-    return { slug, name, role }
+    return { slug, name, role, capabilities: capabilitiesOf(role) }
   })
 }

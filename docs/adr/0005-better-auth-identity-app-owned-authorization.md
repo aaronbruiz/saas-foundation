@@ -12,6 +12,20 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 - The schema is generated with `npx auth@latest generate` into `packages/db`; migrations go only through drizzle-kit.
 - Default roles: `owner`, `admin`, `member`. Members can't invite; only the owner can delete the org.
 - **Authorization is ours:** every tenant request resolves `{userId, orgId, role}` server-side by verifying membership (see ADR-0010).
+- **Capability matrix** (`apps/web/src/server/permissions.ts`): server functions call `authorize(ctx, capability)` right after `getTenantContext`, so outsiders get 404 before any role check and members with an insufficient role get 403. Unknown roles grant nothing; comma-separated Better Auth multi-roles get the union.
+
+  | Capability                                              | owner | admin | member |
+  | ------------------------------------------------------- | :---: | :---: | :----: |
+  | `project:read` / `create` / `update` / `delete`         |  yes  |  yes  |  yes   |
+  | `member:invite` (as `member` or `admin`)                |  yes  |  yes  |   no   |
+  | _Better Auth HTTP endpoints (its default roles):_       |       |       |        |
+  | organization update (name, slug)                        |  yes  |  yes  |   no   |
+  | invite, change role, remove: non-owner members          |  yes  |  yes  |   no   |
+  | invite as owner, grant owner, change or remove an owner |  yes  |  no   |   no   |
+  | organization delete                                     |  yes  |  no   |   no   |
+
+  Better Auth's `/api/auth/organization/*` endpoints are reachable over HTTP and enforce its default roles on their own (1.7.6: non-owners can't invite or grant `owner` or touch an owner). The rows above are those defaults, accepted as ours; `test/roles.test.ts` checks them over HTTP. Changing them means Better Auth `ac`/`roles` config, this table and the tests together. `getTenant` needs membership only (it returns what every member may see). The UI gets the capabilities from `getTenant` to hide actions; it never decides.
+
 - Login rate limiting: Better Auth `rateLimit.storage: "database"` plus a WAF rule. The in-memory limiter doesn't work across Worker isolates, and the Workers Rate Limiting binding is per location and approximate. Details below.
 
 ## Login rate limiting (Phase 2)

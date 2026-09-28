@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// BASE_URL set (CI preview job) → test the deployed preview. Unset → start `pnpm dev` locally
+// BASE_URL set (CI preview job) → test the deployed preview. Unset → start the dev server locally
 // (needs `pnpm db:up`, migrations and apps/web/.dev.vars).
 const baseURL = process.env.BASE_URL ?? 'http://localhost:3000'
 
@@ -13,5 +13,13 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: process.env.BASE_URL
     ? undefined
-    : { command: 'pnpm dev', url: baseURL, reuseExistingServer: true, timeout: 120_000 },
+    : {
+        // Invoke Vite directly so Playwright owns the dev-server process group.
+        // Keep flags aligned with package.json#scripts.dev.
+        command: 'vite dev --port 3000 --strictPort',
+        url: baseURL,
+        reuseExistingServer: true,
+        timeout: 120_000,
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
+      },
 })

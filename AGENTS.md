@@ -4,17 +4,18 @@ Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, 
 
 ## Module map
 
-| Path                                | Owns                                                                         | May import                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `apps/web/src/routes/t/$tenant/`    | tenant-scoped pages and loaders                                              | `modules/`, `server/`, `@saas-foundation/contracts`            |
-| `apps/web/src/routes/api/auth/$.ts` | Better Auth handler                                                          | `@saas-foundation/auth`                                        |
-| `apps/web/src/server/context.ts`    | `getTenantContext(request, env, slug)`: session → slug → org → membership    | `@saas-foundation/auth`, `@saas-foundation/db`                 |
-| `apps/web/src/modules/<domain>/`    | domain logic and server functions                                            | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
-| `apps/web/src/modules/billing/`     | plans → entitlements; `providers/stripe` is the only place that knows Stripe | `@saas-foundation/db`, `@saas-foundation/contracts`            |
-| `packages/db`                       | Drizzle schema, migrations, client factory, **tenant-scoped repositories**   | nothing internal                                               |
-| `packages/auth`                     | Better Auth config (server only)                                             | `@saas-foundation/db`                                          |
-| `packages/contracts`                | Zod schemas shared by UI and server                                          | nothing internal                                               |
-| `packages/testkit`                  | fixtures, seeded tenants, login helpers                                      | anything (tests only)                                          |
+| Path                                 | Owns                                                                         | May import                                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `apps/web/src/routes/t/$tenant/`     | tenant-scoped pages and loaders                                              | `modules/`, `server/`, `@saas-foundation/contracts`            |
+| `apps/web/src/routes/api/auth/$.ts`  | Better Auth handler                                                          | `@saas-foundation/auth`                                        |
+| `apps/web/src/server/context.ts`     | `getTenantContext(request, env, slug)`: session → slug → org → membership    | `@saas-foundation/auth`, `@saas-foundation/db`                 |
+| `apps/web/src/server/permissions.ts` | role → capability matrix; `authorize(ctx, capability)` (403)                 | nothing internal                                               |
+| `apps/web/src/modules/<domain>/`     | domain logic and server functions                                            | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
+| `apps/web/src/modules/billing/`      | plans → entitlements; `providers/stripe` is the only place that knows Stripe | `@saas-foundation/db`, `@saas-foundation/contracts`            |
+| `packages/db`                        | Drizzle schema, migrations, client factory, **tenant-scoped repositories**   | nothing internal                                               |
+| `packages/auth`                      | Better Auth config (server only)                                             | `@saas-foundation/db`                                          |
+| `packages/contracts`                 | Zod schemas shared by UI and server                                          | nothing internal                                               |
+| `packages/testkit`                   | fixtures, seeded tenants, login helpers                                      | anything (tests only)                                          |
 
 The import boundaries above are enforced by `eslint.config.js`.
 
@@ -64,7 +65,7 @@ kill -9 $(lsof -t -i:3000)
 
 **Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → add repository functions in `packages/db/src/<table>.ts` that filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL.
 
-**Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → first line `const ctx = await getTenantContext(request, env, input.tenant)` → call repositories with `ctx`.
+**Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → first line `const ctx = await getTenantContext(request, env, input.tenant)` → `authorize(ctx, '<capability>')` (add the capability to the matrix in `server/permissions.ts` and a test per role in `test/roles.test.ts`) → call repositories with `ctx`.
 
 **Add a Cloudflare binding:** write `docs/adr/NNNN-<binding>.md` (trigger, alternatives, preview isolation) → add it to `wrangler.jsonc` **and** its `previews` block → `pnpm --filter web cf-typegen`.
 
@@ -91,6 +92,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent.
 - New tenant data without cross-tenant tests.
+- A server function that changes tenant data without `authorize(ctx, …)`, role checks written inline instead of through the capability matrix, or a matrix change without per-role tests.
 - Sign-in/sign-up done through `auth.api.*` server calls instead of the `/api/auth/*` HTTP handler (bypasses login rate limiting, ADR-0005), or changes to `rateLimit` / `advanced.ipAddress` without updating ADR-0005.
 
 Safe to ignore: generated files (`schema/auth.ts`, `routeTree.gen.ts`, `worker-configuration.d.ts`).
