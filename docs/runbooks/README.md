@@ -20,7 +20,18 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 
 ## Database (ADR-0003, Neon Free)
 
-- Restore: Neon point-in-time restore covers only the **last 6 hours**. Beyond that, see the open backup decision in ADR-0003.
+- Restore within 6 h: Neon point-in-time restore of `main`.
+- Restore from a daily snapshot (ADR-0003 option A; `backup-YYYYMMDD`, newest 3 kept). Snapshots are **child branches** of `main`, and Neon's `branches restore` only works between root branches, so **don't use `neonctl branches restore`**. Procedure tested end to end on the preview project (2026-09-28). Auth: `neonctl auth` (or `NEON_API_KEY`); set `export NEON_PROJECT_ID=flat-cherry-23373668` and pass `--project-id "$NEON_PROJECT_ID"` to every command.
+  1. **Inspect:** `neonctl branches add-compute backup-YYYYMMDD --type read_only --project-id "$NEON_PROJECT_ID"`, then `neonctl connection-string backup-YYYYMMDD --project-id "$NEON_PROJECT_ID"` and query it (e.g. `docker run --rm postgres:17-alpine psql "<url>"`).
+  2. **Selective recovery** (preferred; keeps newer writes): `docker run --rm postgres:17-alpine pg_dump "<backup url>" --data-only --table=<t>` piped into `psql "<main url>"`. Resolve conflicts manually.
+  3. **Full rollback ("promote"; loses writes made after the snapshot):**
+     - `neonctl branches add-compute backup-YYYYMMDD --type read_write --project-id "$NEON_PROJECT_ID"`
+     - `neonctl branches rename main main-before-restore-YYYYMMDD --project-id "$NEON_PROJECT_ID"`, then `neonctl branches rename backup-YYYYMMDD main --project-id "$NEON_PROJECT_ID"`, then `neonctl branches set-default main --project-id "$NEON_PROJECT_ID"`
+     - `wrangler hyperdrive update 29b70e89b57945e1875c0a030b377243 --connection-string="$(neonctl connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner)"` (caching stays disabled; the id and binding are unchanged, so no redeploy)
+     - **Restart the Hyperdrive pool:** an update doesn't tear down existing pooled connections, which would keep using the old branch. `curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/29b70e89b57945e1875c0a030b377243/restart"` (Cloudflare API "Restart Hyperdrive"), or the dashboard: Hyperdrive → `saas-foundation-prod` → Settings → Danger zone → **Restart**. In-flight queries may briefly error.
+     - verify `/api/health`. `main-before-restore-*` **can't be deleted**: it's the parent of the new `main` and of the older snapshots, and Neon forbids deleting branches that have children. Each promote therefore permanently uses one of the 10 branch slots, so treat promote as a last resort and prefer selective recovery. Snapshots keep working because the new production branch is named `main` again.
+- Neon's snapshot feature (one-step restore that keeps the connection string) is limited on Free to **1 manual snapshot, no schedules**. Registered as a possible complement, not adopted.
+- Snapshots run daily (`db-backup.yml`); run by hand with `gh workflow run db-backup.yml`.
 - Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
 
 Planned: deploy & rollback, migrations.

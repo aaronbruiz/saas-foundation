@@ -28,10 +28,17 @@ We need a relational, transactional store for a multi-tenant model. D1 (SQLite) 
 
 The Neon plan will not be upgraded. That replaces the Launch-plan assumptions above with these **accepted constraints** (per project):
 
-| Constraint                                                                                    | Consequence                                                                                                                |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Restore window **6 hours** (not 7 days)                                                       | Neon alone can only undo mistakes noticed within 6 h. A separate backup strategy is an **open decision** (not chosen here) |
-| Scale-to-zero after 5 min, **can't be disabled**                                              | The first request after idleness pays a compute cold start                                                                 |
-| **100 CU-hours/month**; when exceeded, compute is **suspended until the next billing period** | Previews must not share production's project (hence ADR-0011's separate preview project). Watch production usage           |
-| **0.5 GB storage**; writes fail beyond it                                                     | Monitor database size; it's a hard ceiling on data volume                                                                  |
-| 10 branches per project; up to 2 CU                                                           | Production is small by design                                                                                              |
+| Constraint                                                                                    | Consequence                                                                                                      |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Restore window **6 hours** (not 7 days)                                                       | Neon alone can only undo mistakes noticed within 6 h. See the backup decision below                              |
+| Scale-to-zero after 5 min, **can't be disabled**                                              | The first request after idleness pays a compute cold start                                                       |
+| **100 CU-hours/month**; when exceeded, compute is **suspended until the next billing period** | Previews must not share production's project (hence ADR-0011's separate preview project). Watch production usage |
+| **0.5 GB storage**; writes fail beyond it                                                     | Monitor database size; it's a hard ceiling on data volume                                                        |
+| 10 branches per project; up to 2 CU                                                           | Production is small by design                                                                                    |
+
+## Backups beyond the 6-hour window (owner decision 2026-09-27)
+
+- **Adopted, option A: daily Neon snapshot branches.** `scripts/backup/snapshot.sh`, run by `.github/workflows/db-backup.yml` at 04:23 UTC, creates `backup-YYYYMMDD` from production `main` **without compute** and keeps the newest `BACKUP_KEEP` (default 3; branches and the 0.5 GB storage are per-project Free limits). It's idempotent. Restore (see `docs/runbooks/README.md`): snapshots are child branches, and Neon `branches restore` requires root branches, so recovery is a **selective copy** (`pg_dump` from the snapshot) or a **promote** (compute on the snapshot, rename it to `main`, repoint the Hyperdrive config). Both were tested on the preview project.
+  - Covers: a bad migration, deleted rows, or app bugs noticed up to ~3 days later.
+  - Doesn't cover: a Neon outage, account loss, or deletion of the project itself (same provider).
+- **Registered for later, option B: an off-provider dump.** A nightly `pg_dump` to Cloudflare R2, encrypted, with retention. R2 is a new product (ADR-0007) and the dumps contain customer data, so it needs its own ADR (encryption, access, retention, restore test). Trigger [to confirm]: before the first real customer data is stored.
