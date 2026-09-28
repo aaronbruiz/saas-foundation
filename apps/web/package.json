@@ -16,15 +16,19 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@saas-foundation/auth": "workspace:*",
+    "@saas-foundation/contracts": "workspace:*",
     "@saas-foundation/db": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-devtools": "^0.10.13",
     "@tanstack/react-router": "^1.170.40",
     "@tanstack/react-router-devtools": "^1.167.2",
     "@tanstack/react-start": "^1.168.59",
+    "better-auth": "^1.7.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.61.0",

@@ -19,7 +19,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --parallel typecheck",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck"
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck",
+    "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

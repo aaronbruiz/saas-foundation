@@ -5,3 +5,4 @@ pnpm-lock.yaml
 **/.wrangler
 **/.tanstack
 **/drizzle/meta
+**/src/schema/auth.ts

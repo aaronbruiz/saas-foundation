@@ -29,6 +29,7 @@ pnpm format        # apply Prettier
 pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
+pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright (arrives with Vertical Slice 001)
 scripts/preview/up.sh | down.sh   # per-PR preview lifecycle; normally run by CI (PR_NUMBER=<n>)
 ```
@@ -41,7 +42,7 @@ Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (
 2. Tenant data is accessed **only via repository functions in `packages/db`** that take `ctx.orgId`. No Drizzle calls in routes or components.
 3. Modules don't touch other modules' tables; call the module's exports.
 4. Authorization is decided on the server. The UI may hide things, never decide them.
-5. Unknown tenant, non-member, or another tenant's resource returns **404**, never 403, and never leaks data.
+5. Unknown tenant, non-member, or another tenant's resource returns **404**, never 403, and never leaks data. **403** is only for a member of the tenant whose role is insufficient (e.g. a `member` inviting), since the tenant's existence is already known to them.
 6. Authorization reads **entitlements** (`getEntitlements(orgId)`) only, never subscription status or Stripe objects. Only `modules/billing/providers/**` may import `stripe` or reference provider ids.
 7. The only DB binding is `DB` (Hyperdrive, **caching disabled**). Don't add a cached binding without an ADR.
 8. Secrets come only from Worker `env`. `.dev.vars` is git-ignored. Nothing secret goes in client code.
@@ -77,7 +78,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 
 - Any data access to tenant tables that doesn't go through a `packages/db` repository function taking `ctx.orgId`.
 - Any server function or route touching tenant data **without** calling `getTenantContext`, or that trusts a slug, `organizationId` or `activeOrganizationId` from the client.
-- Responses that return 403 (instead of 404) or distinguish "exists but forbidden" for another tenant's resources.
+- Responses that return 403 (instead of 404) or distinguish "exists but forbidden" for another tenant's resources. (403 for a member with an insufficient role in their own tenant is intended.)
 - Authorization or feature gating that reads subscription status or Stripe/provider objects instead of entitlements; `stripe` imported outside `modules/billing/providers/**`.
 - Migrations that drop, rename or retype columns in one step; edits to already-applied migrations.
 - New bindings in `wrangler.jsonc` without an ADR, or without a `previews` override.
