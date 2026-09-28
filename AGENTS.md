@@ -59,7 +59,7 @@ kill -9 $(lsof -t -i:3000)
 12. Async side effects are idempotent with dedupe keys (once queues exist).
 13. Infra config (`wrangler.jsonc`) changes only via PR.
 14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override.
-15. Previews never bind production data. Each PR gets its own Neon branch in the **separate preview project** (from `preview-seed`) and its own Hyperdrive config.
+15. Previews never bind production data. Each PR gets a **preview slot** (ADR-0019): a Neon branch in the **separate preview project**, reset from `preview-seed` on every deploy, and that slot's Hyperdrive config. Slots are provisioned by an admin (`scripts/preview/provision-slots.sh`); CI never creates Hyperdrive configs.
 
 ## Recipes
 

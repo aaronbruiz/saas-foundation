@@ -7,7 +7,8 @@
 # Never imports the build's `.wrangler/deploy/config.json` redirect: the artifact's
 # dist/server/wrangler.json is validated and patched (prepare-config.mjs), then passed explicitly.
 # Migrations run through the base commit's migrator, not the PR's drizzle config.
-# Usage: PR_NUMBER=123 ARTIFACT_DIR=/path/to/artifact scripts/preview/deploy-artifact.sh
+# Usage: PR_NUMBER=123 ARTIFACT_DIR=/path/to/artifact PREVIEW_HYPERDRIVE_SLOTS=... GH_TOKEN=... \
+#   scripts/preview/deploy-artifact.sh   (GH_TOKEN: reads which PRs are open, to reuse their slots)
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 # SECURITY: stdout is reserved for workflow commands (::add-mask::); never capture it.
 source "$(dirname "$0")/lib.sh"
@@ -28,10 +29,11 @@ fi
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID"
 cf_token_preflight
 
-ensure_preview_db
-log "migrating $NEON_BRANCH (base migrator, PR migrations as data)"
+# ADR-0019: a pre-provisioned slot (Neon branch + Hyperdrive config); CI creates neither.
+claim_slot "$PR_NUMBER"
+reset_slot_db
+log "migrating slot $SLOT (base migrator, PR migrations as data)"
 DATABASE_URL="$DB_URL" node "$ROOT/packages/db/scripts/migrate.mjs" "$migrations"
-ensure_hyperdrive
 
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID" "$HD_ID"
 new_auth_secret
