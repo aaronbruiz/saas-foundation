@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 // BASE_URL set (CI preview job) → test the deployed preview. Unset → start `pnpm dev` locally
 // (needs `pnpm db:up`, migrations and apps/web/.dev.vars).
-const baseURL = process.env.BASE_URL ?? 'http://localhost:5173'
+const baseURL = process.env.BASE_URL ?? 'http://localhost:3000'
 
 export default defineConfig({
   testDir: './e2e',
