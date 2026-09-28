@@ -32,6 +32,7 @@ fi
 # catches orphaned ones).
 candidates="$( {
   neon_branches_json | jq -r '.[].name | select(startswith("preview/pr-")) | ltrimstr("preview/pr-")'
+  legacy_hyperdrive_json | jq -r '.result[].name | select(startswith("saas-pr-")) | ltrimstr("saas-pr-")'
   gh pr list --state closed --limit 30 --json number --jq '.[].number'
 } | sort -u)"
 for n in $candidates; do

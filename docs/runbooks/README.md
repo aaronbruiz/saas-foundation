@@ -14,7 +14,7 @@
   - `NEON_API_KEY` from `~/.config/neon/credentials.json` (`access_token`; it expires quickly, so run any `neonctl` command without `--api-key` first to refresh it);
   - `GH_TOKEN="$(gh auth token)"`, plus the CI vars.
   - Tested 2026-09-28 (PRs 9005/9006): claim, deploy, E2E, re-deploy into the same slot, a second PR in another slot, release with URL verified, a real quarantine (pr-9005's URL kept answering 200), and the janitor keeping it quarantined.
-- **Delete:** `PR_NUMBER=<n> scripts/preview/down.sh`. **Orphans and quarantine re-checks:** `scripts/preview/janitor.sh` (daily in CI).
+- **Delete:** `PR_NUMBER=<n> scripts/preview/down.sh`. It only acts on a PR that GitHub reports closed right now, since a delayed close event mustn't wipe a reopened PR. Use `FORCE=1` for manual runs or test PR numbers. **Orphans and quarantine re-checks:** `scripts/preview/janitor.sh` (daily in CI).
 - **Known issue** (Previews open beta): a Preview URL can keep serving after a successful delete. Its old code keeps its slot's binding, so the slot is **quarantined** (data wiped, never reassigned) until the URL returns 404. If quarantined slots pile up, report upstream; `provision-slots.sh` with a higher `PREVIEW_SLOTS` adds room.
 - **"no free preview slot":** every slot is held by an open PR or quarantined. Close PRs, or wait for the janitor.
 

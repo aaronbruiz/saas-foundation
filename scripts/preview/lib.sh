@@ -32,20 +32,41 @@ names_for() { # $1 = PR number
 neon() { pnpm --dir "$ROOT" exec neonctl --api-key "$NEON_API_KEY" "$@"; }
 wrangler() { pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
 
-cf_api() { # $1 = path under /accounts/:id, rest = curl args. Fails loudly with the API's reason.
+# $1 = path under /accounts/:id, rest = curl args. Prints the body on 2xx; otherwise returns 1 and
+# leaves the HTTP status in CF_HTTP_CODE (000 = no response). Checked explicitly, so it also fails
+# correctly where `set -e` is off.
+cf_api() {
   local path="$1"; shift
   local out code body
-  out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  CF_HTTP_CODE=000
+  if ! out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
     -H 'Content-Type: application/json' \
-    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@")"
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@")"; then
+    log "ERROR: Cloudflare API $path: no response"
+    return 1
+  fi
   code="${out##*$'\n'}"
   body="${out%$'\n'*}"
-  if [ "$code" -ge 400 ]; then
+  CF_HTTP_CODE="$code"
+  if ! [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
     log "ERROR: Cloudflare API $path -> HTTP $code: $(printf '%s' "$body" | jq -c '.errors' 2>/dev/null)"
-    [ "$code" = 403 ] && log "hint: CLOUDFLARE_API_TOKEN needs Account > Hyperdrive: Edit and Account > Workers Scripts: Edit for account $CLOUDFLARE_ACCOUNT_ID"
     return 1
   fi
   printf '%s' "$body"
+}
+
+# Legacy per-PR Hyperdrive configs (ADR-0011), listed only if the token may: prints their names, or
+# nothing with the narrow per-Worker token (401/403). Any other failure is an error.
+legacy_hyperdrive_json() {
+  local out
+  if out="$(cf_api /hyperdrive/configs 2>/dev/null)"; then printf '%s' "$out"; return 0; fi
+  if [ "$CF_HTTP_CODE" = 401 ] || [ "$CF_HTTP_CODE" = 403 ]; then
+    log "no Hyperdrive access (per-Worker token): skipping legacy per-PR Hyperdrive cleanup"
+    printf '{"result":[]}'
+    return 0
+  fi
+  log "ERROR: listing Hyperdrive configs failed (HTTP $CF_HTTP_CODE)"
+  return 1
 }
 
 # Preflight: say which kind of token CLOUDFLARE_API_TOKEN is and whether it's active, without
