@@ -3,6 +3,8 @@
 ## Previews (ADR-0011)
 
 - Create/update by hand: `PR_NUMBER=<n> scripts/preview/up.sh` (needs the env vars from `.github/workflows/ci.yml`).
+- Trusted deploy of a build artifact (ADR-0013 step 3; CI switches to it next): from a checkout of the PR's **base** commit, `PR_NUMBER=<n> ARTIFACT_DIR=<dir> scripts/preview/deploy-artifact.sh`. `<dir>` holds `apps/web/dist` and `packages/db/drizzle` from the PR's build; the script runs none of the PR's code. It validates and patches `dist/server/wrangler.json` (`prepare-config.mjs`), migrates with `packages/db/scripts/migrate.mjs`, and deploys with `--config`. A refused config lists each reason; a legitimate new key or binding needs the validator updated on `main` first.
+- By hand with the logged-in sessions instead of CI secrets: `CLOUDFLARE_API_TOKEN="$(pnpm --dir apps/web exec wrangler auth token | tail -1)"` and `NEON_API_KEY` from `~/.config/neon/credentials.json` (`access_token`; it expires quickly, so run any `neonctl` command without `--api-key` first to refresh it), plus the CI vars. Tested 2026-09-28 as PR 9001: deploy, re-deploy, E2E, `down.sh`.
 - Delete: `PR_NUMBER=<n> scripts/preview/down.sh`. Orphans: `scripts/preview/janitor.sh` (runs daily in CI).
 - Known issue (Previews open beta, 2026-09-27): a Preview URL can keep serving after a successful `wrangler preview delete` (seen on pr-4 and pr-5; pr-3 returned 404). `down.sh` therefore deletes the Neon branch and Hyperdrive config **before** the preview, so a lingering URL serves code only (`db: down`). It then checks the URL and raises a warning. Report upstream if it persists.
 - "preview slots exhausted": 9 PR previews max (Neon Free: 10 branches per project). Close PRs or run the janitor.
