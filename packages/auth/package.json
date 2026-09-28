@@ -6,9 +6,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "auth:generate": "auth generate --config auth.cli.ts --output ../db/src/schema/auth.ts --yes"
   },
   "dependencies": {
-    "@saas-foundation/db": "workspace:*"
+    "@saas-foundation/db": "workspace:*",
+    "better-auth": "^1.7.6",
+    "drizzle-orm": "^0.45.3"
+  },
+  "devDependencies": {
+    "auth": "1.7.6"
   }
 }

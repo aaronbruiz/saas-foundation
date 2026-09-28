@@ -22,9 +22,18 @@ export default defineConfig({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
         hyperdrives: { DB: 'postgres://app:app@localhost:5432/app_test' },
+        bindings: {
+          // Test-only values; real secrets come from Cloudflare (prod) or .dev.vars (local dev).
+          BETTER_AUTH_SECRET: 'test-only-secret-not-used-anywhere-else-0123456789',
+          BETTER_AUTH_URL: 'http://localhost:3000',
+        },
       },
     }),
   ],
+  test: {
+    // Node-side: apply migrations to app_test before any workerd test runs.
+    globalSetup: ['./test/global-setup.ts'],
+  },
   resolve: {
     // Test runner only: pg's CommonJS `require()` of pg-protocol resolves to its ESM build under the
     // runner's conditions, which CJS can't load. Point it at the package's own CJS build.

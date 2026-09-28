@@ -29,6 +29,7 @@ pnpm format        # apply Prettier
 pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
+pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright (arrives with Vertical Slice 001)
 scripts/preview/up.sh | down.sh   # per-PR preview lifecycle; normally run by CI (PR_NUMBER=<n>)
 ```
