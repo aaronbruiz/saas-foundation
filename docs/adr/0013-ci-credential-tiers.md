@@ -2,7 +2,7 @@
 
 Status: Proposed (owner decision 2026-09-28 to tighten; implementation pending owner actions) · Date: 2026-09-28
 
-Supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md).
+On acceptance, supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md). Until then, the exposure below is live.
 
 ## Context
 
@@ -34,8 +34,11 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
    - CI then stops using the org-wide `NEON_API_KEY`.
 2. **Separate preview Worker:**
    - Previews move from versions of `saas-foundation` to a Worker named `saas-foundation-preview`.
+   - **The owner creates it once:** a per-Worker token can't create a Worker.
    - Its token is an account-owned token scoped to that Worker, plus the Hyperdrive permissions previews need.
    - The production Worker is then out of the preview token's reach.
+   - The trusted deploy job targets that Worker itself: `wrangler preview --config dist/server/wrangler.json --worker-name saas-foundation-preview` (flag per Cloudflare's docs [to confirm against the pinned Wrangler]). It never relies on the artifact's `name`.
+   - Preview URLs, `BETTER_AUTH_URL`, the URL-shape guard, `down.sh` and the janitor switch to the preview Worker's name.
 3. **Split the preview job so secrets never meet PR code:**
    - **`check` (T0):** already builds. For same-repo PRs it also uploads an artifact: `apps/web/dist` and `packages/db/drizzle`.
    - **`preview-deploy` (T1):**
@@ -43,7 +46,7 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
      - runs `pnpm install --frozen-lockfile` **without** the Actions cache (a PR-populated cache could be poisoned);
      - downloads the artifact as data;
      - does **not** import the build's `.wrangler/deploy/config.json` redirect, which could point Wrangler at another config. It passes the artifact's `dist/server/wrangler.json` explicitly (`--config`) and validates it first:
-       - the expected Worker `name`;
+       - `name` equal to `saas-foundation` (the name in the committed config; the deploy target is overridden as above);
        - no `build` command;
        - `no_bundle: true`;
        - the `previews.hyperdrive` DB sentinel;
