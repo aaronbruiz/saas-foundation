@@ -46,7 +46,7 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 Rule for the Free zone plan (owner decision 2026-09-28):
 
 - Security → WAF → Rate limiting rules → Create rule, name `auth-login-burst`. Free allows one rate limiting rule.
-- Expression (path only; Free rule expressions can't use other fields):
+- Expression: this rule matches on path only (Free rule expressions offer Path and Verified Bot; path is the relevant one here):
   `(http.request.uri.path in {"/api/auth/sign-in/email" "/api/auth/sign-up/email"})`
 - Counting characteristic: IP. Counting period: **10 s**. Mitigation (block) period: **10 s**. Both are the only values Free offers.
 - Requests per period: **10**. This is our choice, not a plan limit. It sits above what the app allows (5 per 60 s), so the edge rule only absorbs bursts before they reach the Worker and Postgres.

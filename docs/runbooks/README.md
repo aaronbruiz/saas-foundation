@@ -38,16 +38,20 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 
 Never deployed yet. Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
 
+**Data gate (ADR-0003):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts** (e.g. `smoke-*@<your domain>`), never real customer data. Remove them before real users arrive.
+
+0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
+
 1. **Owner:** GitHub `production` environment with a required reviewer. Not available on the current plan: GitHub Free with a private repo has no environments, and required reviewers need a public repo or Enterprise. See ADR-0011.
 2. **Owner:** production `BETTER_AUTH_SECRET`: `openssl rand -base64 32` piped straight into `wrangler secret put BETTER_AUTH_SECRET` (never pasted into chat, never committed).
 3. **Owner:** production `BETTER_AUTH_URL` = `https://<custom domain>`, set with `wrangler secret put` (or as a var).
 4. **Owner:** custom domain on a Cloudflare zone, attached to the Worker (Workers → Settings → Domains & Routes).
-5. Observability: confirm Workers Logs are on for the Worker (`observability` in `wrangler.jsonc`) and that the inspection steps in the Observability section work.
+5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs contain no secrets or PII (see ADR-0013 when it lands).
 6. **Restore point, then migrations.**
-   - Take a restore point: `gh workflow run db-backup.yml`, then confirm `backup-YYYYMMDD` exists (`neonctl branches list --project-id flat-cherry-23373668`). On Neon Free, PITR only reaches back 6 h.
+   - Take a restore point **synchronously, right before migrating**. Don't rely on `db-backup.yml`: it's asynchronous and skips if today's `backup-YYYYMMDD` already exists. Instead run `neonctl branches create --project-id flat-cherry-23373668 --name "pre-migrate-$(date -u +%Y%m%d-%H%M)" --parent main --no-compute` and check it appears in `neonctl branches list` with a creation time from just now. Delete it once the release is verified; it uses one of Neon Free's 10 branches. On Neon Free, PITR only reaches back 6 h.
    - Migrate: `DATABASE_URL="$(neonctl connection-string main --project-id flat-cherry-23373668 --database-name app --role-name app_owner)" pnpm db:migrate`. Direct (non-pooler) URL, never printed or logged.
    - Pending now: `0000` (slice schema) and `0001` (`rate_limit`); both only create tables.
-7. First deploy: `pnpm run deploy` (not `pnpm deploy`, which is a pnpm built-in) from a clean `main` checkout (production credentials never go through CI; ADR-0011).
+7. First deploy: `pnpm run deploy` (not `pnpm deploy`, which is a pnpm built-in) from the step 0 checkout, using the owner's logged-in `wrangler`. Production **deploy** credentials never go through CI. The only production credential in CI today is the backup job's Neon key; see ADR-0011 "CI credential tiers".
 8. Smoke test on the custom domain:
    - `/api/health` returns `ok`
    - sign-up, login, create an organization
