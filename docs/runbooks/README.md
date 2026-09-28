@@ -60,7 +60,7 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
 
 1. **GitHub `production` environment:** exists, restricted to deployment branch `main` (ADR-0013; this repo's environment secrets and branch rules were verified to work). Required reviewers aren't available on this plan, so the human gate is the owner running the deploy by hand (step 7). **Before launch:**
    - `NEON_BACKUP_API_KEY` (production-scoped Neon key) is set in `production`;
-   - a dispatched backup succeeded: `gh workflow run db-backup.yml`, then check the new `backup-*` branch;
+   - a dispatched backup run with that key succeeded: `gh workflow run db-backup.yml`. The script always lists the project's branches with the key first, so success proves the key authenticates; a project-scoped key has full rights inside its project. If today's `backup-YYYYMMDD` already existed, no new branch is created, and tomorrow's scheduled run must show a new one;
    - the repo-level `NEON_API_KEY` is gone.
 2. **Owner:** production `BETTER_AUTH_SECRET`: `openssl rand -base64 32 | pnpm --filter web exec wrangler secret put BETTER_AUTH_SECRET` (never pasted into chat, never committed).
 3. **Owner:** production `BETTER_AUTH_URL` = `https://<production hostname>`, i.e. the custom-domain `routes` pattern in `apps/web/wrangler.jsonc` (ADR-0017), set with `wrangler secret put` (or as a var).
