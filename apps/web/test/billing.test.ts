@@ -1,15 +1,41 @@
 import { billing, findOrganizationBySlug } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { getEntitlements } from '../src/modules/billing/entitlements'
 import {
-  DEFAULT_ENTITLEMENTS,
+  CHECKOUT,
+  DEFAULT_PLAN,
+  PLANS,
   entitlementsFor,
-  getEntitlements,
-} from '../src/modules/billing/entitlements'
+  isLive,
+  planForPrice,
+  purchasablePrices,
+  trialDaysFor,
+} from '../src/modules/billing/policy'
+import type {
+  BillingProvider,
+  CheckoutRequest,
+  PortalRequest,
+} from '../src/modules/billing/provider'
+import {
+  getBillingOverview,
+  openBillingPortal,
+  startCheckout,
+} from '../src/modules/billing/service'
+import { acceptInvitation, inviteMember } from '../src/modules/organizations/service'
+import { createProject, listProjects } from '../src/modules/projects/service'
 import { handleStripeWebhook } from '../src/modules/billing/webhook'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
-import { authPost, createOrg, randomIp, signUp, type TestUser } from './helpers'
+import {
+  authPost,
+  createOrg,
+  expectStatus,
+  joinAs,
+  randomIp,
+  signUp,
+  type TestUser,
+} from './helpers'
 
 // ADR-0018: verified, deduplicated, ordered webhooks; org-owned subscription state; entitlements
 // with a safe default. Signatures are computed independently of the Stripe SDK (Stripe's scheme:
@@ -38,6 +64,8 @@ type SubOpts = {
   subId?: string
   orgId?: string | null
   status?: string
+  /** The price's lookup key; defaults to a price the policy sells. */
+  priceKey?: string | null
 }
 function subscriptionEvent(o: SubOpts = {}) {
   return {
@@ -55,7 +83,15 @@ function subscriptionEvent(o: SubOpts = {}) {
         metadata: o.orgId === null ? {} : { organization_id: o.orgId },
         items: {
           object: 'list',
-          data: [{ current_period_end: 1_900_000_000, price: { id: 'price_test' } }],
+          data: [
+            {
+              current_period_end: 1_900_000_000,
+              price: {
+                id: 'price_test',
+                lookup_key: o.priceKey === undefined ? 'pro_monthly' : o.priceKey,
+              },
+            },
+          ],
         },
       },
     },
@@ -156,7 +192,7 @@ describe('Stripe webhook: state', () => {
       providerCustomerId: 'cus_test',
       providerSubscriptionId: subId,
       providerPriceId: 'price_test',
-      planKey: null,
+      planKey: 'pro',
       status: 'active',
       currentPeriodEnd: new Date(1_900_000_000 * 1000),
       cancelAtPeriodEnd: false,
@@ -259,7 +295,7 @@ describe('Stripe webhook: replacing a subscription', () => {
   })
 })
 
-describe('organization deletion with billing state (ADR-0018)', () => {
+describe('organization deletion with a live subscription (ADR-0020)', () => {
   const deleteOrg = (owner: TestUser, organizationId: string) =>
     authPost('/organization/delete', { organizationId }, randomIp(), owner)
 
@@ -301,45 +337,264 @@ describe('organization deletion with billing state (ADR-0018)', () => {
     expect(await subscriptionOf(orgId)).not.toBeNull()
   })
 
+  it('works once the subscription has ended, and removes its record', async () => {
+    const { owner, orgId } = await freshOrg()
+    const subId = `sub_${crypto.randomUUID()}`
+    await deliver(subscriptionEvent({ orgId, subId, created: now() - 10 }))
+    await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
+    expect((await deleteOrg(owner, orgId)).status).toBe(200)
+    expect(await subscriptionOf(orgId)).toBeNull()
+  })
+
   it('still works for an organization without billing state', async () => {
     const { owner, orgId } = await freshOrg()
     expect((await deleteOrg(owner, orgId)).status).toBe(200)
   })
 })
 
-describe('entitlements', () => {
-  const catalog = { pro: { planKey: 'pro', features: ['feature-x'] } }
-
-  it('grants a known plan only while active or trialing', () => {
-    expect(entitlementsFor({ status: 'active', planKey: 'pro' }, catalog)).toEqual(catalog.pro)
-    expect(entitlementsFor({ status: 'trialing', planKey: 'pro' }, catalog)).toEqual(catalog.pro)
-    for (const status of ['past_due', 'unpaid', 'paused', 'incomplete', 'canceled'] as const)
-      expect(entitlementsFor({ status, planKey: 'pro' }, catalog)).toBe(DEFAULT_ENTITLEMENTS)
+describe('entitlements from webhook state (ADR-0020)', () => {
+  it('maps the price to the plan through the policy, per organization', async () => {
+    const { orgId } = await freshOrg()
+    const { orgId: other } = await freshOrg()
+    await deliver(subscriptionEvent({ orgId, priceKey: 'pro_yearly' }))
+    expect(await getEntitlements(orgId)).toMatchObject({ planKey: 'pro' })
+    // Cross-tenant: the other organization stays on the default plan.
+    expect(await getEntitlements(other)).toMatchObject({ planKey: 'free' })
   })
 
-  it('falls back to the default for no subscription, no plan or an unknown plan', () => {
-    expect(entitlementsFor(null, catalog)).toBe(DEFAULT_ENTITLEMENTS)
-    expect(entitlementsFor({ status: 'active', planKey: null }, catalog)).toBe(DEFAULT_ENTITLEMENTS)
-    for (const planKey of ['enterprise', '__proto__', 'constructor', 'toString'])
-      expect(entitlementsFor({ status: 'active', planKey }, catalog)).toBe(DEFAULT_ENTITLEMENTS)
-  })
-
-  it('is the default everywhere while the plan catalog is empty', async () => {
-    expect(await getEntitlements(orgA)).toBe(DEFAULT_ENTITLEMENTS)
-    expect(await getEntitlements(orgB)).toBe(DEFAULT_ENTITLEMENTS)
-  })
-
-  it("reads only the organization's own subscription (cross-tenant)", async () => {
-    const subId = `sub_${crypto.randomUUID()}`
-    await deliver(subscriptionEvent({ orgId: orgB, subId, status: 'active' }))
-    // Plan keys come from the future catalog mapping; set one directly to exercise the read path.
-    await withDb((db) =>
-      raw(db).query('UPDATE billing_subscription SET plan_key = $1 WHERE organization_id = $2', [
-        'pro',
-        orgB,
-      ]),
+  it('records a price the product does not sell, granting only the default plan', async () => {
+    const { orgId } = await freshOrg()
+    expect((await deliver(subscriptionEvent({ orgId, priceKey: 'legacy_gold' }))).outcome).toBe(
+      'applied',
     )
-    expect(await getEntitlements(orgB, catalog)).toEqual(catalog.pro)
-    expect(await getEntitlements(orgA, catalog)).toBe(DEFAULT_ENTITLEMENTS)
+    expect(await subscriptionOf(orgId)).toMatchObject({ planKey: null, status: 'active' })
+    expect(await getEntitlements(orgId)).toMatchObject({ planKey: 'free' })
+  })
+
+  it('keeps a paid plan through past_due and drops it when unpaid', async () => {
+    const { orgId } = await freshOrg()
+    const subId = `sub_${crypto.randomUUID()}`
+    const t = now() - 100
+    await deliver(subscriptionEvent({ orgId, subId, created: t, status: 'past_due' }))
+    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+    await deliver(subscriptionEvent({ orgId, subId, created: t + 1, status: 'unpaid' }))
+    expect((await getEntitlements(orgId)).planKey).toBe('free')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// ADR-0020: the product policy is the one place that decides; these tests pin its boundaries.
+
+describe('billing policy (pure)', () => {
+  it('gives every organization without an entitled subscription the default plan', () => {
+    expect(DEFAULT_PLAN).toBe('free')
+    expect(entitlementsFor(null).planKey).toBe(DEFAULT_PLAN)
+    for (const planKey of [null, 'enterprise', '__proto__', 'constructor', 'toString'])
+      expect(entitlementsFor({ status: 'active', planKey }).planKey).toBe(DEFAULT_PLAN)
+  })
+
+  it('keeps a paid plan only while active, trialing or past_due', () => {
+    const entitled = ['active', 'trialing', 'past_due'] as const
+    const notEntitled = ['unpaid', 'paused', 'incomplete', 'canceled'] as const
+    for (const status of entitled)
+      expect(entitlementsFor({ status, planKey: 'pro' }).planKey).toBe('pro')
+    for (const status of notEntitled)
+      expect(entitlementsFor({ status, planKey: 'pro' }).planKey).toBe(DEFAULT_PLAN)
+  })
+
+  it('keeps retired prices mapped to their plan but never sells them', () => {
+    // Every listed price maps to its plan; purchasable ones are the non-retired subset.
+    for (const [key, plan] of Object.entries(PLANS))
+      for (const p of plan.prices) expect(planForPrice(p.key)).toBe(key)
+    const sold = new Set(purchasablePrices().map((p) => p.key))
+    for (const plan of Object.values(PLANS))
+      for (const p of plan.prices as readonly { key: string; retired?: boolean }[])
+        expect(sold.has(p.key)).toBe(!p.retired)
+  })
+
+  it('maps each price to exactly one plan', () => {
+    const keys = purchasablePrices().map((p) => p.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    for (const p of purchasablePrices()) expect(planForPrice(p.key)).toBe(p.plan)
+    expect(planForPrice('not-a-price')).toBeNull()
+    expect(planForPrice(null)).toBeNull()
+    // The default plan is never sold.
+    expect(purchasablePrices().some((p) => p.plan === DEFAULT_PLAN)).toBe(false)
+  })
+
+  it('treats every non-canceled subscription as live, and offers a trial only once', () => {
+    expect(isLive(null)).toBe(false)
+    for (const status of [
+      'active',
+      'trialing',
+      'past_due',
+      'unpaid',
+      'paused',
+      'incomplete',
+    ] as const)
+      expect(isLive({ status })).toBe(true)
+    expect(isLive({ status: 'canceled' })).toBe(false)
+    expect(trialDaysFor(null)).toBe(CHECKOUT.trialDays)
+    expect(trialDaysFor({ status: 'canceled' })).toBe(0)
+  })
+
+  it('has limits for every plan', () => {
+    for (const plan of Object.values(PLANS)) {
+      expect(plan.limits).toHaveProperty('projects')
+      expect(plan.limits).toHaveProperty('members')
+    }
+  })
+})
+
+async function upgrade(orgId: string, status = 'active') {
+  const subId = `sub_${crypto.randomUUID()}`
+  await deliver(subscriptionEvent({ orgId, subId, status, created: now() - 60 }))
+  return subId
+}
+
+describe('plan limits are enforced where the resource is created', () => {
+  const freeProjects = PLANS[DEFAULT_PLAN].limits.projects!
+  const create = (owner: TestUser, slug: string, name: string) =>
+    createProject(owner.headers, { tenant: slug, project: { name } })
+
+  it('stops new projects at the limit; upgrading lifts it; downgrading keeps existing ones', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'lim')
+    const orgId = await orgIdOf(slug)
+    for (let i = 0; i < freeProjects; i++) await create(owner, slug, `p${i}`)
+    await expectStatus(() => create(owner, slug, 'over'), 403)
+
+    const subId = await upgrade(orgId)
+    await create(owner, slug, 'with-pro')
+    await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
+
+    // Back on the default plan: nothing is deleted, but nothing new until under the limit.
+    expect(await listProjects(owner.headers, { tenant: slug })).toHaveLength(freeProjects + 1)
+    await expectStatus(() => create(owner, slug, 'after-downgrade'), 403)
+  })
+
+  it("can't be overshot by concurrent creations", async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'race')
+    const results = await Promise.allSettled(
+      Array.from({ length: freeProjects + 3 }, (_, i) => create(owner, slug, `r${i}`)),
+    )
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(freeProjects)
+  })
+
+  it('limits seats through Better Auth: invitations beyond free seats are refused', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'seats')
+    const seats = PLANS[DEFAULT_PLAN].limits.members!
+    for (let i = 1; i < seats; i++) await joinAs(owner, slug, 'member')
+    await expect(
+      inviteMember(owner.headers, { tenant: slug, email: `x-${crypto.randomUUID()}@test.local` }),
+    ).rejects.toThrow()
+
+    await upgrade(await orgIdOf(slug))
+    await joinAs(owner, slug, 'member')
+  })
+
+  it('refuses accepting an invitation once the seats are gone (e.g. after a downgrade)', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'accept')
+    const orgId = await orgIdOf(slug)
+    const subId = await upgrade(orgId)
+    for (let i = 1; i < PLANS[DEFAULT_PLAN].limits.members!; i++)
+      await joinAs(owner, slug, 'member')
+    const late = await signUp()
+    const { invitationId } = await inviteMember(owner.headers, { tenant: slug, email: late.email })
+    await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
+    await expectStatus(() => acceptInvitation(late.headers, { invitationId }), 403)
+  })
+})
+
+describe('billing actions', () => {
+  function fakeProvider() {
+    const calls: { checkout: CheckoutRequest[]; portal: PortalRequest[] } = {
+      checkout: [],
+      portal: [],
+    }
+    const provider: BillingProvider = {
+      checkout: async (req) => (calls.checkout.push(req), 'https://checkout.example/session'),
+      portal: async (req) => (calls.portal.push(req), 'https://portal.example/session'),
+    }
+    return { provider, calls }
+  }
+  const price = purchasablePrices()[0]!.key
+
+  it('lets owners and admins see billing, and only owners buy', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-roles')
+    const admin = await joinAs(owner, slug, 'admin')
+    const member = await joinAs(owner, slug, 'member')
+    const { provider } = fakeProvider()
+
+    expect((await getBillingOverview(owner.headers, { tenant: slug })).canManage).toBe(true)
+    const adminView = await getBillingOverview(admin.headers, { tenant: slug })
+    expect(adminView).toMatchObject({ canManage: false, plan: { key: DEFAULT_PLAN } })
+    await expectStatus(() => getBillingOverview(member.headers, { tenant: slug }), 403)
+    await expectStatus(() => startCheckout(admin.headers, { tenant: slug, price }, provider), 403)
+    await expectStatus(() => startCheckout(member.headers, { tenant: slug, price }, provider), 403)
+  })
+
+  it("never lets another tenant's user start a checkout (404)", async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-x')
+    const stranger = await signUp()
+    const { provider, calls } = fakeProvider()
+    await expectStatus(
+      () => startCheckout(stranger.headers, { tenant: slug, price }, provider),
+      404,
+    )
+    expect(calls.checkout).toHaveLength(0)
+  })
+
+  it('starts the first checkout with the trial, the organization link and tax', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-co')
+    const { provider, calls } = fakeProvider()
+    const { url } = await startCheckout(owner.headers, { tenant: slug, price }, provider)
+    expect(url).toBe('https://checkout.example/session')
+    expect(calls.checkout[0]).toMatchObject({
+      organizationId: await orgIdOf(slug),
+      customerId: null,
+      customerEmail: owner.email,
+      priceKey: price,
+      trialDays: CHECKOUT.trialDays,
+      automaticTax: CHECKOUT.automaticTax,
+      successUrl: `${env.BETTER_AUTH_URL}/t/${slug}/billing?checkout=success`,
+      cancelUrl: `${env.BETTER_AUTH_URL}/t/${slug}/billing`,
+    })
+  })
+
+  it('refuses unknown prices, a second live subscription, and missing configuration', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-no')
+    const { provider } = fakeProvider()
+    await expectStatus(
+      () => startCheckout(owner.headers, { tenant: slug, price: 'free_forever' }, provider),
+      400,
+    )
+    await expectStatus(() => startCheckout(owner.headers, { tenant: slug, price }, null), 503)
+    await upgrade(await orgIdOf(slug), 'past_due')
+    await expectStatus(() => startCheckout(owner.headers, { tenant: slug, price }, provider), 409)
+    expect((await getBillingOverview(owner.headers, { tenant: slug })).prices).toEqual([])
+  })
+
+  it('reuses the customer and skips the trial after a subscription ended; portal needs one', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-again')
+    const orgId = await orgIdOf(slug)
+    const { provider, calls } = fakeProvider()
+    await expectStatus(() => openBillingPortal(owner.headers, { tenant: slug }, provider), 409)
+
+    const subId = await upgrade(orgId)
+    await openBillingPortal(owner.headers, { tenant: slug }, provider)
+    expect(calls.portal[0]).toMatchObject({ customerId: 'cus_test' })
+
+    await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
+    await startCheckout(owner.headers, { tenant: slug, price }, provider)
+    expect(calls.checkout[0]).toMatchObject({ customerId: 'cus_test', trialDays: 0 })
   })
 })

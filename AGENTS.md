@@ -4,18 +4,18 @@ Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, 
 
 ## Module map
 
-| Path                                 | Owns                                                                         | May import                                                     |
-| ------------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `apps/web/src/routes/t/$tenant/`     | tenant-scoped pages and loaders                                              | `modules/`, `server/`, `@saas-foundation/contracts`            |
-| `apps/web/src/routes/api/auth/$.ts`  | Better Auth handler                                                          | `@saas-foundation/auth`                                        |
-| `apps/web/src/server/context.ts`     | `getTenantContext(request, env, slug)`: session → slug → org → membership    | `@saas-foundation/auth`, `@saas-foundation/db`                 |
-| `apps/web/src/server/permissions.ts` | role → capability matrix; `authorize(ctx, capability)` (403)                 | nothing internal                                               |
-| `apps/web/src/modules/<domain>/`     | domain logic and server functions                                            | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
-| `apps/web/src/modules/billing/`      | plans → entitlements; `providers/stripe` is the only place that knows Stripe | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
-| `packages/db`                        | Drizzle schema, migrations, client factory, **tenant-scoped repositories**   | nothing internal                                               |
-| `packages/auth`                      | Better Auth config (server only)                                             | `@saas-foundation/db`                                          |
-| `packages/contracts`                 | Zod schemas shared by UI and server                                          | nothing internal                                               |
-| `packages/testkit`                   | fixtures, seeded tenants, login helpers                                      | anything (tests only)                                          |
+| Path                                 | Owns                                                                                                                                                                                                                             | May import                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `apps/web/src/routes/t/$tenant/`     | tenant-scoped pages and loaders                                                                                                                                                                                                  | `modules/`, `server/`, `@saas-foundation/contracts`            |
+| `apps/web/src/routes/api/auth/$.ts`  | Better Auth handler                                                                                                                                                                                                              | `@saas-foundation/auth`                                        |
+| `apps/web/src/server/context.ts`     | `getTenantContext(request, env, slug)`: session → slug → org → membership                                                                                                                                                        | `@saas-foundation/auth`, `@saas-foundation/db`                 |
+| `apps/web/src/server/permissions.ts` | role → capability matrix; `authorize(ctx, capability)` (403)                                                                                                                                                                     | nothing internal                                               |
+| `apps/web/src/modules/<domain>/`     | domain logic and server functions                                                                                                                                                                                                | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
+| `apps/web/src/modules/billing/`      | **`policy.ts` is the product's billing policy** (plans, prices by lookup key, limits, features, trial, tax, lifecycle; ADR-0020); entitlements, webhook, checkout/portal; `providers/stripe` is the only place that knows Stripe | `server/`, `@saas-foundation/db`, `@saas-foundation/contracts` |
+| `packages/db`                        | Drizzle schema, migrations, client factory, **tenant-scoped repositories**                                                                                                                                                       | nothing internal                                               |
+| `packages/auth`                      | Better Auth config (server only)                                                                                                                                                                                                 | `@saas-foundation/db`                                          |
+| `packages/contracts`                 | Zod schemas shared by UI and server                                                                                                                                                                                              | nothing internal                                               |
+| `packages/testkit`                   | fixtures, seeded tenants, login helpers                                                                                                                                                                                          | anything (tests only)                                          |
 
 The import boundaries above are enforced by `eslint.config.js`.
 
@@ -50,7 +50,7 @@ kill -9 $(lsof -t -i:3000)
 3. Modules don't touch other modules' tables; call the module's exports.
 4. Authorization is decided on the server. The UI may hide things, never decide them.
 5. Unknown tenant, non-member, or another tenant's resource returns **404**, never 403, and never leaks data. **403** is only for a member of the tenant whose role is insufficient (e.g. a `member` inviting), since the tenant's existence is already known to them.
-6. Authorization reads **entitlements** (`getEntitlements(orgId)`) only, never subscription status or Stripe objects. Only `modules/billing/providers/**` may import `stripe` or reference provider ids.
+6. Authorization reads **entitlements** (`getEntitlements(orgId)`) only, never subscription status or Stripe objects. Only `modules/billing/providers/**` may import `stripe` or reference provider ids. Product billing rules (plans, limits, features, which statuses keep access) live only in `modules/billing/policy.ts`; enforcement points ask it and never name a plan (ADR-0020).
 7. The only DB binding is `DB` (Hyperdrive, **caching disabled**). Don't add a cached binding without an ADR.
 8. Secrets come only from Worker `env`. `.dev.vars` is git-ignored. Nothing secret goes in client code (CI scans the client bundle: `scripts/scan-client-bundle.sh`). Forms use `method="post"` and stay disabled until hydrated, so fields never reach a URL.
 9. Every server boundary validates input with Zod from `packages/contracts`. `organizationId` is never an input field.
@@ -64,6 +64,8 @@ kill -9 $(lsof -t -i:3000)
 ## Recipes
 
 **Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → add repository functions in `packages/db/src/<table>.ts` that filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL.
+
+**Add a plan limit or feature (ADR-0020):** add it to `Entitlements` and every plan in `modules/billing/policy.ts` → enforce it where the resource is created, asking `entitlementsIn(db, ctx.orgId)` (a count-then-insert needs the organization row lock, like `projects.createWithinLimit`) → tests for the cap, upgrade, downgrade (nothing deleted) and concurrency.
 
 **Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → first line `const ctx = await getTenantContext(request, env, input.tenant)` → for an operation on a resource id, first confirm the resource exists in this tenant (404) → `authorize(ctx, '<capability>')` (add the capability to the matrix in `server/permissions.ts` and a test per role in `test/roles.test.ts`) → call repositories with `ctx`.
 
@@ -90,6 +92,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Migrations that drop, rename or retype columns in one step; edits to already-applied migrations.
 - New bindings in `wrangler.jsonc` without an ADR, or without a `previews` override.
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
+- A plan name, price id, limit number or subscription status checked outside `modules/billing/policy.ts` (product assumptions spread through the app, ADR-0020); a limit enforced only in our service when Better Auth's own endpoints can bypass it.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent; a billing webhook that works without its secret configured, or that lets an older or duplicate event change state (ADR-0018).
 - New tenant data without cross-tenant tests.
 - Email sent outside `server/email.ts`'s `Mailer`, a token placed in a URL path instead of the query string, or `EMAIL_DELIVERY=console` reachable outside localhost (ADR-0016).

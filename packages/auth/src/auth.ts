@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { organization } from 'better-auth/plugins'
-import { billing, findMembership, schema, type Db } from '@saas-foundation/db'
+import { countMembers, findMembership, schema, type Db } from '@saas-foundation/db'
 
 /**
  * Emails Better Auth asks the app to send (ADR-0016). The app renders and delivers them; links that
@@ -36,6 +36,16 @@ export type AuthOptions = {
    * would take measurably longer than for an unknown one (account enumeration by timing).
    */
   runInBackground?: (promise: Promise<unknown>) => void
+  /**
+   * The app's billing policy, asked by Better Auth's own endpoints so no path bypasses it
+   * (ADR-0020). Without it: Better Auth's default member limit, and deletion is never refused.
+   */
+  billing?: {
+    /** Seats the organization's plan allows (null = unlimited). */
+    memberLimit: (organizationId: string) => Promise<number | null>
+    /** True while the organization must not be deleted (e.g. a live subscription). */
+    blocksDeletion: (organizationId: string) => Promise<boolean>
+  }
 }
 
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
@@ -52,7 +62,9 @@ export function createAuth({
   log,
   sendEmail,
   runInBackground,
+  billing: billingPolicy,
 }: AuthOptions) {
+  const blocksDeletion = (orgId: string) => billingPolicy?.blocksDeletion(orgId) ?? false
   return betterAuth({
     secret,
     baseURL,
@@ -76,16 +88,17 @@ export function createAuth({
       },
     },
     hooks: {
-      // ADR-0018: refuse deleting an organization with billing state BEFORE Better Auth's endpoint
-      // runs (it clears the caller's active organization before its own hooks). Only for members:
-      // anyone else gets Better Auth's usual error, so billing state can't be probed.
+      // ADR-0018/0020: refuse deleting an organization the billing policy protects BEFORE Better
+      // Auth's endpoint runs (it clears the caller's active organization before its own hooks).
+      // Only for members: anyone else gets Better Auth's usual error, so billing state can't be
+      // probed.
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== '/organization/delete') return
         const orgId = (ctx.body as { organizationId?: unknown } | undefined)?.organizationId
         if (typeof orgId !== 'string' || !orgId) return
         const session = await getSessionFromCtx(ctx)
         if (!session || !(await findMembership(db, orgId, session.user.id))) return
-        if (await billing(db, { orgId }).subscription()) throw billingStateConflict()
+        if (await blocksDeletion(orgId)) throw billingStateConflict()
       }),
     },
     databaseHooks: {
@@ -127,10 +140,22 @@ export function createAuth({
         organizationHooks: {
           // Backstop for deletions that don't come through the HTTP middleware above.
           async beforeDeleteOrganization({ organization }) {
-            if (await billing(db, { orgId: organization.id }).subscription())
-              throw billingStateConflict()
+            if (await blocksDeletion(organization.id)) throw billingStateConflict()
           },
         },
+        // Seat limits from the plan (ADR-0020). Accepting an invitation (or adding a member) fails
+        // at the limit; pending invitations can't exceed the free seats. Better Auth counts, then
+        // inserts, without a lock: simultaneous acceptances can exceed the cap by their number
+        // (accepted for flat pricing; per-seat billing would need a database-enforced cap).
+        ...(billingPolicy && {
+          membershipLimit: async (_user, org) =>
+            (await billingPolicy.memberLimit(org.id)) ?? Number.MAX_SAFE_INTEGER,
+          invitationLimit: async ({ organization: org }) => {
+            const limit = await billingPolicy.memberLimit(org.id)
+            if (limit === null) return Number.MAX_SAFE_INTEGER // unlimited: no pending cap either
+            return Math.max(0, limit - (await countMembers(db, org.id)))
+          },
+        }),
         async sendInvitationEmail(data) {
           await sendEmail({
             kind: 'invitation',
@@ -144,10 +169,9 @@ export function createAuth({
   })
 }
 
-// ADR-0018: what deleting an organization with billing state does is an open product decision
-// (the subscription would keep running). Until then it's refused; the database's foreign key
-// (RESTRICT) is the last backstop.
 const billingStateConflict = () =>
-  new APIError('CONFLICT', { message: 'Organization has billing state' })
+  new APIError('CONFLICT', {
+    message: 'This organization has an active subscription. Cancel it in Billing first.',
+  })
 
 export type Auth = ReturnType<typeof createAuth>

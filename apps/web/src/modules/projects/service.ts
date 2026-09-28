@@ -7,8 +7,9 @@ import {
 } from '@saas-foundation/contracts'
 import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
-import { notFound, parseInput } from '../../server/errors'
+import { HttpError, notFound, parseInput } from '../../server/errors'
 import { authorize, type Capability } from '../../server/permissions'
+import { entitlementsIn } from '../billing/entitlements'
 
 // Plain functions (testable in workerd); server functions in ./functions.ts only adapt them.
 // Role checks come from the capability matrix (server/permissions.ts).
@@ -50,7 +51,12 @@ export async function createProject(headers: Headers, input: unknown): Promise<P
   const { tenant, project } = parseInput(CreateProjectInput, input)
   return withDb(async (db) => {
     const { ctx, repo } = await scoped(db, headers, tenant, 'project:create')
-    return repo.create(project, ctx.userId)
+    // Plan limit (ADR-0020): a hard stop for new projects; existing ones are never touched.
+    const { limits } = await entitlementsIn(db, ctx.orgId)
+    const created = await repo.createWithinLimit(project, ctx.userId, limits.projects)
+    if (!created)
+      throw new HttpError(403, `Your plan allows ${limits.projects} projects. Upgrade to add more.`)
+    return created
   })
 }
 

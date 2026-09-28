@@ -1,7 +1,13 @@
-import { applyBillingEvent } from '@saas-foundation/db'
+import { applyBillingEvent, type BillingEvent } from '@saas-foundation/db'
 import { withDb } from '../../server/db'
 import { logError, logWarn } from '../../server/log'
-import { InvalidPayload, InvalidSignature, parseStripeWebhook } from './providers/stripe'
+import { planForPrice } from './policy'
+import {
+  InvalidPayload,
+  InvalidSignature,
+  parseStripeWebhook,
+  type ProviderEvent,
+} from './providers/stripe'
 
 // Bytes. Stripe's payloads are far below this; anything bigger isn't worth buffering or an HMAC.
 const MAX_BODY = 512 * 1024
@@ -23,9 +29,9 @@ export async function handleStripeWebhook(
   const body = await readBody(request, MAX_BODY)
   if (body === null) return new Response('payload too large', { status: 413 })
 
-  let event
+  let parsed: ProviderEvent
   try {
-    event = await parseStripeWebhook(body, request.headers.get('stripe-signature'), secret)
+    parsed = await parseStripeWebhook(body, request.headers.get('stripe-signature'), secret)
   } catch (e) {
     if (e instanceof InvalidSignature) {
       logWarn('billing.webhook.bad_signature', { rayId })
@@ -38,6 +44,12 @@ export async function handleStripeWebhook(
     throw e
   }
 
+  const event = withPlan(parsed)
+  // A price this product doesn't sell still records the subscription, but grants only the default
+  // plan; it usually means the policy's price list and the provider's lookup keys disagree.
+  if (event.subscription && event.subscription.planKey === null)
+    logWarn('billing.webhook.unknown_price', { rayId, eventType: event.type })
+
   let outcome
   try {
     outcome = await withDb((db) => applyBillingEvent(db, event))
@@ -49,6 +61,13 @@ export async function handleStripeWebhook(
   if (outcome === 'unlinked' || outcome === 'conflict')
     logWarn(`billing.webhook.${outcome}`, { rayId, eventType: event.type })
   return Response.json({ received: true, outcome })
+}
+
+/** Maps the provider's price to our plan through the product policy (ADR-0020). */
+function withPlan({ subscription, ...rest }: ProviderEvent): BillingEvent {
+  if (!subscription) return { ...rest, subscription: null }
+  const { priceKey, ...snapshot } = subscription
+  return { ...rest, subscription: { ...snapshot, planKey: planForPrice(priceKey) } }
 }
 
 /** The raw body as text, or null once it exceeds `max` bytes (checked before buffering it all). */

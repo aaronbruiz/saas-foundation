@@ -8,16 +8,17 @@ export const billingSubscription = pgTable(
   'billing_subscription',
   {
     // One row per organization: the primary key is also the tenant key (AGENTS.md recipe).
-    // RESTRICT: deleting an organization with billing state is an open product decision (ADR-0018),
-    // so the database refuses it instead of silently dropping the record.
+    // CASCADE (ADR-0020): the app refuses to delete an organization whose subscription is still
+    // live; an ended subscription's record goes with the organization.
     organizationId: text('organization_id')
       .primaryKey()
-      .references(() => organization.id, { onDelete: 'restrict' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     provider: text('provider').notNull(),
     providerCustomerId: text('provider_customer_id').notNull(),
     providerSubscriptionId: text('provider_subscription_id').notNull(),
     providerPriceId: text('provider_price_id'),
-    // Our plan key; null until the plan catalog exists (a product decision).
+    // Our plan key, resolved from the price by the app's product policy (ADR-0020); null for a
+    // price the product doesn't sell.
     planKey: text('plan_key'),
     status: text('status').$type<SubscriptionStatus>().notNull(),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),

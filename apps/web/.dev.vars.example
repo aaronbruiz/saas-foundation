@@ -5,3 +5,6 @@ BETTER_AUTH_URL=http://localhost:3000
 SIGNUP_MODE=open
 # ADR-0016: print auth emails (links included) to the dev console. Refused outside localhost.
 EMAIL_DELIVERY=console
+# ADR-0020: billing stays off (503) without these. Stripe test-mode values only, never live keys.
+# STRIPE_SECRET_KEY=
+# STRIPE_WEBHOOK_SECRET=

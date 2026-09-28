@@ -20,6 +20,7 @@ import { Route as OrgsNewRouteImport } from './routes/orgs.new'
 import { Route as TTenantRouteImport } from './routes/t.$tenant'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as TTenantIndexRouteImport } from './routes/t.$tenant.index'
+import { Route as TTenantBillingRouteImport } from './routes/t.$tenant.billing'
 import { Route as TTenantInviteRouteImport } from './routes/t.$tenant.invite'
 import { Route as ApiBillingWebhooksStripeRouteImport } from './routes/api/billing/webhooks/stripe'
 import { Route as TTenantProjectsIndexRouteImport } from './routes/t.$tenant.projects.index'
@@ -80,6 +81,11 @@ const TTenantIndexRoute = TTenantIndexRouteImport.update({
   path: '/',
   getParentRoute: () => TTenantRoute,
 } as any)
+const TTenantBillingRoute = TTenantBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => TTenantRoute,
+} as any)
 const TTenantInviteRoute = TTenantInviteRouteImport.update({
   id: '/invite',
   path: '/invite',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/orgs/new': typeof OrgsNewRoute
   '/t/$tenant': typeof TTenantRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/invite/$id': typeof InviteIdRoute
   '/orgs/new': typeof OrgsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant': typeof TTenantIndexRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/orgs/new': typeof OrgsNewRoute
   '/t/$tenant': typeof TTenantRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/orgs/new'
     | '/t/$tenant'
     | '/api/auth/$'
+    | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
     | '/api/billing/webhooks/stripe'
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/invite/$id'
     | '/orgs/new'
     | '/api/auth/$'
+    | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant'
     | '/api/billing/webhooks/stripe'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/orgs/new'
     | '/t/$tenant'
     | '/api/auth/$'
+    | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
     | '/api/billing/webhooks/stripe'
@@ -299,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTenantIndexRouteImport
       parentRoute: typeof TTenantRoute
     }
+    '/t/$tenant/billing': {
+      id: '/t/$tenant/billing'
+      path: '/billing'
+      fullPath: '/t/$tenant/billing'
+      preLoaderRoute: typeof TTenantBillingRouteImport
+      parentRoute: typeof TTenantRoute
+    }
     '/t/$tenant/invite': {
       id: '/t/$tenant/invite'
       path: '/invite'
@@ -331,6 +350,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface TTenantRouteChildren {
+  TTenantBillingRoute: typeof TTenantBillingRoute
   TTenantInviteRoute: typeof TTenantInviteRoute
   TTenantIndexRoute: typeof TTenantIndexRoute
   TTenantProjectsIdRoute: typeof TTenantProjectsIdRoute
@@ -338,6 +358,7 @@ interface TTenantRouteChildren {
 }
 
 const TTenantRouteChildren: TTenantRouteChildren = {
+  TTenantBillingRoute: TTenantBillingRoute,
   TTenantInviteRoute: TTenantInviteRoute,
   TTenantIndexRoute: TTenantIndexRoute,
   TTenantProjectsIdRoute: TTenantProjectsIdRoute,

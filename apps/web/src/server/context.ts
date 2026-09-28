@@ -5,6 +5,7 @@ import { HttpError, notFound } from './errors'
 
 export type TenantContext = {
   userId: string
+  email: string
   orgId: string
   slug: string
   name: string
@@ -30,6 +31,7 @@ export async function getTenantContext(
   if (!org || !membership) throw notFound()
   return {
     userId: session.user.id,
+    email: session.user.email,
     orgId: org.id,
     slug: org.slug,
     name: org.name,

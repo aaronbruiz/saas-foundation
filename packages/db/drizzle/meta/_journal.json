@@ -29,6 +29,13 @@
       "when": 1790623972012,
       "tag": "0003_amazing_thunderbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790630751938,
+      "tag": "0004_giant_silver_surfer",
+      "breakpoints": true
     }
   ]
 }

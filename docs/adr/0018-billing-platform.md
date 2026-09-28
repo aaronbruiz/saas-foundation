@@ -2,6 +2,8 @@
 
 Status: Accepted · Date: 2026-09-28
 
+Superseded in part by [ADR-0020](0020-billing-product-policy.md): the eight product decisions, entitled statuses, organization deletion and `plan_key`.
+
 Implements the product-independent part of [ADR-0009](0009-billing-plans-entitlements-stripe-adapter.md). The plan catalog, prices, limits and access policy wait for the owner's product decisions (listed below).
 
 ## Context

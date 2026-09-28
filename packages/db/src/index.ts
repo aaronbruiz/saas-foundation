@@ -11,6 +11,7 @@ export { createDb, type Db } from './client.ts'
 export * as schema from './schema/index.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
+  countMembers,
   findMembership,
   findOrganizationById,
   findOrganizationBySlug,
