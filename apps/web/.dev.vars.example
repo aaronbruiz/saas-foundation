@@ -1,3 +1,5 @@
 # Copy to .dev.vars (git-ignored) for `pnpm dev`. Generate a secret: openssl rand -base64 32
 BETTER_AUTH_SECRET=replace-with-32-plus-random-bytes
 BETTER_AUTH_URL=http://localhost:3000
+# ADR-0014 data gate: local dev signs up anyone. Unset = closed (production default).
+SIGNUP_MODE=open

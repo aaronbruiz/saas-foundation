@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { organization } from 'better-auth/plugins'
 import { schema, type Db } from '@saas-foundation/db'
@@ -10,6 +11,11 @@ export type AuthOptions = {
   db: Db
   secret: string
   baseURL: string
+  /**
+   * Who may create an account (ADR-0014 data gate). Checked before Better Auth creates any user,
+   * whatever the sign-up path. Required, so every caller decides explicitly.
+   */
+  allowSignUp: (email: string) => boolean
   /**
    * Receives Better Auth's own log lines (level + message only; its extra arguments can hold request
    * data, so they're dropped). The app routes them to its structured logger (ADR-0015).
@@ -25,12 +31,23 @@ const loginRule = (request: Request) => request.method === 'POST' && { window: 6
  * Identity only (ADR-0005): users, sessions, organizations, members, invitations.
  * Authorization decisions live in the app (`getTenantContext`), not here.
  */
-export function createAuth({ db, secret, baseURL, log, onInvitation }: AuthOptions) {
+export function createAuth({ db, secret, baseURL, allowSignUp, log, onInvitation }: AuthOptions) {
   return betterAuth({
     secret,
     baseURL,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     emailAndPassword: { enabled: true },
+    databaseHooks: {
+      user: {
+        create: {
+          async before(user) {
+            if (!allowSignUp(user.email)) {
+              throw new APIError('FORBIDDEN', { message: 'Sign-up is closed' })
+            }
+          },
+        },
+      },
+    },
     logger: {
       level: 'warn',
       ...(log && { log: (level, message: unknown) => log(level, message) }),
