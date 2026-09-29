@@ -7,10 +7,23 @@ name: Preview
 #   → deploy (preview: narrow Worker token + Neon; the PR's build artifact as data only)
 #   → e2e (no secrets; default-branch Playwright suite against the preview URL)
 # No job runs PR code, and no job restores or saves a cache.
+# Lock: the whole run (resolve → e2e) holds `preview-pr-N`, the group close-triggered cleanup uses,
+# so once a preview run has started, cleanup waits until it has finished (E2E included).
+run-name: >-
+  ${{ github.event.workflow_run.pull_requests[0] && format('Preview PR #{0}', github.event.workflow_run.pull_requests[0].number) || 'Preview (no PR)' }}
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+
+# The lock key comes from GitHub's event (the CI run's same-repo PR), used only for locking. Resource
+# names still come from `resolve`, which skips unless its PR is this same number. No PR in the event
+# → a unique group, and `resolve` skips (never deploy without holding the PR's lock).
+# `queue: max` keeps every pending run/cleanup instead of replacing the pending one (the default).
+concurrency:
+  group: ${{ github.event.workflow_run.pull_requests[0] && format('preview-pr-{0}', github.event.workflow_run.pull_requests[0].number) || format('preview-unlocked-{0}', github.run_id) }}
+  cancel-in-progress: false
+  queue: max
 
 permissions: {}
 
@@ -33,6 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          LOCK_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
         # The PR number comes from GitHub, never from the run's branch name or artifact: the one open
         # same-repo PR whose head is exactly this commit (an older commit's run is skipped).
         run: |
@@ -44,6 +58,11 @@ jobs:
           if [ "$count" != 1 ]; then echo "no single open PR at $HEAD_SHA ($count); skipping"; exit 0; fi
           pr="$(jq -r '.[0]' <<<"$prs")"
           [[ "$pr" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "unexpected PR number"; exit 1; }
+          # This run holds the lock of LOCK_PR only: never touch another PR's resources.
+          if [ "$pr" != "$LOCK_PR" ]; then
+            echo "::notice title=Preview skipped::this run isn't locked for PR #$pr (lock: '${LOCK_PR}')"
+            exit 0
+          fi
           echo "pr=$pr" >>"$GITHUB_OUTPUT"
 
   infra:
@@ -52,10 +71,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: preview-infra
-    # Shared with preview-cleanup.yml: deploy and teardown of one PR never overlap.
-    concurrency:
-      group: preview-pr-${{ needs.resolve.outputs.pr }}
-      cancel-in-progress: false
     permissions:
       contents: read
     outputs:
@@ -85,9 +100,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: preview
-    concurrency:
-      group: preview-pr-${{ needs.resolve.outputs.pr }}
-      cancel-in-progress: false
     permissions:
       contents: read
       actions: read # download the artifact of the triggering CI run

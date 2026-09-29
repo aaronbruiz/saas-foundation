@@ -12,6 +12,14 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
+# One lock for the whole cleanup run: `preview-pr-N` on close (shared with preview.yml, so cleanup
+# waits for a running preview, E2E included), `preview-janitor` otherwise. The janitor can't take
+# per-PR locks, so it skips PRs whose preview run is still active (next run retries).
+concurrency:
+  group: ${{ github.event_name == 'pull_request_target' && format('preview-pr-{0}', github.event.pull_request.number) || 'preview-janitor' }}
+  cancel-in-progress: false
+  queue: max
+
 permissions: {}
 
 jobs:
@@ -21,13 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: preview
-    # Shared with preview.yml: deploy and teardown of one PR never overlap.
-    concurrency:
-      group: ${{ github.event_name == 'pull_request_target' && format('preview-pr-{0}', github.event.pull_request.number) || 'preview-janitor' }}
-      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: read
+      actions: read # janitor: is a preview run still active for this PR?
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       GH_TOKEN: ${{ github.token }}
@@ -57,12 +62,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: preview-infra
-    concurrency:
-      group: ${{ github.event_name == 'pull_request_target' && format('preview-pr-{0}', github.event.pull_request.number) || 'preview-janitor-infra' }}
-      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: read
+      actions: read # janitor: is a preview run still active for this PR?
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}

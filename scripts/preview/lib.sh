@@ -138,6 +138,16 @@ workers_subdomain() {
 pr_state() { gh pr view "$1" --json state --jq .state 2>/dev/null; }
 pr_is_closed() { local s; s="$(pr_state "$1")" || return 1; [ "$s" = CLOSED ] || [ "$s" = MERGED ]; }
 
+# True if a preview.yml run for PR $1 (run name "Preview PR #N") hasn't completed. The janitor can't
+# take the per-PR lock, so it skips such PRs until its next run. Fail closed: any listing error
+# counts as active.
+preview_run_active() {
+  local runs active
+  runs="$(gh run list --workflow preview.yml --limit 100 --json status,displayTitle 2>/dev/null)" || return 0
+  active="$(jq -r --arg t "Preview PR #$1" 'any(.[]; .status != "completed" and .displayTitle == $t)' <<<"$runs" 2>/dev/null)" || return 0
+  [ "$active" != false ]
+}
+
 # Deletes Worker Preview $1 through the Worker-scoped API (no wrangler needed). Idempotent. Its old
 # deployments may keep executing afterwards (Cloudflare Previews beta, ADR-0021): that is not a
 # release signal; deleting the PR's Hyperdrive config is what revokes database access.

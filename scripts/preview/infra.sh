@@ -144,6 +144,7 @@ infra_janitor() {
   } | sort -u)"
   for n in $candidates; do
     pr_is_closed "$n" || continue
+    if preview_run_active "$n"; then log "PR #$n still has an active preview run; next janitor run retries"; continue; fi
     log "closed PR #$n: revoking its preview data"
     PR_NUMBER="$n"
     names_for "$n"
