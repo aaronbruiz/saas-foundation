@@ -15,6 +15,7 @@ The Worker has never been deployed to production. The owner set the first-produc
 - This is enforced in code, not only by procedure: a production **sign-up allowlist** (server-side, before Better Auth creates the user) admits only the smoke-test addresses while the gate is closed.
 - The allowlist must exist before the first deploy.
 - Lifting the gate is an owner decision recorded in a new ADR.
+- _Clarification (owner, 2026-09-29):_ lifting this data gate admits real customer data but **keeps sign-up allowlisted** (`SIGNUP_ALLOWLIST` then holds the admitted customers' addresses). Opening public sign-up (`SIGNUP_MODE=open`) is a separate, later owner decision with its own ADR. Milestones A–D: runbook "First production deploy".
 
 **2. Backups.** Neon Free's 6 h restore window and the daily snapshot branches (option A) are development-grade conveniences, not the production backup strategy.
 

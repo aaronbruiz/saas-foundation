@@ -35,5 +35,5 @@ Concrete identifiers live only where tooling needs them: `account_id` and `route
 
 ## Consequences
 
-- Workers-plan-dependent facts need re-confirming on this account: Email Sending needs Paid; the Hyperdrive config limit is 25 on Paid; placement support [to confirm].
+- Workers-plan-dependent facts need re-confirming on this account: Email Sending needs Paid; the Hyperdrive config limit is 25 on Paid; placement support [to confirm]. _(2026-09-29: the owner verified Workers Paid on this account.)_
 - Neon is unchanged (same projects, branches and backups).

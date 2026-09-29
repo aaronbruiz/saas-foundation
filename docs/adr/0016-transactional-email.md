@@ -35,7 +35,7 @@ Auth needs three emails: invitations, password reset, and email verification. Th
 
 ## Activation (owner steps first, then a PR)
 
-1. **Owner:** confirm Workers Paid in the dashboard.
+1. **Owner:** confirm Workers Paid in the dashboard. _(Done 2026-09-29: the owner verified Workers Paid on the production account, ADR-0017.)_
 2. **Owner:** production domain on a Cloudflare zone, then `wrangler email sending enable <domain>` (adds SPF/DKIM).
 3. **PR:**
    - add `send_email` binding `EMAIL` with `allowed_sender_addresses: [EMAIL_FROM]`;
