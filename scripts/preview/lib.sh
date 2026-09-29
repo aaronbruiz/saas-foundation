@@ -137,7 +137,6 @@ workers_subdomain() {
 # deploy for a closed PR, never destroy an open PR's resources).
 pr_state() { gh pr view "$1" --json state --jq .state 2>/dev/null; }
 pr_is_closed() { local s; s="$(pr_state "$1")" || return 1; [ "$s" = CLOSED ] || [ "$s" = MERGED ]; }
-pr_is_open() { [ "$(pr_state "$1" || true)" = OPEN ]; }
 
 # Deletes Worker Preview $1 through the Worker-scoped API (no wrangler needed). Idempotent. Its old
 # deployments may keep executing afterwards (Cloudflare Previews beta, ADR-0021): that is not a

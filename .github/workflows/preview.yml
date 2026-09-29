@@ -91,7 +91,7 @@ jobs:
     permissions:
       contents: read
       actions: read # download the artifact of the triggering CI run
-      pull-requests: read # pr_is_open
+      pull-requests: read # PR state before deploying
     outputs:
       url: ${{ steps.deploy.outputs.url }}
     steps:
@@ -135,6 +135,8 @@ jobs:
 
   e2e:
     needs: [resolve, deploy]
+    # No URL = the deploy was skipped (PR already closed).
+    if: needs.deploy.outputs.url != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

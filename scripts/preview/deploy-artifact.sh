@@ -37,9 +37,24 @@ fi
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID"
 cf_worker_preflight
 
-# A close event may have arrived meanwhile: never (re)publish a closed PR's preview. FORCE=1 for
-# manual runs (e.g. test PR numbers).
-[ -n "${FORCE:-}" ] || pr_is_open "$PR_NUMBER" || { log "PR #$PR_NUMBER isn't open (or its state is unknown); not deploying"; exit 1; }
+# A close event may have arrived meanwhile: never (re)publish a closed PR's preview. A closed or
+# merged PR is an intentional skip (cleanup handles its resources); an unknown state still fails.
+# FORCE=1 for manual runs (e.g. test PR numbers).
+if [ -z "${FORCE:-}" ]; then
+  state="$(pr_state "$PR_NUMBER" || true)"
+  case "$state" in
+    OPEN) ;;
+    CLOSED | MERGED)
+      log "Preview skipped: PR #$PR_NUMBER is already closed ($state)"
+      if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::notice title=Preview skipped::PR #$PR_NUMBER is already closed"
+        echo "Preview skipped: PR #$PR_NUMBER is already closed ($state)." >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
+      fi
+      exit 0
+      ;;
+    *) log "ERROR: can't read PR #$PR_NUMBER's state; not deploying"; exit 1 ;;
+  esac
+fi
 
 bid="$(neon_branch_id "$NEON_BRANCH")"
 [ -n "$bid" ] || { log "ERROR: no Neon branch $NEON_BRANCH (the infra job creates it)"; exit 1; }
