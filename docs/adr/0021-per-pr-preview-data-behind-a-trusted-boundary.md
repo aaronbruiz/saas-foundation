@@ -1,6 +1,6 @@
 # ADR-0021: Per-PR preview data behind a trusted workflow boundary
 
-Status: Accepted (2026-09-29; rollout below) · Date: 2026-09-29
+Status: Accepted (2026-09-29; rollout complete 2026-09-29) · Date: 2026-09-29
 
 Supersedes in part:
 
@@ -86,6 +86,12 @@ Investigated 2026-09-28/29 on the preview Worker, with evidence (test PR numbers
 
 - [x] Local acceptance tests (above) with the admin session, including the guard negatives (production id, name mismatch, a slot config, a non-numeric PR number, `.dev.vars`, `.env.local`).
 - [x] Environments `preview-infra` and `preview` restricted to deployment branch `main`.
-- [ ] Owner: create `CLOUDFLARE_PREVIEW_INFRA_TOKEN` (account-owned, Account · Hyperdrive · Edit/Write only) and a preview-project Neon key; set `CLOUDFLARE_PREVIEW_INFRA_TOKEN` and `NEON_PREVIEW_API_KEY` in `preview-infra`, and `CLOUDFLARE_API_TOKEN` (per-Worker) and `NEON_PREVIEW_API_KEY` in `preview`.
-- [ ] Merge; validate with a real PR through `workflow_run` (deploy, E2E, close → Preview deleted, config and branch deleted).
-- [ ] Then: delete the repo-level `CLOUDFLARE_API_TOKEN` and `NEON_PREVIEW_API_KEY`, revoke the old preview Neon key, delete the six `saas-preview-slot-*` configs and `preview/slot-*` branches (which also revokes the 9005/9010 zombies) and the variable `PREVIEW_HYPERDRIVE_SLOTS`.
+- [x] Owner (2026-09-29): `CLOUDFLARE_PREVIEW_INFRA_TOKEN` (account-owned, Account · Hyperdrive · Edit/Write only) set in `preview-infra`; the per-Worker `CLOUDFLARE_API_TOKEN` set in `preview`; `NEON_PREVIEW_API_KEY` set in both.
+- [x] Merged (#26); validated with a real PR through `workflow_run` (#27, closed unmerged):
+  - `preview.yml`: resolve, infra, deploy and e2e green. Both tokens verified as active account-owned tokens; `preview/pr-27` and `saas-pr-27` created; migrations applied; health OK; the default-branch E2E suite passed (2/2); the URL comment posted. The deployment's only Hyperdrive binding was `saas-pr-27`'s id.
+  - Close → `preview-cleanup.yml`: cleanup-preview then cleanup-infra green: Preview deleted, then the config, then the branch. Checked independently: Preview `10025`, config `GET` → 404, branch gone; the deployment URL still executed, answering 10/10 `503 {"ok":false,"db":"down"}`.
+- [x] Repo-level `CLOUDFLARE_API_TOKEN` and `NEON_PREVIEW_API_KEY` deleted: the repository holds no secrets; every CI secret is in a `main`-only environment.
+- [x] The six `saas-preview-slot-*` Hyperdrive configs, the six `preview/slot-*` branches (two of them quarantined) and the variable `PREVIEW_HYPERDRIVE_SLOTS` deleted. The preview project now holds only `preview-seed`; the account's only Hyperdrive config is `saas-foundation-prod`. The zombie deployments of the slot tests (pr-9005, pr-9010 and their deployment URLs) now answer `503 db:down`: deleting their slot configs revoked them.
+- [x] Preview Neon key rotated: the new project-scoped key **`saas-foundation-preview-ci`** (preview project) is in both environments; a second real PR (#28, closed unmerged) ran the full lifecycle with it (deploy, migrations, E2E, cleanup; config and branch gone afterwards; zombie `db:down`). The old key `saas-foundation-preview` was then revoked.
+- [x] Correction to ADR-0019's rollout: the production-scoped Neon key `saas-foundation` is **not** unused. It is the key stored as `NEON_API_KEY` in `production` and is used by `db-backup.yml`; keep it. The personal key is no longer in the organization.
+- Deferred, optional: deleting and recreating the preview Worker to flush zombie deployments (not part of the security model). The Cloudflare bug report is drafted, not filed.

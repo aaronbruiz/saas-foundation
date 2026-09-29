@@ -55,12 +55,13 @@ No preview secret lives at repo level: a `pull_request` workflow runs the PR's o
 Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids.
 
 - **Both Cloudflare tokens are sensitive.** The Hyperdrive token is account-wide (no per-config scope) and could edit production Hyperdrive; the Worker token can deploy a preview bound to any Hyperdrive id, production's included (binding needs no permission on the bound resource). The scripts' guards (ADR-0021 decision 3) and the environments are the fence. No job holds both.
-- **Preview credentials (owner):**
+- **Current state (2026-09-29):** all of the above are in place; the repository holds no secrets. Neon organization keys: `saas-foundation-preview-ci` (preview project, both preview environments) and `saas-foundation` (production project, `production`; used by `db-backup.yml`, **keep**).
+- **Rotating or recreating preview credentials (owner):**
   1. Cloudflare dashboard → Manage Account → Account API Tokens → _Create token_ → _Custom token_: name `saas-foundation-preview-infra`; permissions **Account · Hyperdrive · Edit**, nothing else; account resources: this account only; no zone permissions, no IP filter. `gh secret set CLOUDFLARE_PREVIEW_INFRA_TOKEN --env preview-infra`.
   2. Neon console → Organization settings → API keys → _Create key_ → _Project-scoped_, project = the preview project, name `saas-foundation-preview-ci`. `gh secret set NEON_PREVIEW_API_KEY --env preview-infra` and `gh secret set NEON_PREVIEW_API_KEY --env preview` (same value).
   3. The per-Worker token (ADR-0019): `gh secret set CLOUDFLARE_API_TOKEN --env preview` (its value, or roll it in the dashboard to get a new one).
-  4. After a PR preview has run and been cleaned up through `preview.yml` / `preview-cleanup.yml`: `gh secret delete CLOUDFLARE_API_TOKEN` and `gh secret delete NEON_PREVIEW_API_KEY` (the repo-level copies), and revoke the old preview Neon key.
-- **Production Neon key:** in `production` since 2026-09-28; `db-backup.yml` read it successfully on 2026-09-29. Revoke the unused older production-scoped key and the personal key in the Neon console if that isn't done. Production deploys run from the owner's machine (runbook "First production deploy").
+  4. Run a PR preview through `preview.yml` / `preview-cleanup.yml`, then revoke the replaced key or token. Never put a preview secret at repo level.
+- **Production Neon key:** `saas-foundation`, in `production` as `NEON_API_KEY`; `db-backup.yml` read it successfully on 2026-09-29. It is the only production key; don't revoke it. Production deploys run from the owner's machine (runbook "First production deploy").
 
 ## Stripe (ADR-0018, ADR-0020)
 
