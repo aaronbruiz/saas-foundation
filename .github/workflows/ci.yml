@@ -16,7 +16,7 @@ jobs:
   check:
     name: check + test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
@@ -42,64 +42,31 @@ jobs:
       - run: pnpm test
       - name: Build and scan the client bundle for secrets
         run: pnpm build && scripts/scan-client-bundle.sh
-
-  preview:
-    name: preview (Neon branch + Hyperdrive + Worker Preview)
-    # ADR-0011. Same-repo PRs only (fork PRs get no secrets). Only after check + test pass.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    needs: check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      pull-requests: write
-    env:
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
-      NEON_PREVIEW_PARENT_BRANCH: ${{ vars.NEON_PREVIEW_PARENT_BRANCH }}
-      NEON_DATABASE: ${{ vars.NEON_DATABASE }}
-      NEON_ROLE: ${{ vars.NEON_ROLE }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-    # ADR-0013: secrets only on the step that needs them (not install, not E2E). The full split
-    # (no PR code next to secrets at all) is the next rollout step.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Create or update preview
-        id: up
-        env:
-          # ADR-0013 T1: Neon key scoped to the preview project only.
-          NEON_API_KEY: ${{ secrets.NEON_PREVIEW_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        # Don't capture stdout: it carries ::add-mask:: commands. up.sh writes $GITHUB_OUTPUT itself.
-        run: scripts/preview/up.sh
-      - name: E2E against the preview (Playwright)
-        env:
-          BASE_URL: ${{ steps.up.outputs.url }}
+      # ADR-0021: this job runs PR code and holds no secrets. For same-repo PRs it hands the build
+      # to preview.yml (workflow_run, default-branch code), which treats it strictly as data.
+      - name: Assemble the preview artifact
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
+          out="$RUNNER_TEMP/preview-artifact"
+          mkdir -p "$out/apps/web" "$out/packages/db"
+          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/web/dist "$out/apps/web/"
+          rsync -a packages/db/drizzle "$out/packages/db/"
+      - name: Upload the preview artifact
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-artifact
+          path: ${{ runner.temp }}/preview-artifact
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 3
+      # The PR's own Playwright suite, against a local dev server (no secrets here; preview.yml runs
+      # the default branch's suite against the deployed preview). After the upload, so these local
+      # dev vars can never reach the artifact.
+      - name: E2E (local dev server)
+        run: |
+          { echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"; echo 'BETTER_AUTH_URL=http://localhost:3000'
+            echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'; } >apps/web/.dev.vars
+          pnpm db:migrate
           pnpm --filter web exec playwright install --with-deps chromium
           pnpm test:e2e
-      - name: Comment preview URL on the PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          URL: ${{ steps.up.outputs.url }}
-        run: |
-          # Refuse to post anything that isn't a plain workers.dev URL (defense in depth).
-          [[ "$URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
-          marker='<!-- saas-foundation-preview -->'
-          body="$marker
-          **Preview** for ${GITHUB_SHA::7}: $URL
-          Health: $URL/api/health · Neon branch \`preview/pr-$PR_NUMBER\` (project \`$NEON_PREVIEW_PROJECT_ID\`) · Hyperdrive \`saas-pr-$PR_NUMBER\` (caching off)
-          Deleted automatically when the PR closes."
-          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
-          else
-            gh pr comment "$PR_NUMBER" --body "$body"
-          fi

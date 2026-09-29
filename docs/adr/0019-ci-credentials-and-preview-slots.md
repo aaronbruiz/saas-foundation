@@ -2,6 +2,8 @@
 
 Status: Accepted (2026-09-28; rollout below) · Date: 2026-09-28
 
+Superseded in part by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): decision 4 (preview slots, quarantine) and decision 3's claim that the preview credentials can't touch production Hyperdrive (a Worker deploy can bind any Hyperdrive id).
+
 Supersedes in part:
 
 - [ADR-0011](0011-per-pr-preview-neon-branch.md): per-PR Hyperdrive configs and Neon branches become a fixed pool of preview slots;

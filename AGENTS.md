@@ -31,8 +31,8 @@ pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
 pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
-pnpm test:e2e      # Playwright: full slice + isolation (local: starts `pnpm dev`; CI: against the PR preview)
-scripts/preview/up.sh | down.sh   # per-PR preview lifecycle; normally run by CI (PR_NUMBER=<n>)
+pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
+scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet).
@@ -59,7 +59,7 @@ kill -9 $(lsof -t -i:3000)
 12. Async side effects are idempotent with dedupe keys (once queues exist).
 13. Infra config (`wrangler.jsonc`) changes only via PR.
 14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override.
-15. Previews never bind production data. Each PR gets a **preview slot** (ADR-0019): a Neon branch in the **separate preview project**, reset from `preview-seed` on every deploy, and that slot's Hyperdrive config. Slots are provisioned by an admin (`scripts/preview/provision-slots.sh`); CI never creates Hyperdrive configs.
+15. Previews never bind production data. Each PR gets its **own** Neon branch `preview/pr-N` in the **separate preview project** (reset from `preview-seed` on every deploy) and its **own** Hyperdrive config `saas-pr-N`, never reused between PRs; deleting that config on close is what revokes database access (ADR-0021). Only default-branch jobs in `main`-only environments create or delete them, and no job runs PR code next to a preview credential or holds both the Worker and the Hyperdrive token.
 
 ## Recipes
 

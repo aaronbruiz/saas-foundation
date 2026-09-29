@@ -9,8 +9,8 @@
 // Then it points both DB ids at the PR's own Hyperdrive config, turns preview URLs on, turns source
 // map upload off (wrangler would follow a bundle's sourceMappingURL to files outside the artifact),
 // and drops routes and the build-machine redirect paths. Writes the file in place.
-// Usage: prepare-config.mjs <dist/server/wrangler.json> <pinned-account-id> [<hyperdrive-id>]
-// Without a Hyperdrive id it only validates.
+// Usage: prepare-config.mjs <dist/server/wrangler.json> <pinned-account-id> [<hyperdrive-id> <production-hyperdrive-id>]
+// Without a Hyperdrive id it only validates. The production id is refused as a target (ADR-0021).
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
@@ -18,15 +18,18 @@ const WORKER_NAME = 'saas-foundation' // `name` in the committed apps/web/wrangl
 const PREVIEWS_SENTINEL = '0'.repeat(32)
 const hex32 = /^[0-9a-f]{32}$/
 
-const [file, accountId, hyperdriveId] = process.argv.slice(2)
+const [file, accountId, hyperdriveId, productionId] = process.argv.slice(2)
 const errors = []
 const check = (ok, msg) => ok || errors.push(msg)
 if (
   !file ||
   !hex32.test(accountId ?? '') ||
-  (hyperdriveId !== undefined && !hex32.test(hyperdriveId))
+  (hyperdriveId !== undefined &&
+    (!hex32.test(hyperdriveId) || !hex32.test(productionId ?? '') || hyperdriveId === productionId))
 ) {
-  console.error('usage: prepare-config.mjs <wrangler.json> <account-id> [<hyperdrive-id>]')
+  console.error(
+    'usage: prepare-config.mjs <wrangler.json> <account-id> [<hyperdrive-id> <production-hyperdrive-id>] (never the production id)',
+  )
   process.exit(1)
 }
 
