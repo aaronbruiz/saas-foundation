@@ -71,7 +71,9 @@ Not connected yet: without the secrets below, the billing actions and the webhoo
 2. Customer portal settings: allow cancel (at period end), switching between those two prices, payment method updates and invoice history.
 3. Stripe Tax: activate it and add registrations. `CHECKOUT.automaticTax` is on, so Checkout fails without it.
 4. Webhook endpoint `https://<production hostname>/api/billing/webhooks/stripe`, events `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed`, `.trial_will_end`.
-5. Worker secrets (owner): `pnpm --filter web exec wrangler secret put STRIPE_SECRET_KEY` (a restricted key with write access to Checkout Sessions and Customer Portal sessions and read access to Prices is enough), and `… STRIPE_WEBHOOK_SECRET` (the endpoint's signing secret).
+5. Worker secrets (owner): `pnpm --filter web exec wrangler secret put STRIPE_SECRET_KEY`, and `… STRIPE_WEBHOOK_SECRET` (the endpoint's signing secret).
+   - `STRIPE_SECRET_KEY` can be a restricted key. The code calls only `prices.list`, `checkout.sessions.create` and `billingPortal.sessions.create`, so it needs read access to Prices and write access to Checkout Sessions and billing portal sessions. Step 6 exercises all three; a missing permission shows up there as a Stripe permission error.
+   - The planned per-event subscription re-fetch (ADR-0018 known limit; required before live mode) will also need read access to Subscriptions.
 6. Check it: as the owner, Billing → Upgrade → Stripe test card → back on Billing, the plan shows Pro; then Manage billing → cancel → at period end the plan returns to Free.
 
 ## Database (ADR-0003, Neon Free)
@@ -99,11 +101,17 @@ Not connected yet: without the secrets below, the billing actions and the webhoo
 
 Never deployed yet. Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
 
-**Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. It's enforced in code: with `SIGNUP_MODE` unset (the production default), sign-up is **closed** except for the exact addresses in `SIGNUP_ALLOWLIST`.
+**Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. Sign-up is enforced in code: with `SIGNUP_MODE` unset (the production default), sign-up is **closed** except for the exact addresses in `SIGNUP_ALLOWLIST`.
 
 - **Before step 7:** `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with the comma-separated smoke-test addresses. Don't set `SIGNUP_MODE` in production.
-- Lifting the gate (`SIGNUP_MODE=open`) is an owner decision recorded in a new ADR.
-- Remove the smoke-test accounts before real users arrive.
+
+**Launch milestones (owner, 2026-09-29).** Four separate gates, in order. C and D are separate decisions, each recorded in its own ADR; lifting the data gate does **not** open sign-up.
+
+- **A. Technically deployed:** production DB migrated, Worker deployed (steps 0–7). Sign-up allowlisted to smoke-test addresses; no real customer data, no Stripe live mode, no public sign-up.
+- **B. Internal production smoke complete:** smoke test passed (step 8), WAF rule applied and tested (steps 9–10), the previous broad Cloudflare user token confirmed revoked (step 11). Still no real customer data.
+- **C. Real customer data, sign-up still allowlisted:** backup option B implemented and a restore from it tested (ADR-0014), alerting operational (ADR-0015), email delivery live and email verification enforced (ADR-0016), smoke-test accounts removed, and a new ADR lifting the data gate. Then, after deleting the smoke-test accounts, `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with only the admitted customers' addresses (no smoke-test address left in it), and keep `SIGNUP_MODE` unset.
+- **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded.
+- Stripe live mode (section "Stripe") needs C first: live customers are real data.
 
 0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
 
@@ -111,15 +119,16 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
    - `NEON_API_KEY` (production-project-scoped Neon key) is set in `production` (section "CI credentials");
    - a dispatched backup run with that key succeeded: `gh workflow run db-backup.yml`. The script always lists the project's branches with the key first, so success proves the key authenticates; a project-scoped key has full rights inside its project. If today's `backup-YYYYMMDD` already existed, no new branch is created, and tomorrow's scheduled run must show a new one;
    - the repo-level `NEON_API_KEY` is gone.
+   - _All three done 2026-09-29 (section "CI credentials")._
 2. **Owner:** production `BETTER_AUTH_SECRET`: `openssl rand -base64 32 | pnpm --filter web exec wrangler secret put BETTER_AUTH_SECRET` (never pasted into chat, never committed).
 3. **Owner:** production `BETTER_AUTH_URL` = `https://<production hostname>`, i.e. the custom-domain `routes` pattern in `apps/web/wrangler.jsonc` (ADR-0017), set with `wrangler secret put` (or as a var).
 4. Custom domain: the production hostname is configured in `wrangler.jsonc` (`routes[].custom_domain`). Cloudflare creates its DNS record and certificate on the first deploy. The production zone is already active in the account. Production Hyperdrive `saas-foundation-prod`: **done 2026-09-28** (ADR-0019), id in `wrangler.jsonc`. To re-verify without deploying: build, copy `apps/web/dist` somewhere without `.dev.vars` (the build copies it into `dist/server/`), drop `routes` from the copy's `dist/server/wrangler.json`, run `wrangler dev --remote --config dist/server/wrangler.json --ip 127.0.0.1`, and send exactly one request, `GET /api/health`, expecting `{"ok":true,"db":"up"}`. That route only runs `SELECT 1`. The session runs the whole app against production data, so send nothing else and stop it immediately. Stop the session by the parent PID of its `workerd` (ss -ltnp), since `workerd` respawns otherwise.
-5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs must contain no secrets or PII (ADR-0015). Also set up the alerting requirement from ADR-0015 before the data gate is lifted.
+5. Observability: `observability.enabled` is on in `apps/web/wrangler.jsonc`. After the deploy (step 7), check that requests show up in the dashboard (Workers & Pages → `saas-foundation` → Logs) or live with `pnpm --filter web exec wrangler tail saas-foundation --format pretty`. Logs must contain no secrets or PII (ADR-0015). The alerting requirement from ADR-0015 must be met before milestone C (real customer data).
 6. **Restore point, then migrations.**
    - Take a restore point **synchronously, right before migrating**. Don't rely on `db-backup.yml`: it's asynchronous and skips if today's `backup-YYYYMMDD` already exists. Instead run `pnpm exec neon branches create --project-id flat-cherry-23373668 --name "pre-migrate-$(date -u +%Y%m%d-%H%M)" --parent main --no-compute` and check it appears in `pnpm exec neon branches list --project-id flat-cherry-23373668` with a creation time from just now. Delete it once the release is verified; it uses one of Neon Free's 10 branches. On Neon Free, PITR only reaches back 6 h.
    - Migrate: `DATABASE_URL="$(pnpm exec neon connection-string main --project-id flat-cherry-23373668 --database-name app --role-name app_owner)" pnpm db:migrate`. Direct (non-pooler) URL, never printed or logged.
-   - Pending now: `0000` (slice schema), `0001` (`rate_limit`), `0002`–`0003` (billing); all only create tables or relax a constraint.
-7. First deploy: `pnpm run deploy` (not `pnpm deploy`, which is a pnpm built-in) from the step 0 checkout, using the owner's logged-in `wrangler`. The deploy itself uses the owner's local credentials, not CI. CI's production-capable credentials (ADR-0019): only the production-project Neon key, fenced by the `production` environment. Until the owner replaces `CLOUDFLARE_API_TOKEN` with the per-Worker preview token, the old token could also deploy production.
+   - Pending now (the database is empty): `0000` (slice schema), `0001` (`rate_limit`), `0002` (billing tables), `0003` (the subscription-id unique constraint becomes unique per provider), `0004` (the billing subscription's organization foreign key is dropped and re-added with `ON DELETE CASCADE`, ADR-0020). They create tables or replace constraints; none drops a column or data.
+7. First deploy: `pnpm run deploy` (not `pnpm deploy`, which is a pnpm built-in) from the step 0 checkout, using the owner's logged-in `wrangler`. The deploy itself uses the owner's local credentials, not CI; no CI credential can deploy the production Worker (runbook "CI credentials"). Only the production-project Neon key (`production` environment) reaches the production database directly; the two preview Cloudflare tokens can still reach production data indirectly (the Worker token can bind production Hyperdrive, the Hyperdrive token can edit it; ADR-0021, section "CI credentials").
 8. Smoke test on the custom domain:
    - `/api/health` returns `ok`
    - sign-up, login, create an organization
@@ -127,6 +136,7 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
    - login rate limit: 6 wrong-password POSTs to `/api/auth/sign-in/email` from one IP within 60 s; the 6th returns **429**
 9. **Owner:** add the WAF rule `auth-login-burst` (ADR-0014).
 10. Smoke-test the WAF on its own: more than 10 POSTs to `/api/auth/sign-in/email` within 10 s from one IP are blocked at the edge (Cloudflare block page, visible in Security → Events). Wait 60 s so the app's own limit resets, and check that a normal login still works.
+11. **Owner:** confirm the previous broad Cloudflare user token (the old CI token, which could deploy any Worker) is revoked: dashboard → My Profile → API Tokens. CI no longer uses it (ADR-0019, ADR-0021), but only revocation removes its reach. This completes milestone B.
 
 Rollback: `wrangler rollback` to the previous Worker version (code only). Migrations are forward-only (expand → migrate → contract). For data, use the Database section below.
 

@@ -6,9 +6,10 @@ import { mailerFor, render, type EmailConfig } from './email'
 import { logBetterAuth } from './log'
 
 /**
- * ADR-0014 data gate. `SIGNUP_MODE=open` (dev, tests, previews, or production once the owner lifts
- * the gate) admits anyone. Otherwise only the exact addresses in `SIGNUP_ALLOWLIST`
- * (comma-separated, case-insensitive) may sign up. Unset means closed.
+ * ADR-0014 sign-up gate. `SIGNUP_MODE=open` (dev, tests, previews, or production once public sign-up
+ * is opened by its own ADR, a separate step after the data gate is lifted) admits anyone. Otherwise
+ * only the exact addresses in `SIGNUP_ALLOWLIST` (comma-separated, case-insensitive) may sign up.
+ * Unset means closed.
  */
 export function signUpPolicy(mode: string | undefined, allowlist: string | undefined) {
   if (mode === 'open') return () => true
