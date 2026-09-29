@@ -59,7 +59,7 @@ Investigated 2026-09-28/29 on the preview Worker, with evidence (test PR numbers
 - **No job holds both the Worker token and the Hyperdrive token.** The job holding the Hyperdrive token never receives the artifact; the job receiving the artifact never holds the Hyperdrive token. The deploy job keeps the preview Neon key for migrations (job outputs can't carry secrets, and the SQL must not reach the infra job); that key reaches preview data only.
 - `infra` and both cleanup jobs install no packages: `curl`, `jq` and `gh` against the Cloudflare and Neon REST APIs. `deploy` and `e2e` install the default branch's lockfile with caching explicitly off (`pnpm/action-setup` `cache: false`, `actions/setup-node` `package-manager-cache: false`); `e2e` runs the default branch's Playwright suite (the PR's own tests ran in CI).
 - Both environments allow deployments from `main` only. The preview secrets live only there, never at repo level.
-- Deploy and both cleanup jobs of one PR share the concurrency group `preview-pr-N`. Deploy refuses a PR that isn't open; cleanup acts only on a PR that is closed right now.
+- A preview run and the close-triggered cleanup of one PR share the workflow-level concurrency group `preview-pr-N` (queued, never cancelled; #31), so cleanup waits for a running preview, E2E included. The daily janitor can't take per-PR locks, so it skips a PR whose preview run hasn't completed (a GitHub API error or an incomplete result counts as active). Deploy refuses a PR that isn't open; cleanup acts only on a PR that is closed right now.
 
 **3. Guards** (all in default-branch code, `scripts/preview/`):
 

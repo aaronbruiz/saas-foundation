@@ -6,7 +6,7 @@ Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): per-
 
 Restored with changes by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): per-PR branch and Hyperdrive config again, created and deleted only by trusted jobs; config ids never reused.
 
-Proposed to be superseded in part by [ADR-0013](0013-ci-credential-tiers.md) (the CI credentials "accepted risk"), once ADR-0013 is accepted. Until then the current workflows still expose the secrets described there.
+Superseded in part by [ADR-0013](0013-ci-credential-tiers.md) (the CI credentials "accepted risk"). That exposure is closed: since ADR-0021 no job that runs PR code holds a secret, and the repository holds none. The per-PR model below is implemented by ADR-0021's trusted workflows; the automation and credentials described here are historical.
 
 ## Context
 

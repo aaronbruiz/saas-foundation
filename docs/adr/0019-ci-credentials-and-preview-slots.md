@@ -1,8 +1,8 @@
 # ADR-0019: CI credentials by resource, and pre-provisioned preview slots
 
-Status: Accepted (2026-09-28; rollout below) · Date: 2026-09-28
+Status: Accepted (2026-09-28; rollout complete 2026-09-29, preview slots replaced by ADR-0021) · Date: 2026-09-28
 
-Superseded in part by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): decision 4 (preview slots, quarantine) and decision 3's claim that the preview credentials can't touch production Hyperdrive (a Worker deploy can bind any Hyperdrive id).
+Superseded in part by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): decision 4 (preview slots, quarantine) and decision 3's claim that the preview credentials can't touch production Hyperdrive (a Worker deploy can bind any Hyperdrive id). The slot model below (decision 4, quarantine, `provision-slots.sh`, `PREVIEW_HYPERDRIVE_SLOTS`) is historical: it was deployed on 2026-09-28 and removed on 2026-09-29, when ADR-0021 restored one Hyperdrive config and one Neon branch per PR. Current preview state: ADR-0021 and the runbook "Previews".
 
 Supersedes in part:
 
@@ -82,7 +82,7 @@ Investigated 2026-09-28, with evidence.
   - the snapshot's read-only compute showed the pre-change state and refused writes (SQLSTATE 25006);
   - a writable branch restored from the snapshot showed the same state and accepted writes;
   - drill branches and the marker schema were removed afterwards.
-- [ ] Owner, in this order (runbook "CI credentials"): delete the repo-level `NEON_API_KEY`; create the production-scoped key and store it in `production`; dispatch `db-backup.yml` and see a green run; revoke the unused production key and the personal key.
-- [x] Preview slots provisioned (6; `provision-slots.sh`, re-run idempotent) and `PREVIEW_HYPERDRIVE_SLOTS` / `CLOUDFLARE_WORKERS_SUBDOMAIN` set. Scripts hand-tested on the preview project: a reset keeps the endpoint (health OK through the slot's config right after the reset); claim, re-deploy, second PR, release; a real quarantine (a deleted preview kept answering 200) that the janitor keeps.
-- [ ] Preview job split (ADR-0013 step 3, PR 2).
-- [ ] Owner: create the per-Worker token above, replace `CLOUDFLARE_API_TOKEN`, revoke the old user token. Verify with a PR preview run.
+- [x] Owner (done 2026-09-29): the repo-level `NEON_API_KEY` is deleted; the production-scoped key is stored in `production`; `db-backup.yml` ran green with it; the personal key is gone. **Correction:** the production-scoped Neon key (`saas-foundation`) is **not** unused and must **not** be revoked. It is the active `NEON_API_KEY` in the `production` environment and is what `db-backup.yml` uses (ADR-0021 rollout; runbook "CI credentials").
+- [x] (Historical, removed 2026-09-29 by ADR-0021: slot configs, slot branches and `PREVIEW_HYPERDRIVE_SLOTS` deleted.) Preview slots provisioned (6; `provision-slots.sh`, re-run idempotent) and `PREVIEW_HYPERDRIVE_SLOTS` / `CLOUDFLARE_WORKERS_SUBDOMAIN` set. Scripts hand-tested on the preview project: a reset keeps the endpoint (health OK through the slot's config right after the reset); claim, re-deploy, second PR, release; a real quarantine (a deleted preview kept answering 200) that the janitor keeps.
+- [x] Preview job split (ADR-0013 step 3, PR 2): done by ADR-0021 (#26), privileged jobs on `workflow_run` / `pull_request_target` with secrets in `main`-only environments.
+- [x] Owner (2026-09-29): the per-Worker token is `CLOUDFLARE_API_TOKEN` in the `preview` environment; Hyperdrive moved to a separate `CLOUDFLARE_PREVIEW_INFRA_TOKEN` in `preview-infra` (ADR-0021); the old user token is no longer used. Verified with PR preview runs (#27, #28).
