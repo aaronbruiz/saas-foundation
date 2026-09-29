@@ -58,7 +58,7 @@ kill -9 $(lsof -t -i:3000)
 11. Webhooks are verified on the raw body (`await request.text()`) before any processing, and deduplicated by event id.
 12. Async side effects are idempotent with dedupe keys (once queues exist).
 13. Infra config (`wrangler.jsonc`) changes only via PR.
-14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override. CI enforces both on `wrangler.jsonc` (`scripts/check-bindings.mjs`).
+14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override. CI (`scripts/check-bindings.mjs`) enforces the ADR for any new binding, product or Worker name in `apps/web/wrangler.jsonc` (including `previews`), refuses a second Wrangler config or named environments, and requires the override for KV, R2, D1, Hyperdrive and Vectorize; any other data binding's ADR must state how previews stay isolated.
 15. Previews never bind production data. Each PR gets its **own** Neon branch `preview/pr-N` in the **separate preview project** (reset from `preview-seed` on every deploy) and its **own** Hyperdrive config `saas-pr-N`, never reused between PRs; deleting that config on close is what revokes database access (ADR-0021). Only default-branch jobs in `main`-only environments create or delete them, and no job runs PR code next to a preview credential or holds both the Worker and the Hyperdrive token.
 
 ## Recipes

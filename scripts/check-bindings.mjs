@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// AGENTS.md invariant 14: a new Cloudflare binding or product needs a new ADR, and every storage
-// binding needs a `previews` override. Compares apps/web/wrangler.jsonc in the working tree with the
-// merge base of <base-ref> (CI: the PR merge commit's base parent) and fails when
-//   - a binding/product id is new and no ADR added since the base mentions its name, or
-//   - a storage binding has no `previews` entry with the same binding name.
+// AGENTS.md invariant 14: a new Cloudflare binding, product or Worker needs a new ADR, and every
+// storage binding needs a `previews` override. Compares apps/web/wrangler.jsonc in the working tree
+// with the merge base of <base-ref> (CI: the PR merge commit's base parent) and fails when
+//   - any other Wrangler config exists (a second Worker), or the config uses named environments;
+//   - a binding/product/Worker-name id is new (including under `previews`) and no ADR added since
+//     the base mentions its name, or
+//   - a storage binding (STORAGE) has no `previews` entry with the same binding name. Other data
+//     bindings get no automatic check: their ADR must state how previews stay isolated.
 // Usage: node scripts/check-bindings.mjs [base-ref]   (default origin/main)
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -21,17 +24,18 @@ function parseJsonc(text) {
   return JSON.parse(out.replace(/("(?:\\.|[^"\\])*")|,(\s*[}\]])/g, (m, str, end) => str ?? end))
 }
 
-// Ids like `hyperdrive:DB`, `durable_objects.bindings:ROOM`, `ai:AI`, `triggers.crons`. Walks
-// top-level keys and named environments; `previews` is checked separately.
+// Ids like `worker:saas-foundation`, `hyperdrive:DB`, `durable_objects.bindings:ROOM`, `ai:AI`,
+// `previews.hyperdrive:DB`; an entry without a name counts as its kind (`triggers.crons`, `routes`).
+// Plain values (vars, flags) are not products.
 function bindingIds(config, prefix = '') {
   const ids = new Set()
-  const nameOf = (o) => o.binding ?? o.name ?? o.queue
+  if (!prefix && typeof config.name === 'string') ids.add(`worker:${config.name}`)
+  const nameOf = (o) => o.binding ?? o.name ?? o.queue ?? o.service
   const visit = (path, v) => {
     if (Array.isArray(v)) {
       for (const item of v) {
-        if (item && typeof item === 'object') {
-          if (typeof nameOf(item) === 'string') ids.add(`${prefix}${path}:${nameOf(item)}`)
-        } else ids.add(`${prefix}${path}`)
+        const name = item && typeof item === 'object' ? nameOf(item) : undefined
+        ids.add(typeof name === 'string' ? `${prefix}${path}:${name}` : `${prefix}${path}`)
       }
     } else if (v && typeof v === 'object') {
       if (typeof v.binding === 'string') ids.add(`${prefix}${path}:${v.binding}`)
@@ -40,13 +44,10 @@ function bindingIds(config, prefix = '') {
     }
   }
   for (const [key, value] of Object.entries(config)) {
-    if (key === 'previews') continue
-    if (key === 'env') {
-      for (const [name, envConfig] of Object.entries(value ?? {}))
-        for (const id of bindingIds(envConfig, `${prefix}env.${name}.`)) ids.add(id)
+    if (key === 'previews' && !prefix) {
+      for (const id of bindingIds(value ?? {}, 'previews.')) ids.add(id)
       continue
     }
-    // `routes` entries have no binding/name; plain values (vars, flags) are not products.
     visit(key, value)
   }
   return ids
@@ -63,6 +64,19 @@ try {
 }
 
 const errors = []
+const configs = git('ls-files', '-co', '--exclude-standard')
+  .split('\n')
+  .filter((f) => /(^|\/)wrangler\.(jsonc?|toml)$/.test(f))
+for (const f of configs)
+  if (f !== CONFIG)
+    errors.push(
+      `${f}: a second Worker config needs an ADR and support in scripts/check-bindings.mjs`,
+    )
+if ('env' in head)
+  errors.push(
+    `${CONFIG}: named environments (\`env\`) aren't checked yet; extend this script first`,
+  )
+
 const added = [...bindingIds(head)].filter((id) => !before.has(id))
 if (added.length) {
   const adrs = git('diff', '--name-only', '--diff-filter=A', base, '--', 'docs/adr')
@@ -70,7 +84,7 @@ if (added.length) {
     .filter((f) => /^docs\/adr\/\d{4}-.+\.md$/.test(f))
   const text = adrs.map((f) => readFileSync(f, 'utf8')).join('\n')
   for (const id of added) {
-    const name = id.split(':')[1] ?? id.split('.').at(-1)
+    const name = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id.split('.').at(-1)
     if (!new RegExp(`\\b${name.replace(/[^\w]/g, '\\$&')}\\b`).test(text))
       errors.push(
         `${id} is new: add docs/adr/NNNN-*.md naming its trigger and mentioning "${name}"`,
