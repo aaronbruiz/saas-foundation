@@ -4,7 +4,7 @@
 # `saas-preview-slot-<n>` (caching disabled) pointing at that branch's endpoint. CI never runs this:
 # it needs account-wide Hyperdrive access, which CI must not have. Idempotent; re-run it after
 # rotating app_owner's password on preview-seed (it updates the configs' connection strings).
-# Uses the admin's own logged-in `neonctl` and `wrangler` sessions.
+# Uses the admin's own logged-in `neon` and `wrangler` sessions.
 # Usage: NEON_PREVIEW_PROJECT_ID=... [PREVIEW_SLOTS=6] scripts/preview/provision-slots.sh
 # Output (stdout): the value for the CI variable PREVIEW_HYPERDRIVE_SLOTS (slot ids in order).
 set -euo pipefail
@@ -23,7 +23,7 @@ PARENT="${NEON_PREVIEW_PARENT_BRANCH:-preview-seed}"
 PREVIEW_WORKER="${PREVIEW_WORKER:-saas-foundation-preview}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 log() { echo "[slots] $*" >&2; }
-neon() { pnpm --dir "$ROOT" exec neonctl "$@"; }
+neon() { pnpm --dir "$ROOT" exec neon "$@"; }
 wrangler() { pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
 
 # Account pinned in the committed config (ADR-0017); the admin's wrangler session must reach it.

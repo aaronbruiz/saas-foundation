@@ -19,8 +19,8 @@ NAME="backup-$(date -u +%Y%m%d)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 log() { echo "[backup] $*" >&2; }
 neon() {
-  if [ -n "${NEON_API_KEY:-}" ]; then pnpm --dir "$ROOT" exec neonctl --api-key "$NEON_API_KEY" "$@"
-  else pnpm --dir "$ROOT" exec neonctl "$@"; fi
+  if [ -n "${NEON_API_KEY:-}" ]; then pnpm --dir "$ROOT" exec neon --api-key "$NEON_API_KEY" "$@"
+  else pnpm --dir "$ROOT" exec neon "$@"; fi
 }
 branches() {
   neon branches list --project-id "$NEON_PROJECT_ID" --output json | jq 'if type == "array" then . else .branches end'

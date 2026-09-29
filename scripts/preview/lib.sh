@@ -29,7 +29,7 @@ names_for() { # $1 = PR number
   HYPERDRIVE_NAME="saas-pr-$1"
 }
 
-neon() { pnpm --dir "$ROOT" exec neonctl --api-key "$NEON_API_KEY" "$@"; }
+neon() { pnpm --dir "$ROOT" exec neon --api-key "$NEON_API_KEY" "$@"; }
 wrangler() { pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
 
 # $1 = path under /accounts/:id, rest = curl args. Prints the body on 2xx; otherwise returns 1 and
