@@ -1,6 +1,6 @@
 import { billing, findOrganizationBySlug } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
 import {
   CHECKOUT,
@@ -24,6 +24,7 @@ import {
 } from '../src/modules/billing/service'
 import { acceptInvitation, inviteMember } from '../src/modules/organizations/service'
 import { createProject, listProjects } from '../src/modules/projects/service'
+import { stripeProvider } from '../src/modules/billing/providers/stripe'
 import { handleStripeWebhook } from '../src/modules/billing/webhook'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
@@ -601,5 +602,61 @@ describe('billing actions', () => {
     await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
     await startCheckout(owner.headers, { tenant: slug, price }, provider)
     expect(calls.checkout[0]).toMatchObject({ customerId: 'cus_test', trialDays: 0 })
+  })
+})
+
+// The Stripe adapter's own request (the service tests above use a fake provider). Stripe's fetch
+// client reads globalThis.fetch when the provider is built, so the stub answers its two calls.
+describe('stripe adapter checkout request', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function stripeCheckoutBody(customerId: string | null) {
+    const bodies: URLSearchParams[] = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      if (new URL(url).pathname === '/v1/prices')
+        return Response.json({
+          object: 'list',
+          data: [{ id: 'price_1', object: 'price' }],
+          has_more: false,
+          url: '/v1/prices',
+        })
+      bodies.push(new URLSearchParams(String(init.body)))
+      return Response.json({
+        id: 'cs_1',
+        object: 'checkout.session',
+        url: 'https://stripe.test/cs',
+      })
+    })
+    const url = await stripeProvider('sk_test_only_not_a_real_key').checkout({
+      organizationId: 'org_1',
+      organizationName: 'Acme Org Name',
+      customerId,
+      userId: 'user_seam_1',
+      customerEmail: 'owner@example.com',
+      priceKey: 'pro_monthly',
+      trialDays: 14,
+      successUrl: 'https://app.test/ok',
+      cancelUrl: 'https://app.test/back',
+    })
+    expect(url).toBe('https://stripe.test/cs')
+    expect(bodies).toHaveLength(1)
+    return bodies[0]!
+  }
+
+  it('always enables automatic tax and sends neither the user id nor the organization name', async () => {
+    const first = await stripeCheckoutBody(null)
+    expect(first.get('automatic_tax[enabled]')).toBe('true')
+    expect(first.get('customer_email')).toBe('owner@example.com')
+    expect(first.has('customer_update[address]')).toBe(false)
+    expect(first.get('subscription_data[metadata][organization_id]')).toBe('org_1')
+
+    const returning = await stripeCheckoutBody('cus_1')
+    expect(returning.get('automatic_tax[enabled]')).toBe('true')
+    expect(returning.get('customer')).toBe('cus_1')
+    expect(returning.get('customer_update[address]')).toBe('auto')
+    expect(returning.has('customer_email')).toBe(false)
+
+    for (const body of [first, returning])
+      expect([...body.values()].join(' ')).not.toMatch(/user_seam_1|Acme Org Name/)
   })
 })
