@@ -10,6 +10,7 @@ list="$(cf_api "/workers/workers/$PREVIEW_WORKER/previews?per_page=100")"
 rc=0
 for n in $(jq -r '.result[].name | select(test("^pr-[1-9][0-9]{0,6}$")) | ltrimstr("pr-")' <<<"$list"); do
   pr_is_closed "$n" || continue
+  if preview_run_active "$n"; then log "PR #$n still has an active preview run; next janitor run retries"; continue; fi
   log "closed PR #$n: deleting its preview"
   delete_preview "pr-$n" || rc=1
 done
