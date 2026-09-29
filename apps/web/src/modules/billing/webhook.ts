@@ -8,6 +8,7 @@ import {
   type ProviderEvent,
   type WebhookParser,
 } from './provider'
+import { parsePolarWebhook } from './providers/polar'
 import { parseStripeWebhook } from './providers/stripe'
 
 // Bytes. Provider payloads are far below this; anything bigger isn't worth buffering or an HMAC.
@@ -16,6 +17,10 @@ const MAX_BODY = 512 * 1024
 /** Stripe webhook endpoint (ADR-0018). Worker secret STRIPE_WEBHOOK_SECRET. */
 export const handleStripeWebhook = (request: Request, secret: string | undefined) =>
   handleBillingWebhook(request, secret, parseStripeWebhook)
+
+/** Polar webhook endpoint (ADR-0022). Worker secret POLAR_WEBHOOK_SECRET. */
+export const handlePolarWebhook = (request: Request, secret: string | undefined) =>
+  handleBillingWebhook(request, secret, parsePolarWebhook)
 
 /**
  * A provider's webhook endpoint (ADR-0018). Verified on the raw body by the provider's `parse`,

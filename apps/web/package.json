@@ -17,6 +17,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@polar-sh/sdk": "1.0.0",
     "@saas-foundation/auth": "workspace:*",
     "@saas-foundation/contracts": "workspace:*",
     "@saas-foundation/db": "workspace:*",

@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from 'drizzle-orm'
 import type { Db } from './client.ts'
-import { member, organization } from './schema/auth.ts'
+import { member, organization, user } from './schema/auth.ts'
 import { project, type Project } from './schema/projects.ts'
 
 /** Tenant context resolved server-side by the app (AGENTS.md invariant 1). */
@@ -37,6 +37,18 @@ export async function findMembership(db: Db, orgId: string, userId: string) {
     .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
     .limit(1)
   return m ?? null
+}
+
+/** Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). */
+export async function listOwners(
+  db: Db,
+  orgId: string,
+): Promise<{ userId: string; email: string }[]> {
+  return db
+    .select({ userId: member.userId, email: user.email })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(and(eq(member.organizationId, orgId), eq(member.role, 'owner')))
 }
 
 export type ProjectFields = { name: string; description?: string | null }

@@ -22,6 +22,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as TTenantIndexRouteImport } from './routes/t.$tenant.index'
 import { Route as TTenantBillingRouteImport } from './routes/t.$tenant.billing'
 import { Route as TTenantInviteRouteImport } from './routes/t.$tenant.invite'
+import { Route as ApiBillingWebhooksPolarRouteImport } from './routes/api/billing/webhooks/polar'
 import { Route as ApiBillingWebhooksStripeRouteImport } from './routes/api/billing/webhooks/stripe'
 import { Route as TTenantProjectsIndexRouteImport } from './routes/t.$tenant.projects.index'
 import { Route as TTenantProjectsIdRouteImport } from './routes/t.$tenant.projects.$id'
@@ -91,6 +92,11 @@ const TTenantInviteRoute = TTenantInviteRouteImport.update({
   path: '/invite',
   getParentRoute: () => TTenantRoute,
 } as any)
+const ApiBillingWebhooksPolarRoute = ApiBillingWebhooksPolarRouteImport.update({
+  id: '/api/billing/webhooks/polar',
+  path: '/api/billing/webhooks/polar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBillingWebhooksStripeRoute =
   ApiBillingWebhooksStripeRouteImport.update({
     id: '/api/billing/webhooks/stripe',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
+  '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant': typeof TTenantIndexRoute
+  '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects': typeof TTenantProjectsIndexRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/': typeof TTenantIndexRoute
+  '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/api/billing/webhooks/stripe': typeof ApiBillingWebhooksStripeRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
   '/t/$tenant/projects/': typeof TTenantProjectsIndexRoute
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
+    | '/api/billing/webhooks/polar'
     | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects/'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant'
+    | '/api/billing/webhooks/polar'
     | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/'
+    | '/api/billing/webhooks/polar'
     | '/api/billing/webhooks/stripe'
     | '/t/$tenant/projects/$id'
     | '/t/$tenant/projects/'
@@ -229,6 +241,7 @@ export interface RootRouteChildren {
   OrgsNewRoute: typeof OrgsNewRoute
   TTenantRoute: typeof TTenantRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBillingWebhooksPolarRoute: typeof ApiBillingWebhooksPolarRoute
   ApiBillingWebhooksStripeRoute: typeof ApiBillingWebhooksStripeRoute
 }
 
@@ -325,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTenantInviteRouteImport
       parentRoute: typeof TTenantRoute
     }
+    '/api/billing/webhooks/polar': {
+      id: '/api/billing/webhooks/polar'
+      path: '/api/billing/webhooks/polar'
+      fullPath: '/api/billing/webhooks/polar'
+      preLoaderRoute: typeof ApiBillingWebhooksPolarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/billing/webhooks/stripe': {
       id: '/api/billing/webhooks/stripe'
       path: '/api/billing/webhooks/stripe'
@@ -379,6 +399,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrgsNewRoute: OrgsNewRoute,
   TTenantRoute: TTenantRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBillingWebhooksPolarRoute: ApiBillingWebhooksPolarRoute,
   ApiBillingWebhooksStripeRoute: ApiBillingWebhooksStripeRoute,
 }
 export const routeTree = rootRouteImport

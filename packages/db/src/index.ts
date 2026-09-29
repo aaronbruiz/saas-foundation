@@ -15,6 +15,7 @@ export {
   findMembership,
   findOrganizationById,
   findOrganizationBySlug,
+  listOwners,
   projects,
   type ProjectFields,
   type TenantScope,

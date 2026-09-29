@@ -23,7 +23,28 @@ export type PortalRequest = {
   customerId: string
   /** The member opening the portal (`billing:manage`). */
   userId: string
+  customerEmail: string
   returnUrl: string
+}
+
+/** A user holding `billing:manage` in an organization (today: an owner). */
+export type BillingManager = { userId: string; email: string }
+
+/**
+ * Keeps the provider's per-organization billing access in step with `billing:manage` (ADR-0022),
+ * for providers where people log in to the billing account themselves. Each call is idempotent and
+ * does nothing for an organization without a provider account.
+ */
+export type BillingMembers = {
+  /**
+   * Removes the user's access. `successors` are the organization's remaining billing managers,
+   * one of whom takes over if the provider needs an account owner. Throws if access can't be
+   * removed, so the caller refuses the change (fail closed).
+   */
+  revoke(organizationId: string, userId: string, successors: BillingManager[]): Promise<void>
+  grant(organizationId: string, manager: BillingManager): Promise<void>
+  /** Removes the organization's billing account and everyone's access (organization deletion). */
+  removeAccount(organizationId: string): Promise<void>
 }
 
 export type BillingProvider = {
