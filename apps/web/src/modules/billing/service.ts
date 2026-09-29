@@ -5,9 +5,9 @@ import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
 import { HttpError, parseInput } from '../../server/errors'
 import { authorize, can } from '../../server/permissions'
-import { CHECKOUT, PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
-import type { BillingProvider } from './provider'
-import { PriceNotFound, stripeProvider } from './providers/stripe'
+import { PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
+import { PriceNotFound, type BillingProvider } from './provider'
+import { stripeProvider } from './providers/stripe'
 
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
 // ./policy (product) or the capability matrix (roles); this file only wires them (ADR-0020).
@@ -65,11 +65,12 @@ export async function startCheckout(
     try {
       const url = await provider.checkout({
         organizationId: ctx.orgId,
+        organizationName: ctx.name,
         customerId: sub?.providerCustomerId ?? null,
+        userId: ctx.userId,
         customerEmail: ctx.email,
         priceKey: price,
         trialDays: trialDaysFor(sub),
-        automaticTax: CHECKOUT.automaticTax,
         successUrl: `${back}?checkout=success`,
         cancelUrl: back,
       })
@@ -94,7 +95,9 @@ export async function openBillingPortal(
     if (!sub) throw new HttpError(409, 'This organization has no billing account yet')
     if (!provider) throw new HttpError(503, 'Billing is not configured')
     const url = await provider.portal({
+      organizationId: ctx.orgId,
       customerId: sub.providerCustomerId,
+      userId: ctx.userId,
       returnUrl: `${vars.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
     })
     return { url }

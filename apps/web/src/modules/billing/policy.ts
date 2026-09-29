@@ -1,6 +1,7 @@
-// THE product billing policy (ADR-0020): plans, their prices, limits and features, the trial, tax,
-// and the lifecycle rules. A different product changes this file (and its own enforcement points,
-// which only ask this file). Nothing here knows the provider or does I/O.
+// THE product billing policy (ADR-0020): plans, their prices, limits and features, the trial and
+// the lifecycle rules. A different product changes this file (and its own enforcement points,
+// which only ask this file). Nothing here knows the provider or does I/O; tax belongs to the
+// provider adapter (Stripe Tax today, a merchant of record under ADR-0022).
 // Who may see and manage billing lives with every other role rule, in server/permissions.ts.
 import type { SubscriptionStatus } from '@saas-foundation/db'
 
@@ -48,8 +49,6 @@ export const DEFAULT_PLAN: PlanKey = 'free'
 export const CHECKOUT = {
   /** Only for an organization's first subscription; the provider collects a payment method. */
   trialDays: 14,
-  /** Provider-calculated tax (Stripe Tax): needs tax registrations set up before going live. */
-  automaticTax: true,
 } as const
 
 /**

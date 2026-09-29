@@ -550,7 +550,7 @@ describe('billing actions', () => {
     expect(calls.checkout).toHaveLength(0)
   })
 
-  it('starts the first checkout with the trial, the organization link and tax', async () => {
+  it('starts the first checkout with the trial and the organization link', async () => {
     const owner = await signUp()
     const slug = await createOrg(owner, 'bill-co')
     const { provider, calls } = fakeProvider()
@@ -558,11 +558,12 @@ describe('billing actions', () => {
     expect(url).toBe('https://checkout.example/session')
     expect(calls.checkout[0]).toMatchObject({
       organizationId: await orgIdOf(slug),
+      organizationName: slug,
       customerId: null,
+      userId: owner.userId,
       customerEmail: owner.email,
       priceKey: price,
       trialDays: CHECKOUT.trialDays,
-      automaticTax: CHECKOUT.automaticTax,
       successUrl: `${env.BETTER_AUTH_URL}/t/${slug}/billing?checkout=success`,
       cancelUrl: `${env.BETTER_AUTH_URL}/t/${slug}/billing`,
     })
@@ -591,7 +592,11 @@ describe('billing actions', () => {
 
     const subId = await upgrade(orgId)
     await openBillingPortal(owner.headers, { tenant: slug }, provider)
-    expect(calls.portal[0]).toMatchObject({ customerId: 'cus_test' })
+    expect(calls.portal[0]).toMatchObject({
+      organizationId: orgId,
+      customerId: 'cus_test',
+      userId: owner.userId,
+    })
 
     await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
     await startCheckout(owner.headers, { tenant: slug, price }, provider)
