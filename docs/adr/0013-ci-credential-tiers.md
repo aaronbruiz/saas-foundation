@@ -71,14 +71,14 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
      - **(a)** an environment limited to deployment branch `main` holds it; or
      - **(b)** backups run outside GitHub Actions.
    - **Owner decision (2026-09-28): (a).** No separate backup Worker. Environment `production` (deployment branch `main` only) holds the Neon key scoped to the production project (stored as `NEON_API_KEY`, per ADR-0019). `db-backup.yml` runs in that environment. A PR can reference the environment but GitHub refuses the job, because its ref isn't `main`.
-   - The T1 preview key stays a repo-level secret. Moving it into the unprotected `preview` environment would add nothing, since any PR can name that environment.
+   - The T1 preview key stays a repo-level secret. Moving it into the unprotected `preview` environment would add nothing, since any PR can name that environment. _(Superseded by ADR-0021: the preview key now lives only in the `main`-only `preview-infra` and `preview` environments; no secret is repo-level.)_
 5. **Rollout in two PRs.** The deploy job runs the base branch's scripts, so first merge the new scripts (tested by hand against the preview project), then switch the workflow.
 
 ## Consequences
 
 - PR validation is unchanged: check, test, build, preview deploy, E2E against the preview.
 - Residual risks:
-  - A same-repo PR that edits a workflow can still read repo-level T1 secrets. This is accepted only while write access is limited to the owner. Before anyone else gets write access, T1 secrets move to an environment (Pro), or the repo's trust model is revisited.
+  - A same-repo PR that edits a workflow can still read repo-level T1 secrets. This is accepted only while write access is limited to the owner. Before anyone else gets write access, T1 secrets move to an environment (Pro), or the repo's trust model is revisited. _(Closed by ADR-0021: there are no repo-level secrets; T1 secrets are in `main`-only environments.)_
   - Environment branch rules are the only fence around T2. They're repo settings, so anyone with admin access can change them. Today that's only the owner.
 - The preview project's Neon branch limit (9 concurrent previews) and the Hyperdrive config limit are unchanged.
 

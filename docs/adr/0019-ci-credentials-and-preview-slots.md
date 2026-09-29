@@ -42,9 +42,9 @@ Investigated 2026-09-28, with evidence.
 
 - Production: a key **scoped to the production project**, stored only in the `production` environment (deployment branch `main`) as **`NEON_API_KEY`**. That's the name every script already uses, so there's no second name.
   - `db-backup.yml` reads it from there.
-  - The repo-level `NEON_API_KEY` is deleted, and the unused production key and the old personal key are revoked. **Until then, any same-repo PR workflow can still read the repo-level copy.** An environment secret doesn't shadow a repo secret for jobs outside the environment.
+  - The repo-level `NEON_API_KEY` is deleted, and the unused production key and the old personal key are revoked. **Until then, any same-repo PR workflow can still read the repo-level copy.** An environment secret doesn't shadow a repo secret for jobs outside the environment. _(Historical, done 2026-09-29: the repo-level copy and the personal key are gone. The production-scoped key `saas-foundation` stored as `NEON_API_KEY` in `production` is **not** the unused key: it is active, `db-backup.yml` uses it, and it must not be revoked. See Rollout and ADR-0021.)_
   - The key's reach is limited to the project it backs up. The environment keeps it away from PR code.
-- Previews: `NEON_PREVIEW_API_KEY` (scoped to the preview project), repo-level, T1. It is never used for production.
+- Previews: `NEON_PREVIEW_API_KEY` (scoped to the preview project), repo-level, T1. It is never used for production. _(Superseded by ADR-0021: it now lives only in the `main`-only `preview-infra` and `preview` environments.)_
 
 **3. Cloudflare: previews need only a per-Worker Editor token.**
 
