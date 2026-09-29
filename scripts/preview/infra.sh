@@ -86,20 +86,22 @@ hd_create() { # $1 = branch id, $2 = endpoint host
 }
 
 infra_up() {
-  local bid seed host ids id
+  local bid seed host ids id body
   bid="$(neon_branch_id "$NEON_BRANCH")" || return 1
   if [ -z "$bid" ]; then
     seed="$(neon_branch_id "$NEON_PREVIEW_PARENT_BRANCH")" || return 1
     [ -n "$seed" ] || { log "ERROR: no $NEON_PREVIEW_PARENT_BRANCH branch in the preview project"; return 1; }
     log "creating $NEON_BRANCH from $NEON_PREVIEW_PARENT_BRANCH"
-    bid="$(jq -n --arg n "$NEON_BRANCH" --arg p "$seed" '{branch: {name: $n, parent_id: $p}, endpoints: [{type: "read_write"}]}' |
-      neon_api /branches -X POST --data-binary @- | jq -r .branch.id)" || return 1
+    # Bodies as arguments, not stdin: neon_api may retry (HTTP 423). They hold no secrets.
+    body="$(jq -nc --arg n "$NEON_BRANCH" --arg p "$seed" '{branch: {name: $n, parent_id: $p}, endpoints: [{type: "read_write"}]}')"
+    bid="$(neon_api /branches -X POST --data-binary "$body" | jq -r .branch.id)" || return 1
   else
     # Fresh synthetic data on every deploy; roles, password and endpoint are kept, so the PR's
     # Hyperdrive config stays valid.
     log "resetting $NEON_BRANCH data to its parent"
     seed="$(neon_api "/branches/$bid" | jq -r .branch.parent_id)" || return 1
-    jq -n --arg p "$seed" '{source_branch_id: $p}' | neon_api "/branches/$bid/restore" -X POST --data-binary @- >/dev/null || return 1
+    body="$(jq -nc --arg p "$seed" '{source_branch_id: $p}')"
+    neon_api "/branches/$bid/restore" -X POST --data-binary "$body" >/dev/null || return 1
   fi
   host="$(branch_host "$bid")" || return 1
   [ -n "$host" ] || { log "ERROR: $NEON_BRANCH has no read-write endpoint"; return 1; }

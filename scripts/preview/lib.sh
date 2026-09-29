@@ -65,7 +65,7 @@ cf_api() {
 
 # Neon REST API for the preview project (no CLI: the privileged jobs install no packages).
 # $1 = path under /projects/:id, rest = curl args. Retries while another operation holds the
-# branch (HTTP 423). Prints the body on 2xx, else returns 1.
+# branch (HTTP 423), so never pass a request body on stdin. Prints the body on 2xx, else returns 1.
 neon_api() {
   : "${NEON_API_KEY:?}" "${NEON_PREVIEW_PROJECT_ID:?}"
   local path="$1"; shift
