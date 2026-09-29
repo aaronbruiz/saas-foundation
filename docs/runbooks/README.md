@@ -130,3 +130,5 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
 Rollback: `wrangler rollback` to the previous Worker version (code only). Migrations are forward-only (expand → migrate → contract). For data, use the Database section below.
 
 Planned: routine deploys, migrations after launch.
+
+<!-- preview pipeline validation, 2026-09-29; this PR is closed without merging -->
