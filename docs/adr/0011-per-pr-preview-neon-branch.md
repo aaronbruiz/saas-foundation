@@ -4,6 +4,8 @@ Status: Accepted · Date: 2026-09-27
 
 Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): per-PR Hyperdrive configs and Neon branches (preview slots).
 
+Restored with changes by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): per-PR branch and Hyperdrive config again, created and deleted only by trusted jobs; config ids never reused.
+
 Proposed to be superseded in part by [ADR-0013](0013-ci-credential-tiers.md) (the CI credentials "accepted risk"), once ADR-0013 is accepted. Until then the current workflows still expose the secrets described there.
 
 ## Context

@@ -1,0 +1,187 @@
+name: Preview
+
+# ADR-0021: PR previews behind a trusted boundary. `workflow_run` always runs this file from the
+# default branch, so a PR can't change these jobs, and the secrets live in environments that only
+# `main` may use (a PR-edited `pull_request` workflow can't reach them).
+#   resolve (no secrets) → infra (preview-infra: Hyperdrive + Neon; never sees the artifact)
+#   → deploy (preview: narrow Worker token + Neon; the PR's build artifact as data only)
+#   → e2e (no secrets; default-branch Playwright suite against the preview URL)
+# No job runs PR code, and no job restores or saves a cache.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  resolve:
+    # Same-repo PRs only, and only once check + test passed.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        # The PR number comes from GitHub, never from the run's branch name or artifact: the one open
+        # same-repo PR whose head is exactly this commit (an older commit's run is skipped).
+        run: |
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "unexpected head sha"; exit 1; }
+          prs="$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" | jq -r '[.[] | select(.state == "open"
+            and .head.sha == env.HEAD_SHA and .head.repo.full_name == env.REPO
+            and .base.repo.full_name == env.REPO) | .number]')"
+          count="$(jq length <<<"$prs")"
+          if [ "$count" != 1 ]; then echo "no single open PR at $HEAD_SHA ($count); skipping"; exit 0; fi
+          pr="$(jq -r '.[0]' <<<"$prs")"
+          [[ "$pr" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "unexpected PR number"; exit 1; }
+          echo "pr=$pr" >>"$GITHUB_OUTPUT"
+
+  infra:
+    needs: resolve
+    if: needs.resolve.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: preview-infra
+    # Shared with preview-cleanup.yml: deploy and teardown of one PR never overlap.
+    concurrency:
+      group: preview-pr-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      hyperdrive_id: ${{ steps.up.outputs.hyperdrive_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      # curl + jq only: no package install, no cache, no artifact in this job.
+      - name: Create or reset the PR's Neon branch and Hyperdrive config
+        id: up
+        env:
+          PR_NUMBER: ${{ needs.resolve.outputs.pr }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
+          NEON_PREVIEW_PARENT_BRANCH: ${{ vars.NEON_PREVIEW_PARENT_BRANCH }}
+          NEON_DATABASE: ${{ vars.NEON_DATABASE }}
+          NEON_ROLE: ${{ vars.NEON_ROLE }}
+          # ADR-0021: Hyperdrive Write (account-wide, hence the guards in infra.sh) + preview-project Neon key.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_INFRA_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_PREVIEW_API_KEY }}
+        run: scripts/preview/infra.sh up
+
+  deploy:
+    needs: [resolve, infra]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: preview
+    concurrency:
+      group: preview-pr-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read # download the artifact of the triggering CI run
+      pull-requests: read # pr_is_open
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      # Default-branch lockfile, no cache: nothing the PR influenced is restored or saved here.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Download the PR's build artifact (untrusted data)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: preview-artifact
+          path: ${{ runner.temp }}/preview-artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Deploy the preview
+        id: deploy
+        env:
+          PR_NUMBER: ${{ needs.resolve.outputs.pr }}
+          HD_ID: ${{ needs.infra.outputs.hyperdrive_id }}
+          ARTIFACT_DIR: ${{ runner.temp }}/preview-artifact
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+          NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
+          NEON_DATABASE: ${{ vars.NEON_DATABASE }}
+          NEON_ROLE: ${{ vars.NEON_ROLE }}
+          GH_TOKEN: ${{ github.token }}
+          # ADR-0019/0021: Workers Editor on the preview Worker only; never the Hyperdrive token.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_PREVIEW_API_KEY }}
+        # Don't capture stdout: it carries ::add-mask:: commands. The script writes $GITHUB_OUTPUT.
+        run: scripts/preview/deploy-artifact.sh
+
+  e2e:
+    needs: [resolve, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write # comment the URL
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: E2E against the preview (default-branch suite; the PR's own tests ran in CI)
+        env:
+          BASE_URL: ${{ needs.deploy.outputs.url }}
+        run: |
+          [[ "$BASE_URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
+          pnpm --filter web exec playwright install --with-deps chromium
+          pnpm test:e2e
+      - name: Comment preview URL on the PR
+        if: always() && needs.deploy.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr }}
+          URL: ${{ needs.deploy.outputs.url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          E2E: ${{ job.status }}
+        run: |
+          # Refuse to post anything that isn't a plain workers.dev URL (defense in depth).
+          [[ "$URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "unexpected PR number"; exit 1; }
+          marker='<!-- saas-foundation-preview -->'
+          body="$marker
+          **Preview** for ${HEAD_SHA::7}: $URL (E2E: $E2E)
+          Health: $URL/api/health · its own Neon branch \`preview/pr-$PR_NUMBER\` and Hyperdrive config \`saas-pr-$PR_NUMBER\` (caching off)
+          Its database access is revoked automatically when the PR closes."
+          id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null
+          fi

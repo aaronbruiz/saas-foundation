@@ -1,33 +1,33 @@
 # Runbooks
 
-## Previews (ADR-0019 slots)
+## Previews (ADR-0021)
 
-- **Slots:** `PREVIEW_SLOTS` (6) Neon branches `preview/slot-<n>` in the preview project plus Hyperdrive configs `saas-preview-slot-<n>`. Their ids are in the CI variable `PREVIEW_HYPERDRIVE_SLOTS`, in slot order. A branch is renamed `preview/slot-<n>/pr-<PR>` while claimed and `…/quarantine-pr-<PR>` while an old preview URL still serves.
-  - Admin (create/repair, e.g. after rotating the preview password): `NEON_PREVIEW_PROJECT_ID=… scripts/preview/provision-slots.sh`, using your own logged-in `neon`/`wrangler`. It prints the value for `gh variable set PREVIEW_HYPERDRIVE_SLOTS --body …`. Changing the slot count means re-running it with `PREVIEW_SLOTS=<n>` and updating the variable.
-- **Trusted deploy** (CI's path; ADR-0013 step 3): from a checkout of the PR's **base** commit, `PR_NUMBER=<n> ARTIFACT_DIR=<dir> scripts/preview/deploy-artifact.sh`.
-  - `<dir>` holds `apps/web/dist` and `packages/db/drizzle` from the PR's build; the script runs none of the PR's code.
-  - It validates and patches `dist/server/wrangler.json` (`prepare-config.mjs`), claims a slot, resets it, migrates with `packages/db/scripts/migrate.mjs`, and deploys with `--config`.
-  - A refused config lists each reason; a legitimate new key or binding needs the validator updated on `main` first.
-- `scripts/preview/up.sh` (build + per-PR branch and Hyperdrive) is the legacy path, still used by CI until the workflow split.
-- **By hand** with the logged-in sessions instead of CI secrets:
-  - `CLOUDFLARE_API_TOKEN="$(pnpm --dir apps/web exec wrangler auth token | tail -1)"`;
+**Invariant:** preview resources are created and removed by CI. Normal preview lifecycle operations (create, reset, deploy, revoke) require no human intervention. Manual operations are administrative or recovery procedures only.
+
+- **Per PR:** Neon branch `preview/pr-<N>` (child of `preview-seed` in the preview project, its own `app_owner` password) and Hyperdrive config `saas-pr-<N>` (caching off). Hyperdrive ids are never reused: a closed PR's config is deleted, a reopened PR gets a new one. **Deleting the config is what revokes database access.** A 404 from a deleted Preview URL is not: deleted Previews and their deployment URLs can keep executing (Cloudflare Previews beta).
+- **Flow** (`.github/workflows/preview.yml`, `workflow_run` after CI; default-branch code only):
+  - `resolve`: the one open same-repo PR whose head is the CI run's commit;
+  - `infra` (environment `preview-infra`): `scripts/preview/infra.sh up` creates the branch, or resets its data to the seed, and creates or reuses the guarded config; never sees the artifact;
+  - `deploy` (environment `preview`): `scripts/preview/deploy-artifact.sh` validates the artifact (`apps/web/dist` + `packages/db/drizzle` from CI), migrates with the default-branch migrator, patches the config to that id (`prepare-config.mjs`) and runs `wrangler preview`. A refused config lists each reason; a legitimate new key or binding needs the validator updated on `main` first;
+  - `e2e`: the default-branch Playwright suite against the URL, then a PR comment.
+- **Close** (`preview-cleanup.yml`, `pull_request_target`): `cleanup-preview` runs `scripts/preview/down.sh` (deletes the Preview), then `cleanup-infra` runs `scripts/preview/infra.sh down` (deletes the config, then the branch). Both act only on a PR that GitHub reports closed right now. **Daily janitor:** `janitor.sh` and `infra.sh janitor` do the same for closed PRs a run missed.
+- **By hand** (recovery), with the logged-in sessions instead of CI secrets:
+  - `CLOUDFLARE_API_TOKEN="$(pnpm --dir apps/web exec wrangler auth token | tail -1)"` (it can do both sides; CI never has one token for both);
   - `NEON_API_KEY` from `~/.config/neon/credentials.json` (`access_token`; it expires quickly, so run any `neon` command without `--api-key` first to refresh it);
-  - `GH_TOKEN="$(gh auth token)"`, plus the CI vars.
-  - Tested 2026-09-28 (PRs 9005/9006): claim, deploy, E2E, re-deploy into the same slot, a second PR in another slot, release with URL verified, a real quarantine (pr-9005's URL kept answering 200), and the janitor keeping it quarantined.
-- **Delete:** `PR_NUMBER=<n> scripts/preview/down.sh`. It only acts on a PR that GitHub reports closed right now, since a delayed close event mustn't wipe a reopened PR. Use `FORCE=1` for manual runs or test PR numbers. **Orphans and quarantine re-checks:** `scripts/preview/janitor.sh` (daily in CI).
-- **Known issue** (Previews open beta): a Preview URL can keep serving after a successful delete. Its old code keeps its slot's binding, so the slot is **quarantined** (data wiped, never reassigned) until the URL returns 404. If quarantined slots pile up, report upstream; `provision-slots.sh` with a higher `PREVIEW_SLOTS` adds room.
-- **"no free preview slot":** every slot is held by an open PR or quarantined. Close PRs, or wait for the janitor.
+  - `GH_TOKEN="$(gh auth token)"`, plus the CI vars (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `NEON_PREVIEW_PROJECT_ID`);
+  - `PR_NUMBER=<n> scripts/preview/infra.sh up` prints the config id; `PR_NUMBER=<n> HD_ID=<id> ARTIFACT_DIR=<dir> scripts/preview/deploy-artifact.sh`; teardown `PR_NUMBER=<n> scripts/preview/down.sh` then `PR_NUMBER=<n> scripts/preview/infra.sh down`. `FORCE=1` skips the PR-state checks (test PR numbers ≥ 9015; 9001–9014 are used).
+  - Tested 2026-09-29 (9011–9014): see ADR-0021.
+- **Limits:** Neon Free has 10 branches per project (the seed uses one), Hyperdrive 25 configs per account. The janitor frees both for closed PRs.
 
 ### If a preview credential leaks
 
-Preview branches inherit `app_owner`'s password from `preview-seed`, so one leak exposes every preview branch (synthetic data only; production is a separate project with its own password).
+Each preview branch gets its own `app_owner` password when it's created (ADR-0021), so a leaked connection string exposes that PR's branch only (synthetic data; production is a separate project with its own password).
 
 1. Delete the leaking artifact (comment, log, file).
-2. `PR_NUMBER=<n> scripts/preview/down.sh` for the affected PRs.
-3. Reset `app_owner`'s password on `preview-seed` (Neon API `POST …/branches/<preview-seed>/roles/app_owner/reset_password`).
-4. Re-run the PR's CI to recreate the preview with the new password.
+2. Revoke the PR's data: `FORCE=1 PR_NUMBER=<n> scripts/preview/infra.sh down` (deletes its Hyperdrive config and branch).
+3. Re-run the PR's CI: a new branch, password and config are created.
 
-Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output. The `::add-mask::` command was never executed, the preview connection string was posted in the PR comment, and the capture also **hid `up.sh`'s failure** (the step reported success). Fixed: `up.sh` writes `$GITHUB_OUTPUT` itself, and URL-shape guards run in the script and in the workflow. Steps 1–3 above were done.
+Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output. The `::add-mask::` command was never executed, the preview connection string was posted in the PR comment, and the capture also **hid `up.sh`'s failure** (the step reported success). Fixed: the scripts write `$GITHUB_OUTPUT` themselves (`up.sh` is gone; `deploy-artifact.sh` and `infra.sh` keep the rule), and URL-shape guards run in the script and in the workflow. The leak was handled with the procedure of the time (delete, tear down, reset the seed's password).
 
 ## Observability (ADR-0015)
 
@@ -41,24 +41,26 @@ Where to look when production fails:
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
 
-## CI credentials (ADR-0019)
+## CI credentials (ADR-0019, ADR-0021)
 
-| Secret                 | Where                                         | Scope                                                                                             | Used by                     |
-| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------- |
-| `NEON_API_KEY`         | environment `production` (branch `main` only) | Neon org key limited to the production project                                                    | `db-backup.yml`             |
-| `NEON_PREVIEW_API_KEY` | repo                                          | Neon org key limited to the preview project                                                       | preview deploy/cleanup (T1) |
-| `CLOUDFLARE_API_TOKEN` | repo                                          | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only | preview deploy/cleanup (T1) |
+No preview secret lives at repo level: a `pull_request` workflow runs the PR's own YAML and could read it. Every secret sits in an environment that only `main` may use, and only default-branch code (`workflow_run`, `pull_request_target`, schedule) uses it.
 
-Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `PREVIEW_HYPERDRIVE_SLOTS`, the `NEON_*` ids.
+| Secret                           | Where                                      | Scope                                                                                             | Used by                                                     |
+| -------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `NEON_API_KEY`                   | environment `production` (`main` only)     | Neon org key limited to the production project                                                    | `db-backup.yml`                                             |
+| `CLOUDFLARE_PREVIEW_INFRA_TOKEN` | environment `preview-infra` (`main` only)  | account-owned token: Account · **Hyperdrive · Edit** (API name `Hyperdrive Write`) only           | `preview.yml` infra, `preview-cleanup.yml` cleanup-infra    |
+| `NEON_PREVIEW_API_KEY`           | environments `preview-infra` and `preview` | Neon org key limited to the preview project                                                       | infra, deploy, cleanup-infra                                |
+| `CLOUDFLARE_API_TOKEN`           | environment `preview` (`main` only)        | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only | `preview.yml` deploy, `preview-cleanup.yml` cleanup-preview |
 
-- **Production Neon key (owner), in this order** (a repo-level secret with the same name would otherwise answer for the environment and make the check meaningless):
-  1. `gh secret delete NEON_API_KEY` (the repo-level copy);
-  2. Neon console → Organization settings → API keys → _Create key_ → _Project-scoped_, project = the production project, name `saas-foundation-production-ci`;
-  3. `gh secret set NEON_API_KEY --env production` (paste at the prompt; nothing is echoed);
-  4. `gh workflow run db-backup.yml` and see the run succeed;
-  5. revoke the unused older production-scoped key and the personal key in the Neon console.
-- **Preview Cloudflare token (owner), only after the preview-slot scripts and the split workflow are on `main`** (the current scripts still need account-wide Hyperdrive access): dashboard → Manage Account → Account API Tokens → _Create token_ → Workers → role **Editor**, scope **Specified Workers**: `saas-foundation-preview`. No other permissions. `gh secret set CLOUDFLARE_API_TOKEN` (paste at the prompt), then revoke the old user token. Check it: re-run a PR's preview job. The deploy step logs "account-owned token → active".
-- **After** the rollout in ADR-0019 (slots in use, token replaced, old token revoked), the preview credentials can't deploy the production Worker or touch production Hyperdrive (the backup key reaches the production Neon project by design, fenced by the environment). **Until then** CI's `CLOUDFLARE_API_TOKEN` is the old account-wide token, and the repo-level `NEON_API_KEY` stays readable by PR workflows until it's deleted. Production deploys run from the owner's machine (runbook "First production deploy").
+Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids.
+
+- **Both Cloudflare tokens are sensitive.** The Hyperdrive token is account-wide (no per-config scope) and could edit production Hyperdrive; the Worker token can deploy a preview bound to any Hyperdrive id, production's included (binding needs no permission on the bound resource). The scripts' guards (ADR-0021 decision 3) and the environments are the fence. No job holds both.
+- **Preview credentials (owner):**
+  1. Cloudflare dashboard → Manage Account → Account API Tokens → _Create token_ → _Custom token_: name `saas-foundation-preview-infra`; permissions **Account · Hyperdrive · Edit**, nothing else; account resources: this account only; no zone permissions, no IP filter. `gh secret set CLOUDFLARE_PREVIEW_INFRA_TOKEN --env preview-infra`.
+  2. Neon console → Organization settings → API keys → _Create key_ → _Project-scoped_, project = the preview project, name `saas-foundation-preview-ci`. `gh secret set NEON_PREVIEW_API_KEY --env preview-infra` and `gh secret set NEON_PREVIEW_API_KEY --env preview` (same value).
+  3. The per-Worker token (ADR-0019): `gh secret set CLOUDFLARE_API_TOKEN --env preview` (its value, or roll it in the dashboard to get a new one).
+  4. After a PR preview has run and been cleaned up through `preview.yml` / `preview-cleanup.yml`: `gh secret delete CLOUDFLARE_API_TOKEN` and `gh secret delete NEON_PREVIEW_API_KEY` (the repo-level copies), and revoke the old preview Neon key.
+- **Production Neon key:** in `production` since 2026-09-28; `db-backup.yml` read it successfully on 2026-09-29. Revoke the unused older production-scoped key and the personal key in the Neon console if that isn't done. Production deploys run from the owner's machine (runbook "First production deploy").
 
 ## Stripe (ADR-0018, ADR-0020)
 

@@ -4,6 +4,8 @@ Status: Accepted (owner decisions 2026-09-28; rollout in progress, see "Rollout 
 
 Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): the T1 Cloudflare token scope, the production Neon key's name/location, and the rollout list.
 
+Superseded in part by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): step 3's workflow split (privileged jobs on `workflow_run` / `pull_request_target`, secrets in `main`-only environments, separate Worker and Hyperdrive tokens).
+
 Supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md). Until the rollout completes, parts of the exposure below stay live.
 
 ## Context

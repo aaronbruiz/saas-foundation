@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// BASE_URL set (CI preview job) → test the deployed preview. Unset → start the dev server locally
+// BASE_URL set (preview.yml) → test the deployed preview. Unset → start the dev server locally
 // (needs `pnpm db:up`, migrations and apps/web/.dev.vars).
 const baseURL = process.env.BASE_URL ?? 'http://localhost:3000'
 
