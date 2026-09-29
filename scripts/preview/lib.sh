@@ -58,8 +58,11 @@ cf_api() {
 # Legacy per-PR Hyperdrive configs (ADR-0011), listed only if the token may: prints their names, or
 # nothing with the narrow per-Worker token (401/403). Any other failure is an error.
 legacy_hyperdrive_json() {
-  local out
-  if out="$(cf_api /hyperdrive/configs 2>/dev/null)"; then printf '%s' "$out"; return 0; fi
+  local tmp
+  tmp="$(mktemp)"
+  # Not in a command substitution: CF_HTTP_CODE must survive the call.
+  if cf_api /hyperdrive/configs >"$tmp" 2>/dev/null; then cat "$tmp"; rm -f "$tmp"; return 0; fi
+  rm -f "$tmp"
   if [ "$CF_HTTP_CODE" = 401 ] || [ "$CF_HTTP_CODE" = 403 ]; then
     log "no Hyperdrive access (per-Worker token): skipping legacy per-PR Hyperdrive cleanup"
     printf '{"result":[]}'
@@ -225,6 +228,13 @@ claim_slot() {
   [ -n "$SLOT" ] || { log "ERROR: no free preview slot ($count slots; close PRs or wait for quarantined slots)"; exit 1; }
   [ "$SLOT" -le "$count" ] || { log "ERROR: slot $SLOT has no Hyperdrive id in PREVIEW_HYPERDRIVE_SLOTS"; exit 1; }
   HD_ID="${SLOT_IDS[$((SLOT - 1))]}"
+}
+
+# True if PR $1 still holds slot branch $2 (a close event may have released it meanwhile).
+owns_slot() {
+  local name
+  name="$(neon_branches_json | jq -r --arg id "$2" '.[] | select(.id == $id) | .name')" || return 1
+  [ "$name" = "preview/slot-$SLOT/pr-$1" ]
 }
 
 # Resets the claimed slot's branch to the seed (fresh synthetic data on every deploy) and sets DB_URL

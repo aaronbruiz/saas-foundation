@@ -37,4 +37,12 @@ DATABASE_URL="$DB_URL" node "$ROOT/packages/db/scripts/migrate.mjs" "$migrations
 
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID" "$HD_ID"
 new_auth_secret
+# Cleanup (PR closed) may have released the slot meanwhile: never publish into, or leave a preview
+# bound to, a slot another PR may now hold.
+owns_slot "$PR_NUMBER" "$SLOT_BRANCH_ID" || { log "ERROR: slot $SLOT is no longer held by PR #$PR_NUMBER"; exit 1; }
 deploy_preview --config "$config"
+if ! owns_slot "$PR_NUMBER" "$SLOT_BRANCH_ID"; then
+  log "ERROR: slot $SLOT was released during the deploy; removing the preview"
+  delete_preview_verified "$PREVIEW_NAME" || true
+  exit 1
+fi

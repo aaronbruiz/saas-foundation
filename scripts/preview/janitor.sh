@@ -7,6 +7,8 @@ source "$(dirname "$0")/lib.sh"
 
 
 if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
+  # Captured first: a failure inside `< <(...)` would escape `set -e` and look like "no slots".
+  slots_json="$(slot_branches)"
   while read -r slot id name; do
     [ -n "$slot" ] || continue
     case "$name" in
@@ -17,6 +19,8 @@ if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
         ;;
       "preview/slot-$slot/quarantine-pr-"*)
         pr="${name##*/quarantine-pr-}"
+        # A reopened PR may have a live preview of the same name again: leave it alone.
+        pr_is_closed "$pr" || continue
         rc=0
         delete_preview_verified "pr-$pr" || rc=$?
         if [ "$rc" = 0 ] &&
@@ -25,16 +29,17 @@ if [ -n "${PREVIEW_HYPERDRIVE_SLOTS:-}" ]; then
         fi
         ;;
     esac
-  done < <(slot_branches | jq -r '.[] | "\(.slot) \(.id) \(.name)"')
+  done < <(jq -r '.[] | "\(.slot) \(.id) \(.name)"' <<<"$slots_json")
 fi
 
 # Legacy per-PR branches, plus recently closed PRs (previews can't be listed, so re-deleting them
 # catches orphaned ones).
-candidates="$( {
-  neon_branches_json | jq -r '.[].name | select(startswith("preview/pr-")) | ltrimstr("preview/pr-")'
-  legacy_hyperdrive_json | jq -r '.result[].name | select(startswith("saas-pr-")) | ltrimstr("saas-pr-")'
-  gh pr list --state closed --limit 30 --json number --jq '.[].number'
-} | sort -u)"
+# Each listing is checked on its own: an incomplete scan must fail, not look clean.
+from_branches="$(neon_branches_json | jq -r '.[].name | select(startswith("preview/pr-")) | ltrimstr("preview/pr-")')"
+hd_list="$(legacy_hyperdrive_json)"
+from_hyperdrive="$(jq -r '.result[].name | select(startswith("saas-pr-")) | ltrimstr("saas-pr-")' <<<"$hd_list")"
+recently_closed="$(gh pr list --state closed --limit 30 --json number --jq '.[].number')"
+candidates="$(printf '%s\n%s\n%s\n' "$from_branches" "$from_hyperdrive" "$recently_closed" | grep -E '^[0-9]+$' | sort -u || true)"
 for n in $candidates; do
   pr_is_closed "$n" || continue
   log "cleaning up closed PR #$n"
