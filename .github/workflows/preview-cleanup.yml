@@ -26,6 +26,9 @@ jobs:
     env:
       NEON_PREVIEW_PROJECT_ID: ${{ vars.NEON_PREVIEW_PROJECT_ID }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # ADR-0019: preview slots and the workers.dev subdomain (the narrow token can't read it).
+      PREVIEW_HYPERDRIVE_SLOTS: ${{ vars.PREVIEW_HYPERDRIVE_SLOTS }}
+      CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

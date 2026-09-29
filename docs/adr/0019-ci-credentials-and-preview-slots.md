@@ -81,6 +81,6 @@ Investigated 2026-09-28, with evidence.
   - a writable branch restored from the snapshot showed the same state and accepted writes;
   - drill branches and the marker schema were removed afterwards.
 - [ ] Owner, in this order (runbook "CI credentials"): delete the repo-level `NEON_API_KEY`; create the production-scoped key and store it in `production`; dispatch `db-backup.yml` and see a green run; revoke the unused production key and the personal key.
-- [ ] Preview slots provisioned (`provision-slots.sh`) and scripts switched (PR "preview slots").
+- [x] Preview slots provisioned (6; `provision-slots.sh`, re-run idempotent) and `PREVIEW_HYPERDRIVE_SLOTS` / `CLOUDFLARE_WORKERS_SUBDOMAIN` set. Scripts hand-tested on the preview project: a reset keeps the endpoint (health OK through the slot's config right after the reset); claim, re-deploy, second PR, release; a real quarantine (a deleted preview kept answering 200) that the janitor keeps.
 - [ ] Preview job split (ADR-0013 step 3, PR 2).
 - [ ] Owner: create the per-Worker token above, replace `CLOUDFLARE_API_TOKEN`, revoke the old user token. Verify with a PR preview run.

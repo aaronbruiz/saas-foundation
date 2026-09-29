@@ -1,13 +1,22 @@
 # Runbooks
 
-## Previews (ADR-0011)
+## Previews (ADR-0019 slots)
 
-- Create/update by hand: `PR_NUMBER=<n> scripts/preview/up.sh` (needs the env vars from `.github/workflows/ci.yml`).
-- Trusted deploy of a build artifact (ADR-0013 step 3; CI switches to it next): from a checkout of the PR's **base** commit, `PR_NUMBER=<n> ARTIFACT_DIR=<dir> scripts/preview/deploy-artifact.sh`. `<dir>` holds `apps/web/dist` and `packages/db/drizzle` from the PR's build; the script runs none of the PR's code. It validates and patches `dist/server/wrangler.json` (`prepare-config.mjs`), migrates with `packages/db/scripts/migrate.mjs`, and deploys with `--config`. A refused config lists each reason; a legitimate new key or binding needs the validator updated on `main` first.
-- By hand with the logged-in sessions instead of CI secrets: `CLOUDFLARE_API_TOKEN="$(pnpm --dir apps/web exec wrangler auth token | tail -1)"` and `NEON_API_KEY` from `~/.config/neon/credentials.json` (`access_token`; it expires quickly, so run any `neonctl` command without `--api-key` first to refresh it), plus the CI vars. Tested 2026-09-28 as PR 9001: deploy, re-deploy, E2E, `down.sh`.
-- Delete: `PR_NUMBER=<n> scripts/preview/down.sh`. Orphans: `scripts/preview/janitor.sh` (runs daily in CI).
-- Known issue (Previews open beta, 2026-09-27): a Preview URL can keep serving after a successful `wrangler preview delete` (seen on pr-4 and pr-5; pr-3 returned 404). `down.sh` therefore deletes the Neon branch and Hyperdrive config **before** the preview, so a lingering URL serves code only (`db: down`). It then checks the URL and raises a warning. Report upstream if it persists.
-- "preview slots exhausted": 9 PR previews max (Neon Free: 10 branches per project). Close PRs or run the janitor.
+- **Slots:** `PREVIEW_SLOTS` (6) Neon branches `preview/slot-<n>` in the preview project plus Hyperdrive configs `saas-preview-slot-<n>`. Their ids are in the CI variable `PREVIEW_HYPERDRIVE_SLOTS`, in slot order. A branch is renamed `preview/slot-<n>/pr-<PR>` while claimed and `…/quarantine-pr-<PR>` while an old preview URL still serves.
+  - Admin (create/repair, e.g. after rotating the preview password): `NEON_PREVIEW_PROJECT_ID=… scripts/preview/provision-slots.sh`, using your own logged-in `neonctl`/`wrangler`. It prints the value for `gh variable set PREVIEW_HYPERDRIVE_SLOTS --body …`. Changing the slot count means re-running it with `PREVIEW_SLOTS=<n>` and updating the variable.
+- **Trusted deploy** (CI's path; ADR-0013 step 3): from a checkout of the PR's **base** commit, `PR_NUMBER=<n> ARTIFACT_DIR=<dir> scripts/preview/deploy-artifact.sh`.
+  - `<dir>` holds `apps/web/dist` and `packages/db/drizzle` from the PR's build; the script runs none of the PR's code.
+  - It validates and patches `dist/server/wrangler.json` (`prepare-config.mjs`), claims a slot, resets it, migrates with `packages/db/scripts/migrate.mjs`, and deploys with `--config`.
+  - A refused config lists each reason; a legitimate new key or binding needs the validator updated on `main` first.
+- `scripts/preview/up.sh` (build + per-PR branch and Hyperdrive) is the legacy path, still used by CI until the workflow split.
+- **By hand** with the logged-in sessions instead of CI secrets:
+  - `CLOUDFLARE_API_TOKEN="$(pnpm --dir apps/web exec wrangler auth token | tail -1)"`;
+  - `NEON_API_KEY` from `~/.config/neon/credentials.json` (`access_token`; it expires quickly, so run any `neonctl` command without `--api-key` first to refresh it);
+  - `GH_TOKEN="$(gh auth token)"`, plus the CI vars.
+  - Tested 2026-09-28 (PRs 9005/9006): claim, deploy, E2E, re-deploy into the same slot, a second PR in another slot, release with URL verified, a real quarantine (pr-9005's URL kept answering 200), and the janitor keeping it quarantined.
+- **Delete:** `PR_NUMBER=<n> scripts/preview/down.sh`. It only acts on a PR that GitHub reports closed right now, since a delayed close event mustn't wipe a reopened PR. Use `FORCE=1` for manual runs or test PR numbers. **Orphans and quarantine re-checks:** `scripts/preview/janitor.sh` (daily in CI).
+- **Known issue** (Previews open beta): a Preview URL can keep serving after a successful delete. Its old code keeps its slot's binding, so the slot is **quarantined** (data wiped, never reassigned) until the URL returns 404. If quarantined slots pile up, report upstream; `provision-slots.sh` with a higher `PREVIEW_SLOTS` adds room.
+- **"no free preview slot":** every slot is held by an open PR or quarantined. Close PRs, or wait for the janitor.
 
 ### If a preview credential leaks
 

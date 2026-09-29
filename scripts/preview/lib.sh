@@ -32,20 +32,44 @@ names_for() { # $1 = PR number
 neon() { pnpm --dir "$ROOT" exec neonctl --api-key "$NEON_API_KEY" "$@"; }
 wrangler() { pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
 
-cf_api() { # $1 = path under /accounts/:id, rest = curl args. Fails loudly with the API's reason.
+# $1 = path under /accounts/:id, rest = curl args. Prints the body on 2xx; otherwise returns 1 and
+# leaves the HTTP status in CF_HTTP_CODE (000 = no response). Checked explicitly, so it also fails
+# correctly where `set -e` is off.
+cf_api() {
   local path="$1"; shift
   local out code body
-  out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  CF_HTTP_CODE=000
+  if ! out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
     -H 'Content-Type: application/json' \
-    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@")"
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID$path" "$@")"; then
+    log "ERROR: Cloudflare API $path: no response"
+    return 1
+  fi
   code="${out##*$'\n'}"
   body="${out%$'\n'*}"
-  if [ "$code" -ge 400 ]; then
+  CF_HTTP_CODE="$code"
+  if ! [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
     log "ERROR: Cloudflare API $path -> HTTP $code: $(printf '%s' "$body" | jq -c '.errors' 2>/dev/null)"
-    [ "$code" = 403 ] && log "hint: CLOUDFLARE_API_TOKEN needs Account > Hyperdrive: Edit and Account > Workers Scripts: Edit for account $CLOUDFLARE_ACCOUNT_ID"
     return 1
   fi
   printf '%s' "$body"
+}
+
+# Legacy per-PR Hyperdrive configs (ADR-0011), listed only if the token may: prints their names, or
+# nothing with the narrow per-Worker token (401/403). Any other failure is an error.
+legacy_hyperdrive_json() {
+  local tmp
+  tmp="$(mktemp)"
+  # Not in a command substitution: CF_HTTP_CODE must survive the call.
+  if cf_api /hyperdrive/configs >"$tmp" 2>/dev/null; then cat "$tmp"; rm -f "$tmp"; return 0; fi
+  rm -f "$tmp"
+  if [ "$CF_HTTP_CODE" = 401 ] || [ "$CF_HTTP_CODE" = 403 ]; then
+    log "no Hyperdrive access (per-Worker token): skipping legacy per-PR Hyperdrive cleanup"
+    printf '{"result":[]}'
+    return 0
+  fi
+  log "ERROR: listing Hyperdrive configs failed (HTTP $CF_HTTP_CODE)"
+  return 1
 }
 
 # Preflight: say which kind of token CLOUDFLARE_API_TOKEN is and whether it's active, without
@@ -59,15 +83,170 @@ cf_token_preflight() {
     "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" | jq -r '.result.status // ("invalid: " + (.errors|tostring))')"
   log "Cloudflare token check: as user token -> $user; as account-owned token for $CLOUDFLARE_ACCOUNT_ID -> $acct"
   if [ "$user" != active ] && [ "$acct" != active ]; then
-    # Not an API token (e.g. a local `wrangler auth token` OAuth session for a manual run): accept
-    # it only if it can actually read this account.
-    if cf_api /workers/subdomain >/dev/null 2>&1; then
-      log "not a verifiable API token, but it can read account $CLOUDFLARE_ACCOUNT_ID; continuing"
-      return 0
-    fi
-    log "ERROR: CLOUDFLARE_API_TOKEN is not an active token (wrong/old secret value, expired, or a different account)"
+    # Not an API token (e.g. a local `wrangler auth token` OAuth session for a manual run): the
+    # Worker check below decides.
+    log "not a verifiable API token; checking it can read $PREVIEW_WORKER"
+  fi
+  # ADR-0019: a per-Worker token can't create Workers, and `wrangler preview` would try to when the
+  # parent is missing. Worker-scoped read, so the narrow CI token can do it.
+  if ! cf_api "/workers/workers/$PREVIEW_WORKER" >/dev/null 2>&1; then
+    log "ERROR: can't read Worker $PREVIEW_WORKER: the token is wrong/inactive, or the Worker doesn't exist (an admin creates it once)"
     return 1
   fi
+}
+
+# The account's workers.dev subdomain: the CI variable (the narrow token can't read account
+# settings), or the API for manual runs with a broader token.
+workers_subdomain() {
+  if [ -n "${CLOUDFLARE_WORKERS_SUBDOMAIN:-}" ]; then echo "$CLOUDFLARE_WORKERS_SUBDOMAIN"
+  else cf_api /workers/subdomain | jq -r '.result.subdomain'; fi
+}
+
+# Deletes the Worker Preview `$1` and checks its URL stopped serving. Returns 2 if it still serves
+# (Previews beta issue): callers keep its data resources quarantined then. Exits on real errors.
+delete_preview_verified() {
+  local name="$1" out url status=""
+  if ! out="$(wrangler preview delete --worker-name "$PREVIEW_WORKER" --name "$name" --skip-confirmation 2>&1)"; then
+    if printf '%s' "$out" | grep -q 'Preview not found'; then
+      log "no preview $name (already deleted)"
+    else
+      printf '%s\n' "$out" >&2
+      log "ERROR: deleting preview $name failed"
+      exit 1
+    fi
+  fi
+  local sub
+  sub="$(workers_subdomain)" && [ -n "$sub" ] && [ "$sub" != null ] ||
+    { log "ERROR: no workers.dev subdomain (set CLOUDFLARE_WORKERS_SUBDOMAIN)"; exit 1; }
+  url="https://${name}-${PREVIEW_WORKER}.${sub}.workers.dev"
+  for _ in 1 2 3 4 5 6; do
+    status="$(curl -s -o /dev/null -w '%{http_code}' "$url/api/health" || true)"
+    [ "$status" = 404 ] && break
+    sleep 5
+  done
+  if [ "$status" = 404 ]; then
+    log "verified: $url returns 404"
+    return 0
+  fi
+  log "WARN: $url still returns $status after delete (Cloudflare Previews beta issue)"
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=Preview URL still serving::$url returned $status after wrangler preview delete"
+  return 2
+}
+
+# ---- Preview slots (ADR-0019) ----------------------------------------------------------------
+# Slot n = Neon branch `preview/slot-n` (renamed `preview/slot-n/pr-<PR>` while claimed, or
+# `preview/slot-n/quarantine-pr-<PR>` while an old preview URL still serves) + the Hyperdrive config
+# at position n of PREVIEW_HYPERDRIVE_SLOTS. Created by provision-slots.sh (admin), never by CI.
+
+load_slots() {
+  : "${PREVIEW_HYPERDRIVE_SLOTS:?set by scripts/preview/provision-slots.sh (CI variable)}"
+  IFS=, read -ra SLOT_IDS <<<"$PREVIEW_HYPERDRIVE_SLOTS"
+  local i
+  for i in "${SLOT_IDS[@]}"; do
+    [[ "$i" =~ ^[0-9a-f]{32}$ ]] || { log "ERROR: PREVIEW_HYPERDRIVE_SLOTS must be comma-separated Hyperdrive ids"; exit 1; }
+  done
+}
+
+# [{id, name, slot}] for every slot branch.
+slot_branches() {
+  neon_branches_json | jq -c '[.[] | select(.name | test("^preview/slot-[0-9]+(/|$)"))
+    | {id, name, slot: (.name | capture("^preview/slot-(?<n>[0-9]+)").n | tonumber)}]'
+}
+
+# True only if GitHub says PR $1 is closed or merged, asked for that PR right now. Any error or
+# other answer counts as open (fail closed: never free a slot an open PR might hold).
+pr_is_closed() {
+  local state
+  state="$(gh pr view "$1" --json state --jq .state 2>/dev/null)" || return 1
+  [ "$state" = CLOSED ] || [ "$state" = MERGED ]
+}
+
+# Frees slot $1 (branch id $2) held by PR $3: wipe its data first, then delete the preview.
+# Returns 0 released, 2 quarantined (the old URL still serves, and its binding reaches this slot),
+# 1 on any failure, leaving the slot claimed so nothing reuses it. Every step is checked
+# explicitly: callers may run it in a condition, where `set -e` doesn't apply.
+release_slot() {
+  local slot="$1" id="$2" pr="$3" rc=0
+  log "releasing slot $slot (PR #$pr)"
+  if ! neon branches reset "$id" --parent --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null; then
+    log "ERROR: resetting slot $slot failed; it stays claimed"
+    return 1
+  fi
+  delete_preview_verified "pr-$pr" || rc=$?
+  local name="preview/slot-$slot"
+  [ "$rc" = 2 ] && name="preview/slot-$slot/quarantine-pr-$pr"
+  [ "$rc" = 0 ] || [ "$rc" = 2 ] || { log "ERROR: deleting pr-$pr's preview failed; slot $slot stays claimed"; return 1; }
+  if ! neon branches rename "$id" "$name" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null; then
+    log "ERROR: renaming slot $slot failed; it stays claimed"
+    return 1
+  fi
+  [ "$rc" = 2 ] && log "slot $slot quarantined until pr-$pr's URL stops serving (the janitor re-checks)"
+  return "$rc"
+}
+
+# The slot PR $1 holds, claiming one if needed (starting at PR mod slots, so PRs spread out). Slots
+# held by PRs that are no longer open are released on the way. Sets SLOT, SLOT_BRANCH_ID, HD_ID.
+claim_slot() {
+  local pr="$1" all mine count i k entry name id holder rc
+  load_slots
+  count=${#SLOT_IDS[@]}
+  SLOT=""
+  for _ in 1 2 3; do
+    all="$(slot_branches)"
+    mine="$(jq -r --arg s "/pr-$pr" '[.[] | select(.name | endswith($s)) | select(.name | test("/quarantine-") | not)][0] // empty | "\(.slot) \(.id)"' <<<"$all")"
+    if [ -n "$mine" ]; then read -r SLOT SLOT_BRANCH_ID <<<"$mine"; break; fi
+    for i in $(seq 0 $((count - 1))); do
+      k=$(((pr + i) % count + 1))
+      entry="$(jq -c --argjson k "$k" '[.[] | select(.slot == $k)][0] // empty' <<<"$all")"
+      [ -n "$entry" ] || continue # not provisioned
+      name="$(jq -r .name <<<"$entry")"
+      id="$(jq -r .id <<<"$entry")"
+      case "$name" in
+        "preview/slot-$k") ;;
+        "preview/slot-$k/pr-"*)
+          holder="${name##*/pr-}"
+          pr_is_closed "$holder" || continue
+          rc=0
+          release_slot "$k" "$id" "$holder" || rc=$?
+          [ "$rc" = 0 ] || continue
+          ;;
+        *) continue ;; # quarantined
+      esac
+      neon branches rename "$id" "preview/slot-$k/pr-$pr" --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
+      # Claims aren't atomic (ADR-0019): re-read after a moment; a concurrent claimer wins or loses here.
+      sleep 3
+      if [ "$(neon_branches_json | jq -r --arg id "$id" '.[] | select(.id == $id) | .name')" = "preview/slot-$k/pr-$pr" ]; then
+        SLOT="$k"
+        SLOT_BRANCH_ID="$id"
+        log "claimed slot $k for PR #$pr"
+        break 2
+      fi
+      log "lost slot $k to a concurrent claim; retrying"
+      break
+    done
+  done
+  [ -n "$SLOT" ] || { log "ERROR: no free preview slot ($count slots; close PRs or wait for quarantined slots)"; exit 1; }
+  [ "$SLOT" -le "$count" ] || { log "ERROR: slot $SLOT has no Hyperdrive id in PREVIEW_HYPERDRIVE_SLOTS"; exit 1; }
+  HD_ID="${SLOT_IDS[$((SLOT - 1))]}"
+}
+
+# True if PR $1 still holds slot branch $2 (a close event may have released it meanwhile).
+owns_slot() {
+  local name
+  name="$(neon_branches_json | jq -r --arg id "$2" '.[] | select(.id == $id) | .name')" || return 1
+  [ "$name" = "preview/slot-$SLOT/pr-$1" ]
+}
+
+# Resets the claimed slot's branch to the seed (fresh synthetic data on every deploy) and sets DB_URL
+# (direct host; masked, never printed). Neon keeps the endpoint on reset, so the slot's Hyperdrive
+# config stays valid.
+reset_slot_db() {
+  log "resetting slot $SLOT to $NEON_PREVIEW_PARENT_BRANCH"
+  neon branches reset "$SLOT_BRANCH_ID" --parent --project-id "$NEON_PREVIEW_PROJECT_ID" --output json >/dev/null
+  DB_URL="$(neon connection-string "$SLOT_BRANCH_ID" --project-id "$NEON_PREVIEW_PROJECT_ID" \
+    --database-name "$NEON_DATABASE" --role-name "$NEON_ROLE")"
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$DB_URL"
+  return 0
 }
 
 neon_branches_json() {
@@ -128,7 +307,7 @@ new_auth_secret() {
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 deploy_preview() {
   local subdomain auth_url out url
-  subdomain="$(cf_api /workers/subdomain | jq -r '.result.subdomain')"
+  subdomain="$(workers_subdomain)"
   auth_url="https://${PREVIEW_NAME}-${PREVIEW_WORKER}.${subdomain}.workers.dev"
   # Global, not local: the EXIT trap runs after this function has returned.
   SECRETS_FILE="$(mktemp)"
