@@ -30,11 +30,17 @@ Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, 
 - **Customer identity: one Polar team customer per organization.**
   - `external_id` = our organization id (unique and immutable in Polar), `metadata.organization_id` the same, name = the organization's name (it's what the invoice bills).
   - Created by our server with the find-or-create above before the first checkout, never by the checkout itself; every checkout passes `customer_id`.
-  - Webhook link (ADR-0018 unchanged in spirit): the subscription's `metadata.organization_id`, set by our checkout; the adapter also requires the customer's `external_id` to match, otherwise the event is recorded and not applied (`billing.webhook.conflict`).
-- **Members mirror `billing:manage`.** Today that's the organization owner only (ADR-0020), so the Polar customer has exactly one member: the owner, `external_id` = our user id.
-  - On an ownership transfer our server adds the new owner, promotes them, then **deletes** the former owner. Demotion alone is not revocation (`billing_manager` keeps billing access).
-  - The sync is an idempotent side effect keyed by (organization, owner user id). Checkout and portal calls also reconcile members before creating a session, so a failed sync is repaired on the next billing action.
-  - Our app never relies on Polar for authorization: `authorize(ctx, 'billing:manage')` runs first, and the portal session is created with `external_member_id` = the caller.
+  - Webhook link (ADR-0018 unchanged in spirit): the subscription's `metadata.organization_id`, set by our checkout, and the customer's `external_id` must agree.
+    - The adapter reads the customer's `external_id` from the verified payload; if the payload doesn't carry it, the adapter fetches the customer by id **before** `applyBillingEvent`. A failed lookup answers 500 with nothing recorded, so Polar retries the delivery.
+    - A mismatch or a missing `external_id` maps to `organizationId: null`, so the event is recorded and acknowledged as `unlinked`, never applied. `SubscriptionSnapshot` and `applyBillingEvent` don't change.
+- **Members mirror `billing:manage`.** Today that's the organization's owners (ADR-0020). Each is a member of the organization's Polar customer with `external_id` = our user id; one of them is the Polar `owner`, the others `billing_manager`. Only organizations that already have a Polar customer are synced.
+  - **Revoke before, grant after**, in Better Auth's organization hooks, so every path (including Better Auth's directly reachable HTTP endpoints) goes through them:
+    - revoke: `beforeUpdateMemberRole` (an owner becomes anything else), `beforeRemoveMember` (an owner is removed) and the `/organization/leave` path (in the `hooks.before` middleware, like `/organization/delete` today) **delete** that person's Polar member first. If Polar can't be updated, the hook throws and the change is refused. Demotion to `billing_manager` is not revocation.
+    - grant: `afterUpdateMemberRole` (becomes owner), `afterAddMember` and `afterAcceptInvitation` (joins as owner) add the person to Polar, promoting them to Polar `owner` when the Polar owner is being replaced.
+    - A revocation that succeeds in Polar while the app's write then fails leaves an owner without Polar access; a failed grant leaves a new owner without it. Both fail toward less access, and checkout and portal calls reconcile the caller's membership before creating a session.
+    - A Polar team customer needs an owner member. The POC checks what Polar does when the last owner is deleted; unless it's harmless, demoting or removing the organization's last owner is refused while it has a Polar customer.
+  - Our app never relies on Polar for authorization: `authorize(ctx, 'billing:manage')` runs first, and the portal session is created with `external_member_id` = the caller. Sessions are created on demand and never stored.
+  - **Already-issued portal access:** the POC checks whether a customer session, or a portal email login, issued before the member was deleted keeps working. If it does, its lifetime (`expires_at`) is the revocation window and is stated here before this ADR is accepted.
 - **Portal:** Polar's hosted customer portal through a customer session (plan changes, payment methods, invoices, cancellation), replacing the Stripe Customer Portal.
 - **Prices:** Polar has no lookup keys. One Polar product per sellable price, carrying `metadata.price_key` (`pro_monthly`, `pro_yearly`); the adapter resolves `price_key` → product id. `policy.ts` keeps naming price keys only.
 - **Tax:** Polar computes, collects and remits it. `automaticTax` leaves the provider interface; ADR-0020's decision 2 becomes "tax: provider is merchant of record". Checkout must collect the real billing country (the POC checks prefill and validation).
@@ -46,11 +52,11 @@ Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, 
 
 ## Consequences
 
-- Plans, entitlements, limits and the webhook's dedupe/ordering don't change. `policy.ts` changes only its tax note.
+- Plans, entitlements, limits and the webhook's dedupe/ordering don't change. `policy.ts` only loses `CHECKOUT.automaticTax` (tax belongs to the adapter).
 - The owner no longer registers for or files sales tax/VAT; Polar's fee (higher than card processing alone) is the price of that.
-- Ownership transfer gains a billing side effect; its failure mode is a former owner keeping portal access until the next billing action repairs it. The app's own authorization is unaffected.
+- Owner changes gain a Polar call in their path: while Polar is unreachable, demoting or removing an owner of an organization with a Polar customer is refused (fail closed). The app's own authorization is unaffected.
 - The API version is one import path; before `2026-04`'s support ends, the upgrade is a PR that reruns the eval harness against the sandbox.
 - Order of work:
-  1. **Seam cleanup:** `BillingProvider` without `automaticTax`, customer creation behind the provider (`ensureCustomer`), lint rule for `@polar-sh/*`; Stripe behaviour unchanged.
-  2. **POC** (`providers/polar.ts`, webhook route, member sync) against the sandbox, closing the untested items above (webhook payloads, portal plan change, failed renewal, billing country).
+  1. **Seam cleanup** (#38): provider-neutral errors and a `WebhookParser` (raw body + headers); checkout and portal requests carry the organization name and the caller's user id; `automaticTax` leaves the interface and `policy.ts` (the Stripe adapter keeps Stripe Tax on); lint rule for any provider SDK including `@polar-sh/*`. Stripe behaviour unchanged.
+  2. **POC** (`providers/polar.ts` with the customer find-or-create, webhook route, member sync hooks) against the sandbox, closing the untested items above (webhook payloads and `customer.external_id`, portal plan change, failed renewal, billing country, already-issued portal access). Tests: owner transfer, demotion, removal and leave through Better Auth's HTTP endpoints, each with Polar failing, plus cross-tenant webhook linking.
   3. Remove the Stripe adapter and its secrets; update AGENTS.md (invariant 6, module map, review rules) and the runbook in that PR.
