@@ -1,12 +1,12 @@
 # ADR-0013: CI credential tiers: no secrets where PR code runs
 
-Status: Accepted (owner decisions 2026-09-28; rollout in progress, see "Rollout status") · Date: 2026-09-28
+Status: Accepted (owner decisions 2026-09-28; rollout complete 2026-09-29 through ADR-0019 and ADR-0021) · Date: 2026-09-28
 
 Superseded in part by [ADR-0019](0019-ci-credentials-and-preview-slots.md): the T1 Cloudflare token scope, the production Neon key's name/location, and the rollout list.
 
 Superseded in part by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): step 3's workflow split (privileged jobs on `workflow_run` / `pull_request_target`, secrets in `main`-only environments, separate Worker and Hyperdrive tokens).
 
-Supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md). Until the rollout completes, parts of the exposure below stay live.
+Supersedes the CI credentials "accepted risk" in [ADR-0011](0011-per-pr-preview-neon-branch.md). The exposure described below is closed: the repository holds no secrets, and every CI secret is in a `main`-only environment (`production`: `NEON_API_KEY`; `preview-infra`: `CLOUDFLARE_PREVIEW_INFRA_TOKEN`, `NEON_PREVIEW_API_KEY`; `preview`: `CLOUDFLARE_API_TOKEN`, `NEON_PREVIEW_API_KEY`). Current credentials: runbook "CI credentials".
 
 ## Context
 
@@ -70,26 +70,26 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
    - Today CI holds two production-capable credentials: the backup Neon key, and the preview Cloudflare token (until step 2 rotates it and scopes it to `saas-foundation-preview`). After step 2, the backup key is the only one. It stays reachable by a same-repo PR that edits a workflow until either:
      - **(a)** an environment limited to deployment branch `main` holds it; or
      - **(b)** backups run outside GitHub Actions.
-   - **Owner decision (2026-09-28): (a).** No separate backup Worker. Environment `production` (deployment branch `main` only) holds `NEON_BACKUP_API_KEY`, the Neon key scoped to the production project. `db-backup.yml` runs in that environment. A PR can reference the environment but GitHub refuses the job, because its ref isn't `main`.
-   - The T1 preview key stays a repo-level secret. Moving it into the unprotected `preview` environment would add nothing, since any PR can name that environment.
+   - **Owner decision (2026-09-28): (a).** No separate backup Worker. Environment `production` (deployment branch `main` only) holds the Neon key scoped to the production project (stored as `NEON_API_KEY`, per ADR-0019). `db-backup.yml` runs in that environment. A PR can reference the environment but GitHub refuses the job, because its ref isn't `main`.
+   - The T1 preview key stays a repo-level secret. Moving it into the unprotected `preview` environment would add nothing, since any PR can name that environment. _(Superseded by ADR-0021: the preview key now lives only in the `main`-only `preview-infra` and `preview` environments; no secret is repo-level.)_
 5. **Rollout in two PRs.** The deploy job runs the base branch's scripts, so first merge the new scripts (tested by hand against the preview project), then switch the workflow.
 
 ## Consequences
 
 - PR validation is unchanged: check, test, build, preview deploy, E2E against the preview.
 - Residual risks:
-  - A same-repo PR that edits a workflow can still read repo-level T1 secrets. This is accepted only while write access is limited to the owner. Before anyone else gets write access, T1 secrets move to an environment (Pro), or the repo's trust model is revisited.
+  - A same-repo PR that edits a workflow can still read repo-level T1 secrets. This is accepted only while write access is limited to the owner. Before anyone else gets write access, T1 secrets move to an environment (Pro), or the repo's trust model is revisited. _(Closed by ADR-0021: there are no repo-level secrets; T1 secrets are in `main`-only environments.)_
   - Environment branch rules are the only fence around T2. They're repo settings, so anyone with admin access can change them. Today that's only the owner.
 - The preview project's Neon branch limit (9 concurrent previews) and the Hyperdrive config limit are unchanged.
 
-## Rollout status (2026-09-28)
+## Rollout status (2026-09-28; closed 2026-09-29)
 
 - [x] Neon project-scoped keys created by the owner; `NEON_PREVIEW_API_KEY` set as a repo secret.
 - [x] Environment `production` created, deployment branch `main` only.
-- [x] CI previews and cleanup use `NEON_PREVIEW_API_KEY`, set only on the script steps (not install or E2E). `db-backup.yml` runs in `production` and fails fast if `NEON_BACKUP_API_KEY` is missing.
-- [ ] Owner: set `NEON_BACKUP_API_KEY` in the `production` environment. Done only once a dispatched backup run has succeeded with it (`gh workflow run db-backup.yml`).
+- [x] CI previews and cleanup use `NEON_PREVIEW_API_KEY`, set only on the script steps (not install or E2E). `db-backup.yml` runs in `production` and fails fast if its key is missing. (Later: `NEON_PREVIEW_API_KEY` moved from repo level into the `preview-infra` and `preview` environments, ADR-0021.)
+- [x] Owner: the production-scoped Neon key is set in the `production` environment as `NEON_API_KEY` (name per ADR-0019); a dispatched `db-backup.yml` run succeeded with it (2026-09-29). This key is active: don't revoke it.
 - [x] Previews run on the separate Worker `saas-foundation-preview` (`--worker-name`). Only the CI build copy enables `preview_urls`; the committed production config keeps them off. The preview scripts refuse to run if `CLOUDFLARE_ACCOUNT_ID` differs from the pinned `account_id`.
 - [x] `CLOUDFLARE_API_TOKEN` replaced by the owner with a token for the new account (ADR-0017).
-- [ ] Owner: delete the repo-level `NEON_API_KEY`, then revoke the org-wide Neon key, once previews and a backup run are green without it.
-- [ ] Per-Worker token for `saas-foundation-preview` plus Hyperdrive, replacing the account-wide `CLOUDFLARE_API_TOKEN` (step 2). Until then, same-repo PR code runs next to a token that can deploy production (residual, owner-only write access).
-- [ ] Split preview job: PR 1 scripts, PR 2 workflow (steps 3 and 5).
+- [x] Owner: the repo-level `NEON_API_KEY` is deleted and the old org-wide Neon keys are gone (ADR-0019, ADR-0021 rollouts).
+- [x] Step 2 tokens: the per-Worker `CLOUDFLARE_API_TOKEN` (Workers Editor on `saas-foundation-preview` only) in `preview`, and Hyperdrive on a separate `CLOUDFLARE_PREVIEW_INFRA_TOKEN` in `preview-infra` (ADR-0021). No CI token can deploy production.
+- [x] Split preview job (steps 3 and 5): PR 1 scripts (#20); the workflow split was done by [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md) (#26), not as step 3 describes it: `preview.yml` on `workflow_run` and cleanup on `pull_request_target`, secrets in `main`-only environments.

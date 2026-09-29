@@ -19,9 +19,8 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     # ADR-0019: the production-project key lives only in the `production` environment, which
-    # GitHub restricts to `main`. The environment doesn't fence a repo-level secret of the same name:
-    # until the owner deletes the old repo-level NEON_API_KEY (runbook "CI credentials"), PR
-    # workflows can still read that one.
+    # GitHub restricts to `main`. An environment doesn't fence a repo-level secret of the same name,
+    # so none may exist: the repository holds no secrets (runbook "CI credentials").
     environment: production
     timeout-minutes: 10
     steps:
