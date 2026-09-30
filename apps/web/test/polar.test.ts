@@ -1,9 +1,11 @@
 import { createAuth } from '@saas-foundation/auth'
-import { billing, findOrganizationBySlug } from '@saas-foundation/db'
+import { billing, findOrganizationBySlug, listOwners } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
-import { handlePolarWebhook } from '../src/modules/billing/webhook'
+import type { WebhookParser } from '../src/modules/billing/provider'
+import { polarWebhookParser } from '../src/modules/billing/providers/polar'
+import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
 import { createOrg, randomIp, signUp, type TestUser } from './helpers'
 
@@ -158,6 +160,72 @@ describe('polar webhook', () => {
   })
 })
 
+describe('polar webhook in Polar mode (subscription re-read)', () => {
+  const config = { accessToken: 'polar_oat_test_only', server: 'sandbox' as const }
+  afterEach(() => vi.unstubAllGlobals())
+
+  /** Polar's GET /v1/subscriptions/{id}, answering `state` (or failing with `status`). */
+  function stubPolar(state: ReturnType<typeof subscriptionEvent>['data'] | { status: number }) {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input)
+      calls.push(new URL(url).pathname)
+      if ('id' in state) return Response.json(state)
+      return new Response('{"detail":"unavailable"}', {
+        status: state.status,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    return calls
+  }
+  async function deliverWith(parse: WebhookParser, payload: unknown, id: string) {
+    const body = JSON.stringify(payload)
+    const res = await handleBillingWebhook(
+      new Request('http://localhost/api/billing/webhooks/polar', {
+        method: 'POST',
+        headers: { ...(await signed(body, id)), 'content-type': 'application/json' },
+        body,
+      }),
+      SECRET,
+      parse,
+    )
+    return {
+      status: res.status,
+      outcome: res.ok ? ((await res.json()) as { outcome: string }).outcome : undefined,
+    }
+  }
+
+  it("applies the subscription's current state, not the event's (a late older event can't restore it)", async () => {
+    const { orgId } = await newOrg('pw-fresh')
+    const subId = crypto.randomUUID()
+    // The delivery says active, but Polar already has it canceled.
+    const late = subscriptionEvent({ orgId, subId, status: 'active' })
+    const calls = stubPolar(subscriptionEvent({ orgId, subId, status: 'canceled' }).data)
+    const res = await deliverWith(polarWebhookParser(config), late, `msg_${crypto.randomUUID()}`)
+    expect(res).toEqual({ status: 200, outcome: 'applied' })
+    expect(calls).toEqual([`/v1/subscriptions/${subId}`])
+    const sub = await withDb((db) => billing(db, { orgId }).subscription())
+    expect(sub?.status).toBe('canceled')
+    expect((await getEntitlements(orgId)).planKey).toBe('free')
+  })
+
+  it('answers 503 and records nothing when Polar cannot be read, so the retry applies', async () => {
+    const { orgId } = await newOrg('pw-retry')
+    const event = subscriptionEvent({ orgId })
+    const id = `msg_${crypto.randomUUID()}`
+    stubPolar({ status: 500 })
+    expect((await deliverWith(polarWebhookParser(config), event, id)).status).toBe(503)
+    expect((await deliverWith(polarWebhookParser('unconfigured'), event, id)).status).toBe(503)
+    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    stubPolar(event.data)
+    expect(await deliverWith(polarWebhookParser(config), event, id)).toEqual({
+      status: 200,
+      outcome: 'applied',
+    })
+    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+  })
+})
+
 describe('owner-role hooks (Polar members)', () => {
   type Call = [string, string, string?]
   function fakeMembers(fail: { revoke?: boolean; grant?: boolean; removeAccount?: boolean } = {}) {
@@ -305,6 +373,52 @@ describe('owner-role hooks (Polar members)', () => {
     )
     expect(ok.calls[0]).toEqual(['revoke', orgId, b.userId])
     expect(await roleOf(orgId, b.userId)).toBeUndefined()
+  })
+
+  it('treats a multi-role owner ("owner,admin") as an owner when demoted or leaving', async () => {
+    const { a, b, orgId } = await orgWithTwo('owner')
+    const setup = fakeMembers()
+    const mb = (await roleOf(orgId, b.userId))!
+    await post(setup.members, a)('/organization/update-member-role', {
+      memberId: mb.id,
+      role: ['owner', 'admin'],
+      organizationId: orgId,
+    })
+    expect((await roleOf(orgId, b.userId))?.role).toBe('owner,admin')
+    const ma = (await roleOf(orgId, a.userId))!
+    await post(setup.members, b)('/organization/update-member-role', {
+      memberId: ma.id,
+      role: ['owner', 'admin'],
+      organizationId: orgId,
+    })
+    expect(setup.calls).toEqual([]) // still owners: nothing to revoke or grant
+
+    const demote = fakeMembers()
+    const res = await post(demote.members, a)('/organization/update-member-role', {
+      memberId: mb.id,
+      role: 'admin',
+      organizationId: orgId,
+    })
+    expect(res.ok).toBe(true)
+    expect(demote.calls).toEqual([['revoke', orgId, b.userId]])
+
+    const leave = fakeMembers({ revoke: true })
+    expect(
+      (await post(leave.members, a)('/organization/leave', { organizationId: orgId })).status,
+    ).toBe(503)
+    expect(leave.calls).toEqual([['revoke', orgId, a.userId]])
+  })
+
+  it('lists multi-role owners as successors', async () => {
+    const { a, b, orgId } = await orgWithTwo('owner')
+    const mb = (await roleOf(orgId, b.userId))!
+    await post(fakeMembers().members, a)('/organization/update-member-role', {
+      memberId: mb.id,
+      role: ['admin', 'owner'],
+      organizationId: orgId,
+    })
+    const owners = await withDb((db) => listOwners(db, orgId))
+    expect(owners.map((o) => o.userId).sort()).toEqual([a.userId, b.userId].sort())
   })
 
   it("doesn't touch Polar for non-owner role changes", async () => {

@@ -39,16 +39,22 @@ export async function findMembership(db: Db, orgId: string, userId: string) {
   return m ?? null
 }
 
-/** Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). */
+/**
+ * Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). A
+ * role may list several comma-separated roles (Better Auth), read like the capability matrix does.
+ */
 export async function listOwners(
   db: Db,
   orgId: string,
 ): Promise<{ userId: string; email: string }[]> {
-  return db
-    .select({ userId: member.userId, email: user.email })
+  const rows = await db
+    .select({ userId: member.userId, email: user.email, role: member.role })
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))
-    .where(and(eq(member.organizationId, orgId), eq(member.role, 'owner')))
+    .where(eq(member.organizationId, orgId))
+  return rows
+    .filter((r) => r.role.split(',').some((x) => x.trim() === 'owner'))
+    .map(({ userId, email }) => ({ userId, email }))
 }
 
 export type ProjectFields = { name: string; description?: string | null }

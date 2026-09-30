@@ -10,6 +10,7 @@ import {
   InvalidPayload,
   InvalidSignature,
   PriceNotFound,
+  ProviderUnavailable,
   type BillingManager,
   type BillingMembers,
   type BillingProvider,
@@ -59,42 +60,59 @@ const eventSchema = z.object({
 /**
  * Verifies the Standard Webhooks signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`)
  * on the raw body BEFORE parsing anything (AGENTS.md invariant 11), then maps the event. The event
- * id is the delivery's `webhook-id` (the same across retries). Throws InvalidSignature or
- * InvalidPayload.
+ * id is the delivery's `webhook-id` (the same across retries).
+ *
+ * `refresh`: for a subscription event, the subscription is re-read from Polar and its CURRENT state
+ * is applied (ADR-0018's recommended fix), so two events closer together than the stored timestamp's
+ * millisecond resolution can't restore an older state. `'unconfigured'` (Polar mode without a token)
+ * refuses subscription events so they're retried; `null` maps the payload as is (not Polar mode).
+ * Throws InvalidSignature, InvalidPayload or ProviderUnavailable.
  */
-export const parsePolarWebhook: WebhookParser = async (rawBody, headers, secret) => {
-  const signed: Record<string, string> = {}
-  for (const name of ['webhook-id', 'webhook-timestamp', 'webhook-signature'])
-    signed[name] = headers.get(name) ?? ''
-  try {
-    await webhooks.validateEvent(rawBody, signed, secret)
-  } catch (e) {
-    if (e instanceof webhooks.PolarWebhookVerificationError)
-      throw new InvalidSignature('signature verification failed')
-    // A verified event of a type this SDK version doesn't know is still recorded (below); only a
-    // body that isn't JSON is invalid.
-    if (!(e instanceof webhooks.PolarWebhookUnknownTypeError))
+export const polarWebhookParser =
+  (refresh: PolarConfig | 'unconfigured' | null): WebhookParser =>
+  async (rawBody, headers, secret) => {
+    const signed: Record<string, string> = {}
+    for (const name of ['webhook-id', 'webhook-timestamp', 'webhook-signature'])
+      signed[name] = headers.get(name) ?? ''
+    try {
+      await webhooks.validateEvent(rawBody, signed, secret)
+    } catch (e) {
+      if (e instanceof webhooks.PolarWebhookVerificationError)
+        throw new InvalidSignature('signature verification failed')
+      // A verified event of a type this SDK version doesn't know is still recorded (below); only a
+      // body that isn't JSON is invalid.
+      if (!(e instanceof webhooks.PolarWebhookUnknownTypeError))
+        throw new InvalidPayload('unparseable event')
+    }
+    let json: unknown
+    try {
+      json = JSON.parse(rawBody)
+    } catch {
       throw new InvalidPayload('unparseable event')
-  }
-  let json: unknown
-  try {
-    json = JSON.parse(rawBody)
-  } catch {
-    throw new InvalidPayload('unparseable event')
-  }
-  const event = eventSchema.safeParse(json)
-  const eventId = id.safeParse(signed['webhook-id'])
-  const createdAt = event.success ? new Date(event.data.timestamp) : null
-  if (!event.success || !eventId.success || !createdAt || Number.isNaN(createdAt.getTime()))
-    throw new InvalidPayload('unexpected event shape')
-  const { type, data } = event.data
-  const base = { provider: PROVIDER, eventId: eventId.data, type, createdAt }
-  if (!type.startsWith('subscription.')) return { ...base, subscription: null }
+    }
+    const event = eventSchema.safeParse(json)
+    const eventId = id.safeParse(signed['webhook-id'])
+    const createdAt = event.success ? new Date(event.data.timestamp) : null
+    if (!event.success || !eventId.success || !createdAt || Number.isNaN(createdAt.getTime()))
+      throw new InvalidPayload('unexpected event shape')
+    const { type, data } = event.data
+    const base = { provider: PROVIDER, eventId: eventId.data, type, createdAt }
+    if (!type.startsWith('subscription.')) return { ...base, subscription: null }
 
-  const sub = subscriptionSchema.safeParse(data)
-  if (!sub.success) throw new InvalidPayload('unexpected subscription shape')
-  return { ...base, subscription: snapshotOf(sub.data) }
-}
+    const sub = subscriptionSchema.safeParse(data)
+    if (!sub.success) throw new InvalidPayload('unexpected subscription shape')
+    if (refresh === null) return { ...base, subscription: snapshotOf(sub.data) }
+    if (refresh === 'unconfigured') throw new ProviderUnavailable('POLAR_ACCESS_TOKEN missing')
+    let current: unknown
+    try {
+      current = await polarClient(refresh).subscriptions.get(sub.data.id)
+    } catch {
+      throw new ProviderUnavailable('subscription refresh failed')
+    }
+    const fresh = subscriptionSchema.safeParse(current)
+    if (!fresh.success) throw new InvalidPayload('unexpected subscription shape')
+    return { ...base, subscription: snapshotOf(fresh.data) }
+  }
 
 function snapshotOf(s: z.infer<typeof subscriptionSchema>): ProviderEvent['subscription'] {
   const linked = s.metadata?.[ORGANIZATION_METADATA_KEY]
@@ -163,13 +181,23 @@ async function ensureCustomer(
  * Makes sure the caller (who holds `billing:manage`, checked by the service) is a member, adding
  * them as `billing_manager`: this repairs a grant the membership hooks couldn't make.
  */
+/** Every member of the customer (the API pages at 10 by default). */
+async function allMembers(polar: PolarClient, customerId: string) {
+  const items = []
+  for (let page = 1; ; page++) {
+    const res = await polar.customers.members.list(customerId, { page, limit: 100 })
+    items.push(...res.items)
+    if (page >= res.pagination.max_page || res.items.length === 0) return items
+  }
+}
+
 async function ensureMember(
   polar: PolarClient,
   customerId: string,
   user: { userId: string; email: string },
 ) {
-  const members = await polar.customers.members.list(customerId, {})
-  if (members.items.some((m) => m.external_id === user.userId)) return
+  const members = await allMembers(polar, customerId)
+  if (members.some((m) => m.external_id === user.userId)) return
   await polar.customers.members.create(customerId, {
     email: user.email,
     external_id: user.userId,
@@ -249,7 +277,7 @@ export function polarMembers(config: PolarConfig): BillingMembers {
     async revoke(organizationId, userId, successors) {
       const customer = await customerOf(polar, organizationId)
       if (!customer) return
-      const members = (await polar.customers.members.list(customer.id, {})).items
+      const members = await allMembers(polar, customer.id)
       const target = members.find((m) => m.external_id === userId)
       if (!target) return
       if (target.role === 'owner') {

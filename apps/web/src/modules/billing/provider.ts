@@ -63,6 +63,10 @@ export class InvalidPayload extends Error {
 export class PriceNotFound extends Error {
   name = 'PriceNotFound'
 }
+/** The provider couldn't be reached or isn't configured; the caller should retry (503). */
+export class ProviderUnavailable extends Error {
+  name = 'ProviderUnavailable'
+}
 
 /** A verified event; the plan isn't known here (the product policy maps `priceKey` to it). */
 export type ProviderEvent = Omit<BillingEvent, 'subscription'> & {
@@ -71,7 +75,8 @@ export type ProviderEvent = Omit<BillingEvent, 'subscription'> & {
 
 /**
  * Verifies a delivery's signature on the raw body BEFORE parsing anything (AGENTS.md invariant 11),
- * then maps it. Throws InvalidSignature or InvalidPayload.
+ * then maps it. Throws InvalidSignature, InvalidPayload or ProviderUnavailable (nothing recorded,
+ * so the provider retries).
  */
 export type WebhookParser = (
   rawBody: string,

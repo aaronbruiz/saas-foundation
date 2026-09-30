@@ -58,6 +58,15 @@ export type AuthOptions = {
   }
 }
 
+/**
+ * Better Auth may store several comma-separated roles (and accepts an array in role updates); the
+ * app's capability matrix reads their union, so "owner,admin" is an owner here too.
+ */
+const isOwner = (role: string | string[] | undefined | null) =>
+  (Array.isArray(role) ? role : String(role ?? '').split(','))
+    .map((r) => r.trim())
+    .includes('owner')
+
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
 
 /**
@@ -133,7 +142,7 @@ export function createAuth({
           return
         }
         // ADR-0022: an owner leaving loses billing access first.
-        if (membership.role === 'owner') await revoke(orgId, session.user.id)
+        if (isOwner(membership.role)) await revoke(orgId, session.user.id)
       }),
     },
     databaseHooks: {
@@ -188,21 +197,21 @@ export function createAuth({
           },
           // ADR-0022: revoke before, grant after, on every path that changes who is an owner.
           async beforeUpdateMemberRole({ member, newRole, organization }) {
-            if (member.role === 'owner' && newRole !== 'owner')
+            if (isOwner(member.role) && !isOwner(newRole))
               await revoke(organization.id, member.userId)
           },
           async afterUpdateMemberRole({ member, previousRole, organization }) {
-            if (member.role === 'owner' && previousRole !== 'owner')
+            if (isOwner(member.role) && !isOwner(previousRole))
               await grant(organization.id, member.userId)
           },
           async beforeRemoveMember({ member, organization }) {
-            if (member.role === 'owner') await revoke(organization.id, member.userId)
+            if (isOwner(member.role)) await revoke(organization.id, member.userId)
           },
           async afterAddMember({ member, organization }) {
-            if (member.role === 'owner') await grant(organization.id, member.userId)
+            if (isOwner(member.role)) await grant(organization.id, member.userId)
           },
           async afterAcceptInvitation({ member, organization }) {
-            if (member.role === 'owner') await grant(organization.id, member.userId)
+            if (isOwner(member.role)) await grant(organization.id, member.userId)
           },
         },
         // Seat limits from the plan (ADR-0020). Accepting an invitation (or adding a member) fails
