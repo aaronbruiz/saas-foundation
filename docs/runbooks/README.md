@@ -74,7 +74,7 @@ Sender `SaaS Foundation <no-reply@mail.aaronlabr.dev>` through Cloudflare Email 
 1. **Owner, once:** in your own terminal, `pnpm --filter web exec wrangler secret put EMAIL_FROM` (value `no-reply@mail.aaronlabr.dev`), then `pnpm --filter web exec wrangler secret put EMAIL_DELIVERY` (value `cloudflare`). `wrangler secret list` shows both names. The binding must already be deployed (`pnpm run deploy` from a clean checkout of `main`, runbook "First production deploy" step 0), or the first send logs `email.misconfigured`.
 2. **Smoke test** (only addresses you control): request a password reset for a smoke-test account, and invite another of your addresses to a smoke-test organization. Both emails arrive from the sender above; in the message source, `Authentication-Results` shows `spf=pass` and `dkim=pass`. A failure logs `email.send_failed` or `email.misconfigured` (Observability).
    - _Not yet done. Record the date, the two emails, and the SPF/DKIM results here._
-3. **Turn it off:** `wrangler secret delete EMAIL_DELIVERY` (no deploy); sends are then skipped with `email.delivery_disabled`.
+3. **Turn it off:** `pnpm --filter web exec wrangler secret delete EMAIL_DELIVERY` (creates a new Worker version; no code deploy); sends are then skipped with `email.delivery_disabled`.
 4. **Change the sender:** `wrangler.jsonc` `allowed_sender_addresses` and the constant in `scripts/preview/prepare-config.mjs` in one PR, then update `EMAIL_FROM`.
 
 ## Polar (ADR-0022, ADR-0018, ADR-0020)

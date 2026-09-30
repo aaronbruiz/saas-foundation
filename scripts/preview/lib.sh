@@ -190,8 +190,10 @@ deploy_preview() {
   trap 'rm -f "$SECRETS_FILE"' EXIT
   chmod 600 "$SECRETS_FILE"
   printf 'BETTER_AUTH_SECRET=%s\n' "$AUTH_SECRET" >"$SECRETS_FILE"
-  out="$(pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" \
-    --message "${GITHUB_SHA:-manual}" --json \
+  # --ignore-base-config: only the checked config, --var and the secrets file apply, never bindings
+  # or settings from the dashboard's Preview base config (ADR-0024: previews get no email binding).
+  out="$(pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
+    --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
     --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" --secrets-file "$SECRETS_FILE")"
   url="$(printf '%s' "$out" | node -e '
     const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
