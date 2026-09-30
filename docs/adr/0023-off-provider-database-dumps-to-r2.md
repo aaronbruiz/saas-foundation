@@ -1,6 +1,6 @@
 # ADR-0023: Off-provider database dumps to Cloudflare R2
 
-Status: Accepted (owner decisions 2026-09-30). The first live dump and the restore test are pending (runbook "Database"). · Date: 2026-09-30
+Status: Accepted (owner decisions 2026-09-30). First live dump 2026-09-30; a restore drill passed 2026-09-30 on a dump from a manually dispatched run of the job; the data gate's restore test on a scheduled run's dump is pending (runbook "Database"). · Date: 2026-09-30
 
 Implements [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md)'s backup option B, the trigger [ADR-0007](0007-defer-cloudflare-products.md) names for R2, and the backup half of [ADR-0014](0014-first-production-launch-gates.md)'s data gate.
 
