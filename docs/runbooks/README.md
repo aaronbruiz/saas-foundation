@@ -112,11 +112,11 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
      - `docker run -d --name restore-check -e POSTGRES_PASSWORD=restore -p 127.0.0.1:5439:5432 postgres:17-alpine`
      - `docker exec restore-check createdb -U postgres app`
      - `docker exec -i restore-check pg_restore -U postgres --no-owner --no-acl --exit-on-error -d app < app-YYYYMMDD.dump`
-  3. **Compare exact row counts per table** with production. This query prints them; run it in the container (`docker exec restore-check psql -U postgres -d app -Atc "<query>"`) and against production `main` (`docker run --rm postgres:17-alpine psql "<main url>" -Atc "<query>"`, URL from `neon connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner`, never printed or pasted):
+  3. **Compare exact row counts per table** with production. This query prints them; run it in the container (`docker exec restore-check psql -U postgres -d app -Atc "<query>"`) and against production in the Neon console (production project → SQL Editor, branch `main`, database `app`), so no connection string is needed:
      `select table_schema||'.'||table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text::int from information_schema.tables where table_schema in ('public','drizzle') and table_type='BASE TABLE' order by 1`
      Counts can differ only by writes made after the dump's time (04:23 UTC schedule).
   4. **Clean up:** `docker rm -f restore-check`, delete the downloaded files.
-  5. **Real recovery** (Neon lost): create a new Neon project and database `app` (Postgres 17), `pg_restore --no-owner --no-acl --exit-on-error` the dump into it, point production Hyperdrive at it (`wrangler hyperdrive update … --connection-string=…`, then restart the pool as in the promote steps above), check `/api/health`. Writes after the dump are lost.
+  5. **Real recovery** (Neon lost): create a new Neon project and database `app` (Postgres 17), `pg_restore --no-owner --no-acl --exit-on-error` the dump into it (connection in `PG*` variables from an env file, as `dump.sh` does, not a URL argument), point production Hyperdrive at it (`wrangler hyperdrive update … --connection-string=…`, then restart the pool as in the promote steps above), check `/api/health`. Writes after the dump are lost.
   - _Restore test (ADR-0014 data gate): not yet done. Record here the date, the dump's name, and the per-table counts from both sides._
 - Drill on the production project, 2026-09-28 (ADR-0019), using exactly the commands above:
   - marker in `main` → snapshot branch (`--no-compute`) → change `main`;

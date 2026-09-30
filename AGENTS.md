@@ -33,6 +33,7 @@ pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
 pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
+scripts/backup/snapshot.sh | dump.sh   # daily Neon snapshot branch + off-provider pg_dump to R2; run by CI (db-backup.yml; ADR-0003, ADR-0023)
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet).
