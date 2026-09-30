@@ -19,8 +19,8 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0015](0015-observability-baseline.md): Observability baseline: Cloudflare Workers Logs first, Sentry only for named gaps
 - [ADR-0016](0016-transactional-email.md): Transactional email: Cloudflare Email Service behind an app mailer
 - [ADR-0017](0017-production-account-and-custom-domain.md): Production Cloudflare account and custom domain
-- [ADR-0018](0018-billing-platform.md): Billing platform: verified webhooks, organization-owned subscription state, default entitlements
+- [ADR-0018](0018-billing-platform.md): Billing platform: verified webhooks, organization-owned subscription state, default entitlements (its provider: superseded by ADR-0022)
 - [ADR-0019](0019-ci-credentials-and-preview-slots.md): CI credentials by resource, and pre-provisioned preview slots
-- [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults
+- [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults (tax, price lookup, portal: superseded by ADR-0022)
 - [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): Per-PR preview data behind a trusted workflow boundary
 - [ADR-0022](0022-polar-merchant-of-record.md): Polar as billing provider and merchant of record; one Polar team customer per organization
