@@ -6,6 +6,8 @@ Superseded in part by [ADR-0014](0014-first-production-launch-gates.md): the tri
 
 Superseded in part by [ADR-0017](0017-production-account-and-custom-domain.md): the production Hyperdrive config (new Cloudflare account).
 
+Superseded in part by [ADR-0023](0023-off-provider-database-dumps-to-r2.md): backup option B is adopted (daily `pg_dump` to R2).
+
 ## Context
 
 We need a relational, transactional store for a multi-tenant model. D1 (SQLite) was rejected as the primary store; "D1 in dev, Postgres in prod" was rejected because Drizzle schemas are dialect-specific.

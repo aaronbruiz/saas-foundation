@@ -41,18 +41,19 @@ Where to look when production fails:
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
 
-## CI credentials (ADR-0019, ADR-0021)
+## CI credentials (ADR-0019, ADR-0021, ADR-0023)
 
 No preview secret lives at repo level: a `pull_request` workflow runs the PR's own YAML and could read it. Every secret sits in an environment that only `main` may use, and only default-branch code (`workflow_run`, `pull_request_target`, schedule) uses it.
 
-| Secret                           | Where                                      | Scope                                                                                             | Used by                                                     |
-| -------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `NEON_API_KEY`                   | environment `production` (`main` only)     | Neon org key limited to the production project                                                    | `db-backup.yml`                                             |
-| `CLOUDFLARE_PREVIEW_INFRA_TOKEN` | environment `preview-infra` (`main` only)  | account-owned token: Account · **Hyperdrive · Edit** (API name `Hyperdrive Write`) only           | `preview.yml` infra, `preview-cleanup.yml` cleanup-infra    |
-| `NEON_PREVIEW_API_KEY`           | environments `preview-infra` and `preview` | Neon org key limited to the preview project                                                       | infra, deploy, cleanup-infra                                |
-| `CLOUDFLARE_API_TOKEN`           | environment `preview` (`main` only)        | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only | `preview.yml` deploy, `preview-cleanup.yml` cleanup-preview |
+| Secret                                                                         | Where                                      | Scope                                                                                                                                                                                         | Used by                                                     |
+| ------------------------------------------------------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `NEON_API_KEY`                                                                 | environment `production` (`main` only)     | Neon org key limited to the production project                                                                                                                                                | `db-backup.yml`                                             |
+| `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `R2_BACKUP_ENDPOINT` | environment `production` (`main` only)     | S3 credentials of account token `r2-dump-backups`: R2 **Object Read & Write** on bucket `saas-foundation-prod-db-dumps` only; the endpoint is `https://<account-id>.r2.cloudflarestorage.com` | `db-backup.yml` `dump`                                      |
+| `CLOUDFLARE_PREVIEW_INFRA_TOKEN`                                               | environment `preview-infra` (`main` only)  | account-owned token: Account · **Hyperdrive · Edit** (API name `Hyperdrive Write`) only                                                                                                       | `preview.yml` infra, `preview-cleanup.yml` cleanup-infra    |
+| `NEON_PREVIEW_API_KEY`                                                         | environments `preview-infra` and `preview` | Neon org key limited to the preview project                                                                                                                                                   | infra, deploy, cleanup-infra                                |
+| `CLOUDFLARE_API_TOKEN`                                                         | environment `preview` (`main` only)        | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only                                                                                             | `preview.yml` deploy, `preview-cleanup.yml` cleanup-preview |
 
-Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids.
+Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids; in `production`, `R2_BACKUP_BUCKET` (`saas-foundation-prod-db-dumps`).
 
 - **Both Cloudflare tokens are sensitive.** The Hyperdrive token is account-wide (no per-config scope) and could edit production Hyperdrive; the Worker token can deploy a preview bound to any Hyperdrive id, production's included (binding needs no permission on the bound resource). The scripts' guards (ADR-0021 decision 3) and the environments are the fence. No job holds both.
 - **Cloudflare account token `saas-foundation`** (2026-09-30): Workers Editor on the production Worker `saas-foundation` only. Not stored anywhere in CI; kept by the owner for a future CI deploy, which needs its own ADR before it is stored in any environment.
@@ -62,6 +63,7 @@ Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`,
   2. Neon console → Organization settings → API keys → _Create key_ → _Project-scoped_, project = the preview project, name `saas-foundation-preview-ci`. `gh secret set NEON_PREVIEW_API_KEY --env preview-infra` and `gh secret set NEON_PREVIEW_API_KEY --env preview` (same value).
   3. The per-Worker token (ADR-0019): `gh secret set CLOUDFLARE_API_TOKEN --env preview` (its value, or roll it in the dashboard to get a new one).
   4. Run a PR preview through `preview.yml` / `preview-cleanup.yml`, then revoke the replaced key or token. Never put a preview secret at repo level.
+- **R2 dump token `r2-dump-backups`** (2026-09-30, ADR-0023): it can read every dump in plain text (R2 has no write-only permission, and the dumps rely on R2's managed encryption only), so treat it as a production-data credential. Rotate: Cloudflare dashboard → R2 → Manage API tokens → create an **Account** token with **Object Read & Write**, applied to **specific buckets → `saas-foundation-prod-db-dumps`** only; in your own terminal, `gh secret set R2_BACKUP_ACCESS_KEY_ID --env production` and `gh secret set R2_BACKUP_SECRET_ACCESS_KEY --env production` (hidden prompt); discard the token's bearer value; run `gh workflow run db-backup.yml` and check the `dump` job; then delete the old token.
 - **Production Neon key:** `saas-foundation`, in `production` as `NEON_API_KEY`; `db-backup.yml` read it successfully on 2026-09-29. It is the only production key; don't revoke it. Production deploys run from the owner's machine (runbook "First production deploy").
 
 ## Polar (ADR-0022, ADR-0018, ADR-0020)
@@ -103,13 +105,25 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
      - **Restart the Hyperdrive pool:** an update doesn't tear down existing pooled connections, which would keep using the old branch. `curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/<prod-hyperdrive-id>/restart"` (Cloudflare API "Restart Hyperdrive"; `<prod-hyperdrive-id>` is the `DB` id in `apps/web/wrangler.jsonc`), or the dashboard: Hyperdrive → `saas-foundation-prod` → Settings → Danger zone → **Restart**. In-flight queries may briefly error.
      - verify `/api/health`. `main-before-restore-*` **can't be deleted**: it's the parent of the new `main` and of the older snapshots, and Neon forbids deleting branches that have children. Each promote therefore permanently uses one of the 10 branch slots, so treat promote as a last resort and prefer selective recovery. Snapshots keep working because the new production branch is named `main` again.
 - Neon's snapshot feature (one-step restore that keeps the connection string) is limited on Free to **1 manual snapshot, no schedules**. Registered as a possible complement, not adopted.
-- Snapshots run daily (`db-backup.yml`); run by hand with `gh workflow run db-backup.yml`.
+- Snapshots and dumps run daily (`db-backup.yml`, jobs `snapshot` and `dump`); run both by hand with `gh workflow run db-backup.yml`.
+- **Restore from an off-provider dump** (ADR-0023, option B; survives a Neon outage or the loss of the project). The `dump` job writes `daily/app-YYYYMMDD.dump` (custom format) and `daily/app-YYYYMMDD.dump.sha256` to R2 bucket `saas-foundation-prod-db-dumps`; a lifecycle rule deletes them after 30 days. The dumps aren't client-side encrypted: handle a downloaded dump as customer data and delete it when done.
+  1. **Download** the dump and its `.sha256` (Cloudflare dashboard → R2 → `saas-foundation-prod-db-dumps` → `daily/` → the object → Download) into one directory; `sha256sum -c app-YYYYMMDD.dump.sha256` must print `OK`.
+  2. **Restore into a local container** (never into Neon while testing):
+     - `docker run -d --name restore-check -e POSTGRES_PASSWORD=restore -p 127.0.0.1:5439:5432 postgres:17-alpine`
+     - `docker exec restore-check createdb -U postgres app`
+     - `docker exec -i restore-check pg_restore -U postgres --no-owner --no-acl --exit-on-error -d app < app-YYYYMMDD.dump`
+  3. **Compare exact row counts per table** with production. This query prints them; run it in the container (`docker exec restore-check psql -U postgres -d app -Atc "<query>"`) and against production `main` (`docker run --rm postgres:17-alpine psql "<main url>" -Atc "<query>"`, URL from `neon connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner`, never printed or pasted):
+     `select table_schema||'.'||table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text::int from information_schema.tables where table_schema in ('public','drizzle') and table_type='BASE TABLE' order by 1`
+     Counts can differ only by writes made after the dump's time (04:23 UTC schedule).
+  4. **Clean up:** `docker rm -f restore-check`, delete the downloaded files.
+  5. **Real recovery** (Neon lost): create a new Neon project and database `app` (Postgres 17), `pg_restore --no-owner --no-acl --exit-on-error` the dump into it, point production Hyperdrive at it (`wrangler hyperdrive update … --connection-string=…`, then restart the pool as in the promote steps above), check `/api/health`. Writes after the dump are lost.
+  - _Restore test (ADR-0014 data gate): not yet done. Record here the date, the dump's name, and the per-table counts from both sides._
 - Drill on the production project, 2026-09-28 (ADR-0019), using exactly the commands above:
   - marker in `main` → snapshot branch (`--no-compute`) → change `main`;
   - read-only compute on the snapshot: pre-change state, writes refused;
   - branch restored from the snapshot: same state, writable;
   - cleaned up afterwards. Repeat it (with a `drill-*` name, so the `backup-*` rotation isn't touched) after changing this procedure.
-- Watch: monthly CU-hours (compute is suspended when exceeded) and the 0.5 GB storage ceiling.
+- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute) and the 0.5 GB storage ceiling.
 
 ## First production deploy (owner sequence, 2026-09-28)
 

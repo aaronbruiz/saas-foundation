@@ -4,7 +4,7 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 
 - [ADR-0001](0001-build-own-starter.md): Build our own starter instead of adopting or forking a template
 - [ADR-0002](0002-single-tanstack-start-worker.md): One TanStack Start Worker on Workers Static Assets
-- [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md): Neon PostgreSQL via Hyperdrive, with Drizzle
+- [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md): Neon PostgreSQL via Hyperdrive, with Drizzle (backup option B: superseded by ADR-0023)
 - [ADR-0004](0004-uncached-hyperdrive-binding.md): Read auth and permission data through an uncached Hyperdrive binding
 - [ADR-0005](0005-better-auth-identity-app-owned-authorization.md): Better Auth for identity; authorization is application code
 - [ADR-0006](0006-toolchain.md): Toolchain: pnpm, TypeScript 6, ESLint 9 + Prettier, Zod, Vitest 4, Playwright
@@ -24,3 +24,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults (tax, price lookup, portal, going live with Stripe: superseded by ADR-0022)
 - [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): Per-PR preview data behind a trusted workflow boundary
 - [ADR-0022](0022-polar-merchant-of-record.md): Polar as billing provider and merchant of record; one Polar team customer per organization
+- [ADR-0023](0023-off-provider-database-dumps-to-r2.md): Off-provider database dumps to Cloudflare R2 (ADR-0003 backup option B)
