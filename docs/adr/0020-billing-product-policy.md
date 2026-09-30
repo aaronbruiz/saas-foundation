@@ -4,6 +4,8 @@ Status: Accepted · Date: 2026-09-28
 
 Supersedes in part [ADR-0018](0018-billing-platform.md): its eight open product decisions are resolved here. Also superseded: the entitled statuses (now `past_due` too), the refusal of every billed-organization deletion (now only while a subscription is live), `ON DELETE RESTRICT` (now `CASCADE` behind that guard), and `plan_key` always null (now resolved from the price).
 
+Superseded in part by [ADR-0022](0022-polar-merchant-of-record.md) once accepted: tax through Stripe Tax (Polar is merchant of record), prices by Stripe lookup key, the Stripe Customer Portal, going live with Stripe.
+
 ## Context
 
 This repository is a foundation that different products will be built on. The owner asked for the eight open billing decisions to be resolved with sensible defaults for the reference implementation, following one principle: **centralized product policy, not product assumptions embedded throughout the application**, and no speculative configuration engine.
