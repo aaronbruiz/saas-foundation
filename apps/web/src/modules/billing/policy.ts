@@ -1,7 +1,7 @@
 // THE product billing policy (ADR-0020): plans, their prices, limits and features, the trial and
 // the lifecycle rules. A different product changes this file (and its own enforcement points,
 // which only ask this file). Nothing here knows the provider or does I/O; tax belongs to the
-// provider adapter (Stripe Tax today, a merchant of record under ADR-0022).
+// provider adapter (the provider is merchant of record, ADR-0022).
 // Who may see and manage billing lives with every other role rule, in server/permissions.ts.
 import type { SubscriptionStatus } from '@saas-foundation/db'
 
@@ -21,9 +21,10 @@ type Plan = {
   limits: Entitlements['limits']
   features: readonly string[]
   /**
-   * Provider prices that buy this plan, by lookup key (set on the price in the provider's
-   * dashboard; amounts and currency live there, not in code). When a price is retired, keep it
-   * here with `retired: true`: existing subscribers keep the plan, and it's no longer sold.
+   * Provider prices that buy this plan, by price key (the provider adapter maps it to the
+   * provider's price; amounts and currency live in the provider's dashboard, not in code). When a
+   * price is retired, keep it here with `retired: true`: existing subscribers keep the plan, and
+   * it's no longer sold.
    */
   prices: readonly { key: string; interval: 'month' | 'year'; retired?: boolean }[]
 }
@@ -53,7 +54,7 @@ export const CHECKOUT = {
 
 /**
  * Statuses that keep a paid plan's entitlements. `past_due` is included: the provider is still
- * retrying the payment (Stripe Smart Retries), and cutting access on the first failed charge
+ * retrying the payment, and cutting access on the first failed charge
  * punishes expired cards. `unpaid` (retries exhausted), `paused`, `incomplete` and `canceled` fall
  * back to the default plan.
  */

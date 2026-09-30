@@ -10,14 +10,9 @@ import {
   type ProviderEvent,
   type WebhookParser,
 } from './provider'
-import { parseStripeWebhook } from './providers/stripe'
 
 // Bytes. Provider payloads are far below this; anything bigger isn't worth buffering or an HMAC.
 const MAX_BODY = 512 * 1024
-
-/** Stripe webhook endpoint (ADR-0018). Worker secret STRIPE_WEBHOOK_SECRET. */
-export const handleStripeWebhook = (request: Request, secret: string | undefined) =>
-  handleBillingWebhook(request, secret, parseStripeWebhook)
 
 /** Polar webhook endpoint (ADR-0022). Worker secret POLAR_WEBHOOK_SECRET. */
 export const handlePolarWebhook = (request: Request, secret: string | undefined) =>
@@ -66,7 +61,7 @@ export async function handleBillingWebhook(
 
   const event = withPlan(parsed)
   // A price this product doesn't sell still records the subscription, but grants only the default
-  // plan; it usually means the policy's price list and the provider's lookup keys disagree.
+  // plan; it usually means the policy's price list and the provider's price keys disagree.
   if (event.subscription && event.subscription.planKey === null)
     logWarn('billing.webhook.unknown_price', { rayId, eventType: event.type })
 

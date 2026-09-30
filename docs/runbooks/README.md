@@ -63,18 +63,30 @@ Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`,
   4. Run a PR preview through `preview.yml` / `preview-cleanup.yml`, then revoke the replaced key or token. Never put a preview secret at repo level.
 - **Production Neon key:** `saas-foundation`, in `production` as `NEON_API_KEY`; `db-backup.yml` read it successfully on 2026-09-29. It is the only production key; don't revoke it. Production deploys run from the owner's machine (runbook "First production deploy").
 
-## Stripe (ADR-0018, ADR-0020)
+## Polar (ADR-0022, ADR-0018, ADR-0020)
 
-Not connected yet: without the secrets below, the billing actions and the webhook answer 503. To go live (test mode first):
+Polar is the billing provider and merchant of record: it computes, collects and remits sales tax/VAT and pays the owner out. Not connected yet: unless `BILLING_PROVIDER=polar`, billing actions and the webhook answer 503 (local dev; previews never get a Polar secret, ADR-0021). Set everything up in the **sandbox** first (`POLAR_SERVER=sandbox`), pass the pre-go-live checks below, then repeat steps 1–6 in production (`POLAR_SERVER=production`).
 
-1. Stripe dashboard → Product "Pro" with two recurring prices (USD in the reference setup) whose **lookup keys** are `pro_monthly` and `pro_yearly`, matching `PLANS` in `apps/web/src/modules/billing/policy.ts`. Amounts live only in Stripe.
-2. Customer portal settings: allow cancel (at period end), switching between those two prices, payment method updates and invoice history.
-3. Stripe Tax: activate it and add registrations. The Stripe adapter turns automatic tax on for every checkout, so Checkout fails without it.
-4. Webhook endpoint `https://<production hostname>/api/billing/webhooks/stripe`, events `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed`, `.trial_will_end`.
-5. Worker secrets (owner): `pnpm --filter web exec wrangler secret put STRIPE_SECRET_KEY`, and `… STRIPE_WEBHOOK_SECRET` (the endpoint's signing secret).
-   - `STRIPE_SECRET_KEY` can be a restricted key. The code calls only `prices.list`, `checkout.sessions.create` and `billingPortal.sessions.create`, so it needs read access to Prices and write access to Checkout Sessions and billing portal sessions. Step 6 exercises all three; a missing permission shows up there as a Stripe permission error.
-   - The planned per-event subscription re-fetch (ADR-0018 known limit; required before live mode) will also need read access to Subscriptions.
-6. Check it: as the owner, Billing → Upgrade → Stripe test card → back on Billing, the plan shows Pro; then Manage billing → cancel → at period end the plan returns to Free.
+1. Polar organization. Production only: the payout account, in the owner's country of residence.
+2. Products: one per sellable price, fixed price (not seat-based), recurring: "Pro monthly" (monthly) and "Pro yearly" (yearly), each with metadata `price_key` = `pro_monthly` / `pro_yearly`, matching `PLANS` in `apps/web/src/modules/billing/policy.ts`. Amounts and currency live only in Polar. Keep exactly one non-archived product per `price_key`; retire a price by archiving its product and marking it `retired` in `policy.ts`.
+3. Customer portal settings: allow cancellation (at period end), switching between the two Pro products, payment method updates and invoices.
+4. Organization access token with only the scopes the adapter uses: `customers:write`, `members:write`, `products:read`, `checkouts:write`, `customer_sessions:write`, `subscriptions:read`. A missing scope shows up in step 7 as a Polar permission error.
+5. Webhook endpoint `https://<hostname>/api/billing/webhooks/polar`, raw JSON format, every `subscription.*` event (each delivery re-reads the subscription from Polar, so extra ones are harmless; other types are recorded and ignored). Its signing secret becomes `POLAR_WEBHOOK_SECRET`.
+6. Worker secrets (owner), `pnpm --filter web exec wrangler secret put <NAME>` for each: `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER` (`sandbox` or `production`; unset = sandbox), then `BILLING_PROVIDER` (`polar`) last.
+   - In Polar mode without the token, billing actions and subscription webhooks answer 503, and owner removals, demotions and organization deletion are refused (fail closed); without the webhook secret the webhook answers 503.
+   - Don't unset `BILLING_PROVIDER` once organizations have Polar customers: owner changes would stop reaching Polar.
+7. Check it: as the owner, Billing → Upgrade → test card (sandbox) → back on Billing, the plan shows Pro once the webhook has arrived; Manage billing opens the Polar portal showing only this organization's subscription.
+
+The adapter itself can also be exercised against the sandbox with `apps/web/eval/polar-provider.test.ts` (not part of `pnpm test`; see its header).
+
+### Before production go-live (sandbox checks, ADR-0022 step 3)
+
+Each check must pass in the sandbox, through a checkout opened by the app, and be recorded here (date and what was observed) in a PR before production is switched to Polar. Webhook deliveries need the endpoint reachable from Polar; Polar's delivery log shows each event.
+
+- [ ] **Billing country:** the checkout starts with no country or the buyer's, never an unrelated default; the country the buyer picks is what Polar stores (customer billing address) and what the invoice shows. Open: the eval runs' checkouts stored Angola, then `AR`, neither chosen.
+- [ ] **Plan change:** switching `pro_monthly` ↔ `pro_yearly` in the portal produces `subscription.updated` events that link to the organization and map to the new `price_key`, with Polar's proration.
+- [ ] **Failed renewal:** a subscription whose renewal is charged to a failing test card goes `past_due` (plan kept, ADR-0020) and then `unpaid` or `canceled` (Free), each event linked and applied.
+- [ ] **Cancellation at period end:** cancelling in the portal keeps `active` with `cancel_at_period_end` until the period ends, then Free.
 
 ## Database (ADR-0003, Neon Free)
 
@@ -107,11 +119,11 @@ Never deployed yet. Steps marked **owner** need credentials, accounts or dashboa
 
 **Launch milestones (owner, 2026-09-29).** Four separate gates, in order. C and D are separate decisions, each recorded in its own ADR; lifting the data gate does **not** open sign-up.
 
-- **A. Technically deployed:** production DB migrated, Worker deployed (steps 0–7). Sign-up allowlisted to smoke-test addresses; no real customer data, no Stripe live mode, no public sign-up.
+- **A. Technically deployed:** production DB migrated, Worker deployed (steps 0–7). Sign-up allowlisted to smoke-test addresses; no real customer data, no Polar production mode, no public sign-up.
 - **B. Internal production smoke complete:** smoke test passed (step 8), WAF rule applied and tested (steps 9–10), the previous broad Cloudflare user token confirmed revoked (step 11). Still no real customer data.
 - **C. Real customer data, sign-up still allowlisted:** backup option B implemented and a restore from it tested (ADR-0014), alerting operational (ADR-0015), email delivery live and email verification enforced (ADR-0016), smoke-test accounts removed, and a new ADR lifting the data gate. Then, after deleting the smoke-test accounts, `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with only the admitted customers' addresses (no smoke-test address left in it), and keep `SIGNUP_MODE` unset.
 - **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded.
-- Stripe live mode (section "Stripe") needs C first: live customers are real data.
+- Polar production mode (section "Polar") needs C first, since paying customers are real data, and its sandbox checks passed.
 
 0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
 
