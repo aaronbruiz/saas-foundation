@@ -66,6 +66,11 @@ export const configuredMembers = (): BillingMembers | null => {
   return polar ? polarMembers(polar) : unavailableMembers
 }
 
-/** The Polar webhook parser: re-reads subscriptions in Polar mode (see polarWebhookParser). */
+/** Outside Polar mode the Polar endpoint accepts nothing (503), whatever secret is configured. */
+const notPolarMode: WebhookParser = async () => {
+  throw new ProviderUnavailable('BILLING_PROVIDER is not polar')
+}
+
+/** The Polar webhook parser: re-reads subscriptions (see polarWebhookParser); Polar mode only. */
 export const polarWebhook = (): WebhookParser =>
-  polarWebhookParser(polarMode() ? (polarConfig() ?? 'unconfigured') : null)
+  polarMode() ? polarWebhookParser(polarConfig() ?? 'unconfigured') : notPolarMode

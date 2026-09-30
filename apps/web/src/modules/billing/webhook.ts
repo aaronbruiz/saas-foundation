@@ -1,4 +1,4 @@
-import { applyBillingEvent, type BillingEvent } from '@saas-foundation/db'
+import { applyBillingEvent, isBillingEventRecorded, type BillingEvent } from '@saas-foundation/db'
 import { withDb } from '../../server/db'
 import { logError, logWarn } from '../../server/log'
 import { planForPrice } from './policy'
@@ -53,8 +53,11 @@ export async function handleBillingWebhook(
       logWarn('billing.webhook.invalid_payload', { rayId, reason: e.message })
       return new Response('invalid payload', { status: 400 })
     }
-    // Nothing recorded yet: the provider retries the delivery.
+    // Nothing recorded yet: the provider retries the delivery. One already applied is acknowledged,
+    // so a provider outage doesn't make it retry deliveries that are done.
     if (e instanceof ProviderUnavailable) {
+      const done = e.delivery && (await isRecorded(e.delivery).catch(() => false))
+      if (done) return Response.json({ received: true, outcome: 'duplicate' })
       logWarn('billing.webhook.provider_unavailable', { rayId, reason: e.message })
       return new Response('temporarily unavailable', { status: 503 })
     }
@@ -79,6 +82,9 @@ export async function handleBillingWebhook(
     logWarn(`billing.webhook.${outcome}`, { rayId, eventType: event.type })
   return Response.json({ received: true, outcome })
 }
+
+const isRecorded = ({ provider, eventId }: { provider: string; eventId: string }) =>
+  withDb((db) => isBillingEventRecorded(db, provider, eventId))
 
 /** Maps the provider's price to our plan through the product policy (ADR-0020). */
 function withPlan({ subscription, ...rest }: ProviderEvent): BillingEvent {

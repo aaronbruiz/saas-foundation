@@ -65,11 +65,11 @@ const eventSchema = z.object({
  * `refresh`: for a subscription event, the subscription is re-read from Polar and its CURRENT state
  * is applied (ADR-0018's recommended fix), so two events closer together than the stored timestamp's
  * millisecond resolution can't restore an older state. `'unconfigured'` (Polar mode without a token)
- * refuses subscription events so they're retried; `null` maps the payload as is (not Polar mode).
- * Throws InvalidSignature, InvalidPayload or ProviderUnavailable.
+ * refuses subscription events so they're retried. Throws InvalidSignature, InvalidPayload or
+ * ProviderUnavailable (carrying the delivery, so an already-applied one can still be acknowledged).
  */
 export const polarWebhookParser =
-  (refresh: PolarConfig | 'unconfigured' | null): WebhookParser =>
+  (refresh: PolarConfig | 'unconfigured'): WebhookParser =>
   async (rawBody, headers, secret) => {
     const signed: Record<string, string> = {}
     for (const name of ['webhook-id', 'webhook-timestamp', 'webhook-signature'])
@@ -101,13 +101,14 @@ export const polarWebhookParser =
 
     const sub = subscriptionSchema.safeParse(data)
     if (!sub.success) throw new InvalidPayload('unexpected subscription shape')
-    if (refresh === null) return { ...base, subscription: snapshotOf(sub.data) }
-    if (refresh === 'unconfigured') throw new ProviderUnavailable('POLAR_ACCESS_TOKEN missing')
+    const delivery = { provider: PROVIDER, eventId: eventId.data }
+    if (refresh === 'unconfigured')
+      throw new ProviderUnavailable('POLAR_ACCESS_TOKEN missing', delivery)
     let current: unknown
     try {
       current = await polarClient(refresh).subscriptions.get(sub.data.id)
     } catch {
-      throw new ProviderUnavailable('subscription refresh failed')
+      throw new ProviderUnavailable('subscription refresh failed', delivery)
     }
     const fresh = subscriptionSchema.safeParse(current)
     if (!fresh.success) throw new InvalidPayload('unexpected subscription shape')

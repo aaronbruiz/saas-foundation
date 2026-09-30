@@ -1,7 +1,7 @@
 import { createAuth } from '@saas-foundation/auth'
 import { billing, findOrganizationBySlug, listOwners } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
 import type { WebhookParser } from '../src/modules/billing/provider'
 import { polarWebhookParser } from '../src/modules/billing/providers/polar'
@@ -67,19 +67,44 @@ function subscriptionEvent(o: SubOpts = {}) {
   }
 }
 
+const config = { accessToken: 'polar_oat_test_only', server: 'sandbox' as const }
+/** Polar's current subscriptions, as the stubbed GET /v1/subscriptions/{id} answers them. */
+const polarState = new Map<string, unknown>()
+let polarDown = false
+beforeEach(() => {
+  polarDown = false
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : String(input)
+    const subId = new URL(url).pathname.match(/^\/v1\/subscriptions\/([^/]+)$/)?.[1]
+    if (polarDown || !subId || !polarState.has(subId))
+      return new Response('{"detail":"unavailable"}', {
+        status: polarDown ? 500 : 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    return Response.json(polarState.get(subId))
+  })
+})
+afterEach(() => vi.unstubAllGlobals())
+
+/**
+ * Delivers through the Polar-mode parser. Polar's current state for the subscription is the
+ * payload's own unless `current` says otherwise.
+ */
 async function deliver(
-  payload: unknown,
-  opts: { secret?: string; id?: string; headers?: Record<string, string> } = {},
+  payload: { type?: string; data?: { id?: string } },
+  opts: { secret?: string; id?: string; headers?: Record<string, string>; current?: unknown } = {},
 ) {
   const body = JSON.stringify(payload)
+  if (payload.data?.id) polarState.set(payload.data.id, opts.current ?? payload.data)
   const headers = opts.headers ?? (await signed(body, opts.id ?? `msg_${crypto.randomUUID()}`))
-  const res = await handlePolarWebhook(
+  const res = await handleBillingWebhook(
     new Request('http://localhost/api/billing/webhooks/polar', {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
       body,
     }),
     'secret' in opts ? opts.secret : SECRET,
+    polarWebhookParser(config),
   )
   const json = res.headers.get('content-type')?.includes('json')
     ? ((await res.json()) as { outcome: string })
@@ -143,6 +168,35 @@ describe('polar webhook', () => {
     expect(await deliver(member)).toEqual({ status: 200, outcome: 'ignored' })
     const future = { type: 'future.event', timestamp: new Date().toISOString(), data: {} }
     expect(await deliver(future)).toEqual({ status: 200, outcome: 'ignored' })
+  })
+
+  it('acknowledges an already-applied delivery while Polar is down, instead of asking for retries', async () => {
+    const { orgId } = await newOrg('pw-dup-down')
+    const id = `msg_${crypto.randomUUID()}`
+    const event = subscriptionEvent({ orgId })
+    expect((await deliver(event, { id })).outcome).toBe('applied')
+    polarDown = true
+    expect(await deliver(event, { id })).toEqual({ status: 200, outcome: 'duplicate' })
+    // A new delivery can't be applied without the re-read: retried later.
+    expect((await deliver(subscriptionEvent({ orgId }))).status).toBe(503)
+  })
+
+  it('accepts nothing on the Polar endpoint outside Polar mode (BILLING_PROVIDER unset here)', async () => {
+    const { orgId } = await newOrg('pw-mode')
+    const body = JSON.stringify(subscriptionEvent({ orgId }))
+    const res = await handlePolarWebhook(
+      new Request('http://localhost/api/billing/webhooks/polar', {
+        method: 'POST',
+        headers: {
+          ...(await signed(body, `msg_${crypto.randomUUID()}`)),
+          'content-type': 'application/json',
+        },
+        body,
+      }),
+      SECRET,
+    )
+    expect(res.status).toBe(503)
+    expect((await getEntitlements(orgId)).planKey).toBe('free')
   })
 
   it('maps revoked to canceled, ending the plan', async () => {

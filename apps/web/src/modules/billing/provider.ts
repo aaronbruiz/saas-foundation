@@ -63,9 +63,18 @@ export class InvalidPayload extends Error {
 export class PriceNotFound extends Error {
   name = 'PriceNotFound'
 }
-/** The provider couldn't be reached or isn't configured; the caller should retry (503). */
+/**
+ * The provider couldn't be reached or isn't configured; the caller should retry (503). `delivery`
+ * names a verified webhook delivery, so an already-applied one can be acknowledged instead.
+ */
 export class ProviderUnavailable extends Error {
   name = 'ProviderUnavailable'
+  constructor(
+    message: string,
+    readonly delivery?: { provider: string; eventId: string },
+  ) {
+    super(message)
+  }
 }
 
 /** A verified event; the plan isn't known here (the product policy maps `priceKey` to it). */
