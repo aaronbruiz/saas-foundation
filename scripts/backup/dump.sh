@@ -60,7 +60,12 @@ trap 'rm -rf "$WORK"' EXIT
   const env = { PGHOST: u.hostname, PGPORT: u.port || "5432", PGUSER: d(u.username),
     PGPASSWORD: d(u.password), PGDATABASE: d(u.pathname.slice(1)),
     PGSSLMODE: q.get("sslmode"), PGCHANNELBINDING: q.get("channel_binding"), PGOPTIONS: q.get("options") }
-  for (const [k, v] of Object.entries(env)) if (v) console.log(`${k}=${v}`)
+  for (const [k, v] of Object.entries(env)) {
+    if (!v) continue
+    // An env file holds one line per variable; fail on a value it cannot carry (name only, never the value).
+    if (/[\r\n]/.test(v)) { console.error(`[dump] ERROR: ${k} contains a line break`); process.exit(1) }
+    console.log(`${k}=${v}`)
+  }
 ' >"$WORK/pg.env")
 # Postgres 17 client, matching the server.
 pg() { docker run --rm -i --network host --env-file "$WORK/pg.env" postgres:17-alpine "$@"; }
