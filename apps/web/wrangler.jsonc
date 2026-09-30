@@ -40,6 +40,10 @@
       "localConnectionString": "postgres://app:app@localhost:5432/app",
     },
   ],
+  // ADR-0016, ADR-0024: transactional email through Cloudflare Email Service (domain mail.aaronlabr.dev).
+  // Restricted to the one sender address; EMAIL_DELIVERY=cloudflare and EMAIL_FROM are production
+  // secrets. Previews never get this binding: scripts/preview/prepare-config.mjs removes it.
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["no-reply@mail.aaronlabr.dev"] }],
   // Fail closed (ADR-0011, ADR-0021): previews must never fall back to the production DB binding
   // above. The built artifact must keep this sentinel; after the build, the trusted deploy job
   // (scripts/preview/prepare-config.mjs) points the DB binding at the PR's own Hyperdrive config.

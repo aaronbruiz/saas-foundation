@@ -25,3 +25,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): Per-PR preview data behind a trusted workflow boundary
 - [ADR-0022](0022-polar-merchant-of-record.md): Polar as billing provider and merchant of record; one Polar team customer per organization
 - [ADR-0023](0023-off-provider-database-dumps-to-r2.md): Off-provider database dumps to Cloudflare R2 (ADR-0003 backup option B)
+- [ADR-0024](0024-email-activation-send-email-binding.md): Activate transactional email: the `send_email` binding `EMAIL` (ADR-0016 step 3)
