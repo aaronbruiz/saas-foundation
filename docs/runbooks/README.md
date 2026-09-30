@@ -55,6 +55,7 @@ No preview secret lives at repo level: a `pull_request` workflow runs the PR's o
 Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids.
 
 - **Both Cloudflare tokens are sensitive.** The Hyperdrive token is account-wide (no per-config scope) and could edit production Hyperdrive; the Worker token can deploy a preview bound to any Hyperdrive id, production's included (binding needs no permission on the bound resource). The scripts' guards (ADR-0021 decision 3) and the environments are the fence. No job holds both.
+- **Cloudflare account token `saas-foundation`** (2026-09-30): Workers Editor on the production Worker `saas-foundation` only. Not stored anywhere in CI; kept by the owner for a future CI deploy, which needs its own ADR before it is stored in any environment.
 - **Current state (2026-09-29):** all of the above are in place; the repository holds no secrets. Neon organization keys: `saas-foundation-preview-ci` (preview project, both preview environments) and `saas-foundation` (production project, `production`; used by `db-backup.yml`, **keep**).
 - **Rotating or recreating preview credentials (owner):**
   1. Cloudflare dashboard → Manage Account → Account API Tokens → _Create token_ → _Custom token_: name `saas-foundation-preview-infra`; permissions **Account · Hyperdrive · Edit**, nothing else; account resources: this account only; no zone permissions, no IP filter. `gh secret set CLOUDFLARE_PREVIEW_INFRA_TOKEN --env preview-infra`.
@@ -111,7 +112,7 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
 
 ## First production deploy (owner sequence, 2026-09-28)
 
-First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-f902f1b14d91`); steps 0–8 are done, 9–11 (milestone B) are open. Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
+First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-f902f1b14d91`); steps 0–11 are done (milestones A and B, 2026-09-30). Steps marked **owner** need credentials, accounts or dashboard access. Don't skip or reorder.
 
 **Data gate (ADR-0014):** until off-provider backup option B is implemented **and** a restore from it has been tested, production holds **only synthetic smoke-test accounts**, never real customer data. Sign-up is enforced in code: with `SIGNUP_MODE` unset (the production default), sign-up is **closed** except for the exact addresses in `SIGNUP_ALLOWLIST`.
 
@@ -156,8 +157,12 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
    - login rate limit: 6 wrong-password POSTs to `/api/auth/sign-in/email` from one IP within 60 s; the 6th returns **429**
    - _Done 2026-09-30 (owner, browser; `wrangler tail` alongside): `/api/health` ok; sign-up with an allowlisted address, sign-out and sign-in, organization created; a non-allowlisted address was refused; emails skipped (delivery not activated, one `email.delivery_disabled` log at sign-up). Rate limit: 6 wrong-password sign-ins at 04:31:16–22Z; the first 5 logged `Invalid password`, the 6th logged nothing and the page showed "Too many requests. Please try again later.". Repeated with curl at 04:42:07–13Z (6 wrong-password POSTs from one IP): 401 five times, then **429**._
 9. **Owner:** add the WAF rule `auth-login-burst` (ADR-0014).
+   - _Done 2026-09-30 (owner): rule reported deployed, created from ADR-0014's settings; step 10 exercised it._
 10. Smoke-test the WAF on its own: more than 10 POSTs to `/api/auth/sign-in/email` within 10 s from one IP are blocked at the edge (Cloudflare block page, visible in Security → Events). Wait 60 s so the app's own limit resets, and check that a normal login still works.
+    - _Done 2026-09-30 (curl from one IP, wrong password): 12 POSTs over about 7.5 s (a new connection each) were all answered by the app (401 five times, then its 429); no edge block. Then 20 POSTs over one connection, 06:37:01.2–06:37:06.5Z: the first 10 got the app's 429 (`text/plain;charset=UTF-8`, about 0.3 s each), the last 10 a different 429 (`text/plain; charset=UTF-8`, about 0.12 s each); Security → Events listed 5 events at 06:37:03–04Z (owner). After more than 60 s the owner's normal login worked._
 11. **Owner:** confirm the previous broad Cloudflare user token (the old CI token, which could deploy any Worker) is revoked: dashboard → My Profile → API Tokens. CI no longer uses it (ADR-0019, ADR-0021), but only revocation removes its reach. This completes milestone B.
+
+- _Done 2026-09-30 (owner): the user API token is removed and no user API tokens remain. Account API tokens left: `saas-foundation-preview-infra` and `saas-foundation-preview` (section "CI credentials") and `saas-foundation`, Workers Editor on the production Worker only, stored in no GitHub secret; the owner keeps it for a future CI deploy, which needs its own ADR first._
 
 Rollback: `wrangler rollback` to the previous Worker version (code only). Migrations are forward-only (expand → migrate → contract). For data, use the Database section below.
 
