@@ -78,20 +78,21 @@ PG_IMAGE=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1
 # Neon is reached over the default network; only a database on the host's loopback (local testing) needs the host's.
 NET=()
 grep -Eq '^PGHOST=(localhost|127\.[0-9.]+|::1)$' "$WORK/pg.env" && NET=(--network host)
-# Version checks need no credentials; only pg() gets the env file.
-pg_version() { docker run --rm "$PG_IMAGE" "$@"; }
-pg() { docker run --rm -i "${NET[@]}" --env-file "$WORK/pg.env" "$PG_IMAGE" "$@"; }
+# pg_tool: no credentials, no network override (version checks, reading a dump file).
+# pg_db: the only helper that gets the env file; used just for pg_dump.
+pg_tool() { docker run --rm -i "$PG_IMAGE" "$@"; }
+pg_db() { docker run --rm -i "${NET[@]}" --env-file "$WORK/pg.env" "$PG_IMAGE" "$@"; }
 # Refuse an older client before touching the database (pg_dump can't dump a newer server).
 for tool in pg_dump pg_restore; do
-  v="$(pg_version "$tool" --version)"
+  v="$(pg_tool "$tool" --version)"
   [[ "$v" =~ \(PostgreSQL\)\ 17\. ]] || fail "$tool in $PG_IMAGE is not PostgreSQL 17: $v"
   log "client: $v"
 done
 
 log "dumping main"
-pg pg_dump --format=custom >"$WORK/$NAME"
+pg_db pg_dump --format=custom >"$WORK/$NAME"
 # A truncated or empty dump fails here, not at restore time.
-pg pg_restore --list <"$WORK/$NAME" >"$WORK/list"
+pg_tool pg_restore --list <"$WORK/$NAME" >"$WORK/list"
 for t in organization member user __drizzle_migrations; do
   grep -Eq "TABLE DATA [a-z_]+ \"?$t\"? " "$WORK/list" || fail "dump has no data entry for table $t"
 done
