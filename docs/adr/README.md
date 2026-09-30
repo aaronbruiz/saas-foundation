@@ -23,3 +23,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0019](0019-ci-credentials-and-preview-slots.md): CI credentials by resource, and pre-provisioned preview slots
 - [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults
 - [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): Per-PR preview data behind a trusted workflow boundary
+- [ADR-0022](0022-polar-merchant-of-record.md): Polar as billing provider and merchant of record; one Polar team customer per organization
