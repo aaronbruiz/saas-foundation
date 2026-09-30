@@ -23,7 +23,28 @@ export type PortalRequest = {
   customerId: string
   /** The member opening the portal (`billing:manage`). */
   userId: string
+  customerEmail: string
   returnUrl: string
+}
+
+/** A user holding `billing:manage` in an organization (today: an owner). */
+export type BillingManager = { userId: string; email: string }
+
+/**
+ * Keeps the provider's per-organization billing access in step with `billing:manage` (ADR-0022),
+ * for providers where people log in to the billing account themselves. Each call is idempotent and
+ * does nothing for an organization without a provider account.
+ */
+export type BillingMembers = {
+  /**
+   * Removes the user's access. `successors` are the organization's remaining billing managers,
+   * one of whom takes over if the provider needs an account owner. Throws if access can't be
+   * removed, so the caller refuses the change (fail closed).
+   */
+  revoke(organizationId: string, userId: string, successors: BillingManager[]): Promise<void>
+  grant(organizationId: string, manager: BillingManager): Promise<void>
+  /** Removes the organization's billing account and everyone's access (organization deletion). */
+  removeAccount(organizationId: string): Promise<void>
 }
 
 export type BillingProvider = {
@@ -42,6 +63,19 @@ export class InvalidPayload extends Error {
 export class PriceNotFound extends Error {
   name = 'PriceNotFound'
 }
+/**
+ * The provider couldn't be reached or isn't configured; the caller should retry (503). `delivery`
+ * names a verified webhook delivery, so an already-applied one can be acknowledged instead.
+ */
+export class ProviderUnavailable extends Error {
+  name = 'ProviderUnavailable'
+  constructor(
+    message: string,
+    readonly delivery?: { provider: string; eventId: string },
+  ) {
+    super(message)
+  }
+}
 
 /** A verified event; the plan isn't known here (the product policy maps `priceKey` to it). */
 export type ProviderEvent = Omit<BillingEvent, 'subscription'> & {
@@ -50,7 +84,8 @@ export type ProviderEvent = Omit<BillingEvent, 'subscription'> & {
 
 /**
  * Verifies a delivery's signature on the raw body BEFORE parsing anything (AGENTS.md invariant 11),
- * then maps it. Throws InvalidSignature or InvalidPayload.
+ * then maps it. Throws InvalidSignature, InvalidPayload or ProviderUnavailable (nothing recorded,
+ * so the provider retries).
  */
 export type WebhookParser = (
   rawBody: string,

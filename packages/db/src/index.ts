@@ -2,6 +2,7 @@
 // The only way to touch tenant data (AGENTS.md invariant 2). Imports no workspace package.
 export {
   applyBillingEvent,
+  isBillingEventRecorded,
   billing,
   type BillingEvent,
   type BillingEventOutcome,
@@ -15,6 +16,7 @@ export {
   findMembership,
   findOrganizationById,
   findOrganizationBySlug,
+  listOwners,
   projects,
   type ProjectFields,
   type TenantScope,

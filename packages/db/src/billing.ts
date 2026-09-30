@@ -105,6 +105,18 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
   })
 }
 
+/** True once a provider's webhook event has been recorded (applied or not) by applyBillingEvent. */
+export async function isBillingEventRecorded(db: Db, provider: string, eventId: string) {
+  const [row] = await db
+    .select({ eventId: billingWebhookEvent.eventId })
+    .from(billingWebhookEvent)
+    .where(
+      and(eq(billingWebhookEvent.provider, provider), eq(billingWebhookEvent.eventId, eventId)),
+    )
+    .limit(1)
+  return row !== undefined
+}
+
 /**
  * Ordering is per subscription: for the stored one, an event at least as new applies (provider
  * timestamps have one-second resolution, so same-second events apply in arrival order; ADR-0018).

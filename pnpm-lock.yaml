@@ -221,6 +221,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@polar-sh/sdk':
+        specifier: 1.0.0
+        version: 1.0.0
       '@saas-foundation/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -1687,6 +1690,10 @@ packages:
     resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@polar-sh/sdk@1.0.0':
+    resolution: {integrity: sha512-AuaBAEvkUEIA+fqII3SsEYXEfph6+nYrLbz2168P4Rq+678szwFvvBK6chGFyZNxISO8aVx+sGIBI6HUMRKlPw==}
+    engines: {node: '>=22'}
 
   '@poppinss/colors@4.1.6':
     resolution: {integrity: sha512-H9xkIdFswbS8n1d6vmRd8+c10t2Qe+rZITbbDHHkQixH5+2x1FDGmi/0K+WgWiqQFKPSlIYB7jlH6Kpfn6Fleg==}
@@ -5095,6 +5102,8 @@ snapshots:
   '@playwright/test@1.63.0':
     dependencies:
       playwright: 1.63.0
+
+  '@polar-sh/sdk@1.0.0': {}
 
   '@poppinss/colors@4.1.6':
     dependencies:

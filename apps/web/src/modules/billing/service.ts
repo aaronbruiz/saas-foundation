@@ -6,17 +6,13 @@ import { withDb } from '../../server/db'
 import { HttpError, parseInput } from '../../server/errors'
 import { authorize, can } from '../../server/permissions'
 import { PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
+import { configuredProvider } from './config'
 import { PriceNotFound, type BillingProvider } from './provider'
-import { stripeProvider } from './providers/stripe'
 
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
 // ./policy (product) or the capability matrix (roles); this file only wires them (ADR-0020).
 
-const vars = env as unknown as { STRIPE_SECRET_KEY?: string; BETTER_AUTH_URL: string }
-
-/** The configured provider, or null (local dev, previews): billing actions then answer 503. */
-export const configuredProvider = (): BillingProvider | null =>
-  vars.STRIPE_SECRET_KEY ? stripeProvider(vars.STRIPE_SECRET_KEY) : null
+const vars = env as unknown as { BETTER_AUTH_URL: string }
 
 export async function getBillingOverview(headers: Headers, input: unknown) {
   const { tenant } = parseInput(TenantInput, input)
@@ -98,6 +94,7 @@ export async function openBillingPortal(
       organizationId: ctx.orgId,
       customerId: sub.providerCustomerId,
       userId: ctx.userId,
+      customerEmail: ctx.email,
       returnUrl: `${vars.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
     })
     return { url }

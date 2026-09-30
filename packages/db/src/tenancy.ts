@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from 'drizzle-orm'
 import type { Db } from './client.ts'
-import { member, organization } from './schema/auth.ts'
+import { member, organization, user } from './schema/auth.ts'
 import { project, type Project } from './schema/projects.ts'
 
 /** Tenant context resolved server-side by the app (AGENTS.md invariant 1). */
@@ -37,6 +37,24 @@ export async function findMembership(db: Db, orgId: string, userId: string) {
     .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
     .limit(1)
   return m ?? null
+}
+
+/**
+ * Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). A
+ * role may list several comma-separated roles (Better Auth), read like the capability matrix does.
+ */
+export async function listOwners(
+  db: Db,
+  orgId: string,
+): Promise<{ userId: string; email: string }[]> {
+  const rows = await db
+    .select({ userId: member.userId, email: user.email, role: member.role })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(eq(member.organizationId, orgId))
+  return rows
+    .filter((r) => r.role.split(',').some((x) => x.trim() === 'owner'))
+    .map(({ userId, email }) => ({ userId, email }))
 }
 
 export type ProjectFields = { name: string; description?: string | null }

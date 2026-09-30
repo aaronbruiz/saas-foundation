@@ -1,6 +1,7 @@
 import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth } from '@saas-foundation/auth'
-import { billing, type Db } from '@saas-foundation/db'
+import { billing, listOwners, type Db } from '@saas-foundation/db'
+import { configuredMembers } from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
 import { mailerFor, render, type EmailConfig } from './email'
 import { logBetterAuth } from './log'
@@ -26,6 +27,7 @@ const vars = env as unknown as { SIGNUP_MODE?: string; SIGNUP_ALLOWLIST?: string
 
 export function authFor(db: Db) {
   const mailer = mailerFor(env as unknown as EmailConfig)
+  const members = configuredMembers()
   return createAuth({
     db,
     secret: env.BETTER_AUTH_SECRET,
@@ -41,6 +43,22 @@ export function authFor(db: Db) {
       memberLimit: async (orgId) =>
         entitlementsFor(await billing(db, { orgId }).subscription()).limits.members,
       blocksDeletion: async (orgId) => isLive(await billing(db, { orgId }).subscription()),
+      // ADR-0022: the provider's billing logins follow the owner role.
+      ...(members && {
+        members: {
+          revoke: async (orgId, userId) =>
+            members.revoke(
+              orgId,
+              userId,
+              (await listOwners(db, orgId)).filter((o) => o.userId !== userId),
+            ),
+          grant: async (orgId, userId) => {
+            const owner = (await listOwners(db, orgId)).find((o) => o.userId === userId)
+            if (owner) await members.grant(orgId, owner)
+          },
+          removeAccount: (orgId) => members.removeAccount(orgId),
+        },
+      }),
     },
   })
 }

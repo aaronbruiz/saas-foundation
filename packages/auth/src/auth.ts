@@ -45,8 +45,27 @@ export type AuthOptions = {
     memberLimit: (organizationId: string) => Promise<number | null>
     /** True while the organization must not be deleted (e.g. a live subscription). */
     blocksDeletion: (organizationId: string) => Promise<boolean>
+    /**
+     * The billing provider's own logins, kept in step with the owner role (ADR-0022: revoke before,
+     * grant after). `revoke` throws when access can't be removed, and the change is refused.
+     * Without it, owner changes touch nothing outside Better Auth.
+     */
+    members?: {
+      revoke: (organizationId: string, userId: string) => Promise<void>
+      grant: (organizationId: string, userId: string) => Promise<void>
+      removeAccount: (organizationId: string) => Promise<void>
+    }
   }
 }
+
+/**
+ * Better Auth may store several comma-separated roles (and accepts an array in role updates); the
+ * app's capability matrix reads their union, so "owner,admin" is an owner here too.
+ */
+const isOwner = (role: string | string[] | undefined | null) =>
+  (Array.isArray(role) ? role : String(role ?? '').split(','))
+    .map((r) => r.trim())
+    .includes('owner')
 
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
 
@@ -65,6 +84,25 @@ export function createAuth({
   billing: billingPolicy,
 }: AuthOptions) {
   const blocksDeletion = (orgId: string) => billingPolicy?.blocksDeletion(orgId) ?? false
+  const members = billingPolicy?.members
+  // Fail closed: an owner who can't be removed from the billing account keeps the role.
+  const revoke = async (orgId: string, userId: string) => {
+    if (!members) return
+    try {
+      await members.revoke(orgId, userId)
+    } catch {
+      log?.('warn', 'billing.members.revoke_failed')
+      throw billingAccessUnavailable()
+    }
+  }
+  // Fails toward less access; the next checkout or portal call repairs a missing grant.
+  const grant = async (orgId: string, userId: string) => {
+    try {
+      await members?.grant(orgId, userId)
+    } catch {
+      log?.('warn', 'billing.members.grant_failed')
+    }
+  }
   return betterAuth({
     secret,
     baseURL,
@@ -93,12 +131,18 @@ export function createAuth({
       // Only for members: anyone else gets Better Auth's usual error, so billing state can't be
       // probed.
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== '/organization/delete') return
+        if (ctx.path !== '/organization/delete' && ctx.path !== '/organization/leave') return
         const orgId = (ctx.body as { organizationId?: unknown } | undefined)?.organizationId
         if (typeof orgId !== 'string' || !orgId) return
         const session = await getSessionFromCtx(ctx)
-        if (!session || !(await findMembership(db, orgId, session.user.id))) return
-        if (await blocksDeletion(orgId)) throw billingStateConflict()
+        const membership = session && (await findMembership(db, orgId, session.user.id))
+        if (!session || !membership) return
+        if (ctx.path === '/organization/delete') {
+          if (await blocksDeletion(orgId)) throw billingStateConflict()
+          return
+        }
+        // ADR-0022: an owner leaving loses billing access first.
+        if (isOwner(membership.role)) await revoke(orgId, session.user.id)
       }),
     },
     databaseHooks: {
@@ -141,6 +185,33 @@ export function createAuth({
           // Backstop for deletions that don't come through the HTTP middleware above.
           async beforeDeleteOrganization({ organization }) {
             if (await blocksDeletion(organization.id)) throw billingStateConflict()
+            // ADR-0022: only here, after Better Auth's own permission check (the middleware above
+            // runs before it). The billing account goes first; if it can't, nothing is deleted.
+            if (!members) return
+            try {
+              await members.removeAccount(organization.id)
+            } catch {
+              log?.('warn', 'billing.members.remove_account_failed')
+              throw billingAccessUnavailable()
+            }
+          },
+          // ADR-0022: revoke before, grant after, on every path that changes who is an owner.
+          async beforeUpdateMemberRole({ member, newRole, organization }) {
+            if (isOwner(member.role) && !isOwner(newRole))
+              await revoke(organization.id, member.userId)
+          },
+          async afterUpdateMemberRole({ member, previousRole, organization }) {
+            if (isOwner(member.role) && !isOwner(previousRole))
+              await grant(organization.id, member.userId)
+          },
+          async beforeRemoveMember({ member, organization }) {
+            if (isOwner(member.role)) await revoke(organization.id, member.userId)
+          },
+          async afterAddMember({ member, organization }) {
+            if (isOwner(member.role)) await grant(organization.id, member.userId)
+          },
+          async afterAcceptInvitation({ member, organization }) {
+            if (isOwner(member.role)) await grant(organization.id, member.userId)
           },
         },
         // Seat limits from the plan (ADR-0020). Accepting an invitation (or adding a member) fails
@@ -168,6 +239,11 @@ export function createAuth({
     ],
   })
 }
+
+const billingAccessUnavailable = () =>
+  new APIError('SERVICE_UNAVAILABLE', {
+    message: "Billing access couldn't be updated. Try again in a moment.",
+  })
 
 const billingStateConflict = () =>
   new APIError('CONFLICT', {
