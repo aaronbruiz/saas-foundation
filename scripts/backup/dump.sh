@@ -70,17 +70,20 @@ trap 'rm -rf "$WORK"' EXIT
     console.log(`${k}=${v}`)
   }
 ' >"$WORK/pg.env")
-# Postgres 17 client only (Alpine + postgresql17-client, ~20 MB), pinned by digest: the container
-# receives the production password, so a moved tag must not change what runs. Bump by hand:
-# `docker buildx imagetools inspect gmarrot/postgresql-client:17` → the index Digest.
+# PostgreSQL 17 client-only image, pinned by digest.
+# The container receives the production database credentials, so the image
+# must not change without an explicit review and digest update
+# (`docker buildx imagetools inspect gmarrot/postgresql-client:17` → the index Digest).
 PG_IMAGE=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d
 # Neon is reached over the default network; only a database on the host's loopback (local testing) needs the host's.
 NET=()
 grep -Eq '^PGHOST=(localhost|127\.[0-9.]+|::1)$' "$WORK/pg.env" && NET=(--network host)
+# Version checks need no credentials; only pg() gets the env file.
+pg_version() { docker run --rm "$PG_IMAGE" "$@"; }
 pg() { docker run --rm -i "${NET[@]}" --env-file "$WORK/pg.env" "$PG_IMAGE" "$@"; }
 # Refuse an older client before touching the database (pg_dump can't dump a newer server).
 for tool in pg_dump pg_restore; do
-  v="$(pg "$tool" --version)"
+  v="$(pg_version "$tool" --version)"
   [[ "$v" =~ \(PostgreSQL\)\ 17\. ]] || fail "$tool in $PG_IMAGE is not PostgreSQL 17: $v"
   log "client: $v"
 done
