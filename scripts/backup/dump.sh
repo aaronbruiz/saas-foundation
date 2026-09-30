@@ -56,8 +56,11 @@ trap 'rm -rf "$WORK"' EXIT
 # libpq reads the connection from PG* variables in an env file, so neither the URL nor the password
 # appears in any process's arguments (a --dbname URL would).
 (umask 077 && node -e '
-  const u = new URL(process.env.DATABASE_URL), q = u.searchParams, d = decodeURIComponent
-  const env = { PGHOST: u.hostname, PGPORT: u.port || "5432", PGUSER: d(u.username),
+  let u
+  // URL errors echo their input, password included: report without it.
+  try { u = new URL(process.env.DATABASE_URL) } catch { console.error("[dump] ERROR: DATABASE_URL is not a valid URL"); process.exit(1) }
+  const q = u.searchParams, d = decodeURIComponent
+  const env = { PGHOST: u.hostname.replace(/^\[(.*)\]$/, "$1"), PGPORT: u.port || "5432", PGUSER: d(u.username),
     PGPASSWORD: d(u.password), PGDATABASE: d(u.pathname.slice(1)),
     PGSSLMODE: q.get("sslmode"), PGCHANNELBINDING: q.get("channel_binding"), PGOPTIONS: q.get("options") }
   for (const [k, v] of Object.entries(env)) {
@@ -67,13 +70,29 @@ trap 'rm -rf "$WORK"' EXIT
     console.log(`${k}=${v}`)
   }
 ' >"$WORK/pg.env")
-# Postgres 17 client, matching the server.
-pg() { docker run --rm -i --network host --env-file "$WORK/pg.env" postgres:17-alpine "$@"; }
+# PostgreSQL 17 client-only image, pinned by digest.
+# The container receives the production database credentials, so the image
+# must not change without an explicit review and digest update
+# (`docker buildx imagetools inspect gmarrot/postgresql-client:17` → the index Digest).
+PG_IMAGE=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d
+# Neon is reached over the default network; only a database on the host's loopback (local testing) needs the host's.
+NET=()
+grep -Eq '^PGHOST=(localhost|127\.[0-9.]+|::1)$' "$WORK/pg.env" && NET=(--network host)
+# pg_tool: no credentials, no network override (version checks, reading a dump file).
+# pg_db: the only helper that gets the env file; used just for pg_dump.
+pg_tool() { docker run --rm -i "$PG_IMAGE" "$@"; }
+pg_db() { docker run --rm -i "${NET[@]}" --env-file "$WORK/pg.env" "$PG_IMAGE" "$@"; }
+# Refuse an older client before touching the database (pg_dump can't dump a newer server).
+for tool in pg_dump pg_restore; do
+  v="$(pg_tool "$tool" --version)"
+  [[ "$v" =~ \(PostgreSQL\)\ 17\. ]] || fail "$tool in $PG_IMAGE is not PostgreSQL 17: $v"
+  log "client: $v"
+done
 
 log "dumping main"
-pg pg_dump --format=custom >"$WORK/$NAME"
+pg_db pg_dump --format=custom >"$WORK/$NAME"
 # A truncated or empty dump fails here, not at restore time.
-pg pg_restore --list <"$WORK/$NAME" >"$WORK/list"
+pg_tool pg_restore --list <"$WORK/$NAME" >"$WORK/list"
 for t in organization member user __drizzle_migrations; do
   grep -Eq "TABLE DATA [a-z_]+ \"?$t\"? " "$WORK/list" || fail "dump has no data entry for table $t"
 done

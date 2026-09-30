@@ -16,7 +16,8 @@ Implements [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md)'s backup opt
 
 1. **A daily `pg_dump` to R2 from GitHub Actions.** Job `dump` in `db-backup.yml`, next to `snapshot` (same schedule, independent), runs `scripts/backup/dump.sh`:
    - gets the direct (non-pooler) URL of production `main` with the existing `NEON_API_KEY` (no new database credential), masked and never printed; the key reaches the CLI and the URL reaches `pg_dump` through the environment and an env file, never through process arguments;
-   - `pg_dump --format=custom` with the Postgres 17 client (`postgres:17-alpine`, as in the runbook);
+   - `pg_dump --format=custom` with the Postgres 17 client (image in the clarification below);
+     - _Clarification (owner, 2026-09-30):_ the client runs from the client-only image `gmarrot/postgresql-client:17` (Alpine + `postgresql17-client`; about 6 MB compressed on amd64 instead of about 117 MB for `postgres:17-alpine`, a smaller client-only image rather than a measured speed-up), pinned by digest in `dump.sh` because the container receives the production password; the script refuses a `pg_dump`/`pg_restore` that isn't PostgreSQL 17 (checked without credentials) and uses host networking only for a loopback database (local testing). A third-party image: bump the digest by hand after checking what it contains. The runbook's local restore still uses `postgres:17-alpine`, which needs the server.
    - fails unless `pg_restore --list` reads the dump and lists data for `organization`, `member`, `user` and `drizzle.__drizzle_migrations`;
    - uploads `daily/app-YYYYMMDD.dump` and `daily/app-YYYYMMDD.dump.sha256`, checking the stored size before writing the `.sha256`, which marks the day complete; a re-run skips a complete day and redoes a partial one.
    - A failed run surfaces as GitHub's failed-workflow email to the owner until alerting exists (ADR-0015).
