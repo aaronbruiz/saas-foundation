@@ -244,8 +244,13 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
       for (const ev of events) {
         const body = JSON.parse(ev.payload ?? '{}')
         if (!String(body.type).startsWith('subscription.')) continue
-        // Every endpoint gets the whole sandbox's events: keep this run's customer's only.
-        if (body.data.customer?.external_id !== orgId) continue
+        // Every endpoint gets the whole sandbox's events: keep this run's (by either link; callers
+        // assert both agree).
+        if (
+          body.data.customer?.external_id !== orgId &&
+          body.data.metadata?.organization_id !== orgId
+        )
+          continue
         // The real parser on a freshly signed copy (the endpoint's own secret isn't readable back).
         const secret = 'eval-local-secret'
         const id = `msg_${ev.id}`
@@ -278,6 +283,7 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
       const c = await polar.customers.getExternal(orgId)
       for (const { body, mapped } of await deliveredEvents()) {
         expect(body.data.customer.external_id).toBe(orgId)
+        expect(body.data.metadata.organization_id).toBe(orgId)
         expect(mapped.subscription?.organizationId).toBe(orgId)
         // As sent, then as the parser re-read it now.
         const m = mapped.subscription!
