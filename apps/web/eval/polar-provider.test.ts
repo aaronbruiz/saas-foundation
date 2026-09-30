@@ -129,7 +129,9 @@ describe.runIf(run !== '' && !vars.POLAR_EVAL_PAID)('polar adapter against the s
 // endpoint whose delivery log records the events), you pay with the sandbox test card, then
 // POLAR_EVAL_PAID=verify checks in two stages: the trial's events (linked, mapped, re-read as trialing),
 // then a revocation-only end on its own events (re-read as canceled). It logs the stored billing
-// country. Not covered here (need time or the portal by hand): plan changes, failed renewals.
+// country. Not covered here (need time or the portal by hand): billing-country prefill, plan
+// changes, failed renewals, cancellation at period end. They're the pre-go-live sandbox checks listed
+// in ADR-0022's order of work, step 3 (docs/adr/0022-polar-merchant-of-record.md, PR #37).
 const paid = vars.POLAR_EVAL_PAID
 describe.runIf(run !== '' && (paid === 'start' || paid === 'verify'))('paid checkout', () => {
   it(`paid ${paid}`, async () => {
