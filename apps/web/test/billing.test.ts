@@ -496,7 +496,9 @@ describe('billing actions', () => {
     const owner = await signUp()
     const slug = await createOrg(owner, 'bill-co')
     const { provider, calls } = fakeProvider()
-    const { url } = await startCheckout(owner.headers, { tenant: slug, price }, provider)
+    const headers = new Headers(owner.headers)
+    headers.set('cf-connecting-ip', '190.12.64.1')
+    const { url } = await startCheckout(headers, { tenant: slug, price }, provider)
     expect(url).toBe('https://checkout.example/session')
     expect(calls.checkout[0]).toMatchObject({
       organizationId: await orgIdOf(slug),
@@ -504,6 +506,7 @@ describe('billing actions', () => {
       customerId: null,
       userId: owner.userId,
       customerEmail: owner.email,
+      customerIp: '190.12.64.1',
       priceKey: price,
       trialDays: CHECKOUT.trialDays,
       successUrl: `${env.BETTER_AUTH_URL}/t/${slug}/billing?checkout=success`,

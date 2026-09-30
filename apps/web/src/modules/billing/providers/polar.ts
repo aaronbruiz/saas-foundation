@@ -229,6 +229,9 @@ export function polarProvider(config: PolarConfig): BillingProvider {
       const checkout = await polar.checkouts.create({
         products: [product.id],
         customer_id: customer.id,
+        // The checkout is created server-side, so Polar can't see the buyer: without their IP it
+        // leaves the country blank; with it, it prefills their country (sandbox probe 2026-09-29).
+        ...(req.customerIp && { customer_ip_address: req.customerIp }),
         // Copied onto the subscription; the webhook links through it (with the customer's id).
         metadata: { [ORGANIZATION_METADATA_KEY]: req.organizationId },
         success_url: req.successUrl,

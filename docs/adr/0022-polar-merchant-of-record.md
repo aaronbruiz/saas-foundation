@@ -21,13 +21,13 @@ Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, 
   - ownership transfer (add new owner as member → promote to owner → delete former owner) worked; the new owner's customer session sees only that organization's subscription; a session for the deleted former owner is refused (422); the former owner's email login to the hosted portal still works but shows only the organizations they still belong to;
   - the invoice reads "_<seller>_ via Polar Software, Inc." with Polar's address, billed to the customer's name; the card statement shows `POLAR*<seller>`;
   - deleting a customer cancels its subscriptions **asynchronously** (still `trialing`/`active` right after, `canceled` about 2–3 minutes later);
-  - the checkout left the billing country at a default (Angola) that nobody chose.
+  - the checkout stored the billing country Angola; first read as a default nobody chose, it was the buyer's deliberate pick (corrected 2026-09-29; runbook "Polar", billing-country check).
 - **Second run** (`r2-0929`, same harness):
   - webhook payloads, read from Polar's delivery log for one free subscription created then revoked through the API (observed in the logged output, not asserted by the harness): `subscription.created`, `.active`, `.updated`, `.canceled` and `.revoked` each appeared and carried `customer.external_id` and `product.metadata.price_key`; `metadata.organization_id` was logged on every one of them, `revoked` included; the event `timestamp` has microsecond resolution; `member.*` events carry the member's `external_id` and `customer_id`. Events of a paid checkout (trial, renewal, `past_due`) were not captured;
   - a customer session lives 60 minutes; after the member was deleted, or the whole customer, an already-issued session was refused (401) at the first check, a few seconds after the deletion (the harness doesn't time it more finely);
   - a portal email login open in a browser was logged out at the owner's first reload, about a minute after its member was deleted, and a new login sent no code;
   - Polar refuses to delete a team customer's only owner (422, "Cannot delete the only owner. Transfer ownership first.").
-- **Not tested yet:** plan changes and proration in the portal, failed renewals (`past_due` → `unpaid`/`canceled`), refunds, the billing-country prefill.
+- **Not tested yet:** plan changes and proration in the portal, failed renewals (`past_due` → `unpaid`/`canceled`), refunds. (The billing-country prefill: see the runbook "Polar" check.)
 
 ## Decision
 

@@ -38,6 +38,7 @@ describe.runIf(run !== '' && !vars.POLAR_EVAL_PAID)('polar adapter against the s
       customerId: null,
       userId: owner.userId,
       customerEmail: owner.email,
+      customerIp: null,
       priceKey: 'pro_monthly',
       trialDays: 14,
       successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
@@ -167,6 +168,8 @@ describe.runIf(run !== '' && (paid === 'start' || paid === 'verify' || paid === 
           customerId: null,
           userId: `eval-${run}-owner`,
           customerEmail: required('POLAR_EVAL_OWNER_EMAIL'),
+          // The buyer's public IP, to check the country prefill (optional).
+          customerIp: vars.POLAR_EVAL_CUSTOMER_IP || null,
           priceKey: 'pro_monthly',
           trialDays: 14,
           successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
