@@ -1,6 +1,6 @@
 # ADR-0022: Polar as billing provider and merchant of record; one Polar team customer per organization
 
-Status: Accepted (owner 2026-09-29; order-of-work steps 1–2 done in #38 and #39) · Date: 2026-09-29
+Status: Accepted (owner 2026-09-29; order-of-work steps 1–2 done in #38 and #39, paid-checkout events verified in sandbox run `r8-0929` as recorded in #39) · Date: 2026-09-29
 
 Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, webhook endpoint, secret and signature scheme) and [ADR-0020](0020-billing-product-policy.md) (tax through Stripe Tax, prices by Stripe lookup key, the Stripe Customer Portal, going live with Stripe). Keeps [ADR-0009](0009-billing-plans-entitlements-stripe-adapter.md)'s model: plans → entitlements → authorization, the provider behind an adapter. This is the "Merchant of Record later" that ADR-0009 kept open.
 
