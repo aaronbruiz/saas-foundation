@@ -133,118 +133,138 @@ describe.runIf(run !== '' && !vars.POLAR_EVAL_PAID)('polar adapter against the s
 // changes, failed renewals, cancellation at period end. They're the pre-go-live sandbox checks listed
 // in ADR-0022's order of work, step 3 (docs/adr/0022-polar-merchant-of-record.md, PR #37).
 const paid = vars.POLAR_EVAL_PAID
-describe.runIf(run !== '' && (paid === 'start' || paid === 'verify'))('paid checkout', () => {
-  it(`paid ${paid}`, async () => {
-    const config = {
-      accessToken: required('POLAR_SANDBOX_ACCESS_TOKEN'),
-      server: 'sandbox' as const,
-    }
-    const polar = polarClient(config)
-    const orgId = `eval-${run}-paid`
-    const endpointUrl = `https://example.com/polar-eval/${run}`
-    const endpoints = await polar.webhooks.listWebhookEndpoints({ limit: 100 })
-    let endpoint = endpoints.items.find((e) => e.url === endpointUrl)
-
-    if (paid === 'start') {
-      endpoint ??= await polar.webhooks.createWebhookEndpoint({
-        url: endpointUrl,
-        format: 'raw',
-        events: [
-          'subscription.created',
-          'subscription.updated',
-          'subscription.active',
-          'subscription.canceled',
-          'subscription.revoked',
-          'subscription.past_due',
-          'subscription.uncanceled',
-        ],
-      })
-      const url = await polarProvider(config).checkout({
-        organizationId: orgId,
-        organizationName: `Eval ${run} paid`,
-        customerId: null,
-        userId: `eval-${run}-owner`,
-        customerEmail: required('POLAR_EVAL_OWNER_EMAIL'),
-        priceKey: 'pro_monthly',
-        trialDays: 14,
-        successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
-        cancelUrl: 'http://localhost:3000/t/eval/billing',
-      })
-      console.log(`[eval] pay with the sandbox test card:\n${url}`)
-      return
-    }
-
-    if (!endpoint) throw new Error('run POLAR_EVAL_PAID=start first')
-    const endpointId = endpoint.id
-    const customer = await polar.customers.getExternal(orgId)
-    // Billing country as Polar stored it from the checkout (ADR-0022: must be the buyer's real one).
-    console.log('[eval] customer billing country:', customer.billing_address?.country ?? null)
-    const subs = (await polar.subscriptions.list({ customer_id: customer.id, limit: 10 })).items
-    expect(subs).toHaveLength(1)
-    expect(subs[0].status).toBe('trialing')
-    const parse = polarWebhookParser(config)
-
-    /** The endpoint's subscription events so far, each run through the real parser. */
-    async function check(skip: Set<string>, expectedStatus: string) {
-      const deliveries = (
-        await polar.webhooks.listWebhookDeliveries({ endpoint_id: endpointId, limit: 100 })
-      ).items
-      const events = new Map(deliveries.map((d) => [d.webhook_event.id, d.webhook_event]))
-      const seen: string[] = []
-      for (const ev of events.values()) {
-        if (skip.has(ev.id)) continue
-        skip.add(ev.id)
-        const body = JSON.parse(ev.payload ?? '{}')
-        if (!String(body.type).startsWith('subscription.')) continue
-        expect(body.data.customer.external_id).toBe(orgId)
-        expect(body.data.metadata.organization_id).toBe(orgId)
-        // The real parser on a freshly signed copy (the endpoint's own secret isn't readable back).
-        const secret = 'eval-local-secret'
-        const id = `msg_${ev.id}`
-        const t = Math.floor(Date.now() / 1000)
-        const key = await crypto.subtle.importKey(
-          'raw',
-          new TextEncoder().encode(secret),
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign'],
-        )
-        const mac = new Uint8Array(
-          await crypto.subtle.sign(
-            'HMAC',
-            key,
-            new TextEncoder().encode(`${id}.${t}.${ev.payload}`),
-          ),
-        )
-        const headers = new Headers({
-          'webhook-id': id,
-          'webhook-timestamp': String(t),
-          'webhook-signature': `v1,${btoa(String.fromCharCode(...mac))}`,
-        })
-        const mapped = await parse(ev.payload!, headers, secret)
-        expect(mapped.subscription?.organizationId).toBe(orgId)
-        expect(mapped.subscription?.priceKey).toBe('pro_monthly')
-        // The re-read state at this stage, whatever the event said when it was sent.
-        expect(mapped.subscription?.status).toBe(expectedStatus)
-        seen.push(`${body.type}:${body.data.status}`)
+describe.runIf(run !== '' && (paid === 'start' || paid === 'verify' || paid === 'status'))(
+  'paid checkout',
+  () => {
+    it(`paid ${paid}`, async () => {
+      const config = {
+        accessToken: required('POLAR_SANDBOX_ACCESS_TOKEN'),
+        server: 'sandbox' as const,
       }
-      return seen.sort()
-    }
+      const polar = polarClient(config)
+      const orgId = `eval-${run}-paid`
+      const endpointUrl = `https://example.com/polar-eval/${run}`
+      const endpoints = await polar.webhooks.listWebhookEndpoints({ limit: 100 })
+      let endpoint = endpoints.items.find((e) => e.url === endpointUrl)
 
-    // Stage 1, before anything ends it: the trial's events, re-read as trialing.
-    const handled = new Set<string>()
-    const trial = await check(handled, 'trialing')
-    console.log('[eval] trial events (type:status at delivery):', trial)
-    expect(trial).toContain('subscription.created:trialing')
+      if (paid === 'start') {
+        endpoint ??= await polar.webhooks.createWebhookEndpoint({
+          url: endpointUrl,
+          format: 'raw',
+          events: [
+            'subscription.created',
+            'subscription.updated',
+            'subscription.active',
+            'subscription.canceled',
+            'subscription.revoked',
+            'subscription.past_due',
+            'subscription.uncanceled',
+          ],
+        })
+        const url = await polarProvider(config).checkout({
+          organizationId: orgId,
+          organizationName: `Eval ${run} paid`,
+          customerId: null,
+          userId: `eval-${run}-owner`,
+          customerEmail: required('POLAR_EVAL_OWNER_EMAIL'),
+          priceKey: 'pro_monthly',
+          trialDays: 14,
+          successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
+          cancelUrl: 'http://localhost:3000/t/eval/billing',
+        })
+        console.log(`[eval] pay with the sandbox test card:\n${url}`)
+        return
+      }
 
-    // Stage 2: a revocation-only end (no cancel first), checked on the events it produces alone.
-    await polar.subscriptions.revoke(subs[0].id)
-    await new Promise((r) => setTimeout(r, 30_000))
-    const end = await check(handled, 'canceled')
-    console.log('[eval] revocation events (type:status at delivery):', end)
-    expect(end).toContain('subscription.revoked:canceled')
+      if (paid === 'status') {
+        // Read-only: what Polar holds for this run's customer.
+        const c = await polar.customers.getExternal(orgId)
+        const checkouts = (await polar.checkouts.list({ customer_id: c.id, limit: 20 })).items
+        const subs = (await polar.subscriptions.list({ customer_id: c.id, limit: 20 })).items
+        console.log('[eval] status', {
+          endpoint: Boolean(endpoint),
+          checkouts: checkouts.map((x) => ({
+            id: x.id.slice(0, 8),
+            status: x.status,
+            expires: x.expires_at,
+          })),
+          subscriptions: subs.map((x) => ({ status: x.status, org: x.metadata?.organization_id })),
+          country: c.billing_address?.country ?? null,
+        })
+        return
+      }
+      if (!endpoint) throw new Error('run POLAR_EVAL_PAID=start first')
+      const endpointId = endpoint.id
+      const customer = await polar.customers.getExternal(orgId)
+      // Billing country as Polar stored it from the checkout (ADR-0022: must be the buyer's real one).
+      console.log('[eval] customer billing country:', customer.billing_address?.country ?? null)
+      const subs = (await polar.subscriptions.list({ customer_id: customer.id, limit: 10 })).items
+      expect(subs).toHaveLength(1)
+      expect(subs[0].status).toBe('trialing')
+      const parse = polarWebhookParser(config)
 
-    await polar.webhooks.deleteWebhookEndpoint(endpointId)
-    await polarMembers(config).removeAccount(orgId)
-  }, 300_000)
-})
+      /** The endpoint's subscription events so far, each run through the real parser. */
+      async function check(skip: Set<string>, expectedStatus: string) {
+        const deliveries = (
+          await polar.webhooks.listWebhookDeliveries({ endpoint_id: endpointId, limit: 100 })
+        ).items
+        const events = new Map(deliveries.map((d) => [d.webhook_event.id, d.webhook_event]))
+        const seen: string[] = []
+        for (const ev of events.values()) {
+          if (skip.has(ev.id)) continue
+          skip.add(ev.id)
+          const body = JSON.parse(ev.payload ?? '{}')
+          if (!String(body.type).startsWith('subscription.')) continue
+          expect(body.data.customer.external_id).toBe(orgId)
+          expect(body.data.metadata.organization_id).toBe(orgId)
+          // The real parser on a freshly signed copy (the endpoint's own secret isn't readable back).
+          const secret = 'eval-local-secret'
+          const id = `msg_${ev.id}`
+          const t = Math.floor(Date.now() / 1000)
+          const key = await crypto.subtle.importKey(
+            'raw',
+            new TextEncoder().encode(secret),
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign'],
+          )
+          const mac = new Uint8Array(
+            await crypto.subtle.sign(
+              'HMAC',
+              key,
+              new TextEncoder().encode(`${id}.${t}.${ev.payload}`),
+            ),
+          )
+          const headers = new Headers({
+            'webhook-id': id,
+            'webhook-timestamp': String(t),
+            'webhook-signature': `v1,${btoa(String.fromCharCode(...mac))}`,
+          })
+          const mapped = await parse(ev.payload!, headers, secret)
+          expect(mapped.subscription?.organizationId).toBe(orgId)
+          expect(mapped.subscription?.priceKey).toBe('pro_monthly')
+          // The re-read state at this stage, whatever the event said when it was sent.
+          expect(mapped.subscription?.status).toBe(expectedStatus)
+          seen.push(`${body.type}:${body.data.status}`)
+        }
+        return seen.sort()
+      }
+
+      // Stage 1, before anything ends it: the trial's events, re-read as trialing.
+      const handled = new Set<string>()
+      const trial = await check(handled, 'trialing')
+      console.log('[eval] trial events (type:status at delivery):', trial)
+      expect(trial).toContain('subscription.created:trialing')
+
+      // Stage 2: a revocation-only end (no cancel first), checked on the events it produces alone.
+      await polar.subscriptions.revoke(subs[0].id)
+      await new Promise((r) => setTimeout(r, 30_000))
+      const end = await check(handled, 'canceled')
+      console.log('[eval] revocation events (type:status at delivery):', end)
+      expect(end).toContain('subscription.revoked:canceled')
+
+      await polar.webhooks.deleteWebhookEndpoint(endpointId)
+      await polarMembers(config).removeAccount(orgId)
+    }, 300_000)
+  },
+)
