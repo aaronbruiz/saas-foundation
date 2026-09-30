@@ -60,7 +60,7 @@ trap 'rm -rf "$WORK"' EXIT
   // URL errors echo their input, password included: report without it.
   try { u = new URL(process.env.DATABASE_URL) } catch { console.error("[dump] ERROR: DATABASE_URL is not a valid URL"); process.exit(1) }
   const q = u.searchParams, d = decodeURIComponent
-  const env = { PGHOST: u.hostname, PGPORT: u.port || "5432", PGUSER: d(u.username),
+  const env = { PGHOST: u.hostname.replace(/^\[(.*)\]$/, "$1"), PGPORT: u.port || "5432", PGUSER: d(u.username),
     PGPASSWORD: d(u.password), PGDATABASE: d(u.pathname.slice(1)),
     PGSSLMODE: q.get("sslmode"), PGCHANNELBINDING: q.get("channel_binding"), PGOPTIONS: q.get("options") }
   for (const [k, v] of Object.entries(env)) {
@@ -76,7 +76,7 @@ trap 'rm -rf "$WORK"' EXIT
 PG_IMAGE=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d
 # Neon is reached over the default network; only a database on the host's loopback (local testing) needs the host's.
 NET=()
-grep -Eq '^PGHOST=(localhost|127\.[0-9.]+|::1|\[::1\])$' "$WORK/pg.env" && NET=(--network host)
+grep -Eq '^PGHOST=(localhost|127\.[0-9.]+|::1)$' "$WORK/pg.env" && NET=(--network host)
 pg() { docker run --rm -i "${NET[@]}" --env-file "$WORK/pg.env" "$PG_IMAGE" "$@"; }
 # Refuse an older client before touching the database (pg_dump can't dump a newer server).
 for tool in pg_dump pg_restore; do
