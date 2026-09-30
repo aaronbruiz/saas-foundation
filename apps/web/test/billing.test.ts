@@ -1,6 +1,6 @@
 import { billing, findOrganizationBySlug } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
 import {
   CHECKOUT,
@@ -24,8 +24,6 @@ import {
 } from '../src/modules/billing/service'
 import { acceptInvitation, inviteMember } from '../src/modules/organizations/service'
 import { createProject, listProjects } from '../src/modules/projects/service'
-import { stripeProvider } from '../src/modules/billing/providers/stripe'
-import { handleStripeWebhook } from '../src/modules/billing/webhook'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import {
@@ -37,84 +35,20 @@ import {
   signUp,
   type TestUser,
 } from './helpers'
+import {
+  SECRET,
+  deliver,
+  deliveryId,
+  now,
+  signed,
+  stubPolarApi,
+  subscriptionEvent,
+} from './polar-webhook'
 
 // ADR-0018: verified, deduplicated, ordered webhooks; org-owned subscription state; entitlements
-// with a safe default. Signatures are computed independently of the Stripe SDK (Stripe's scheme:
-// HMAC-SHA256 over `${t}.${body}`), so the test also checks the SDK path we rely on.
+// with a safe default. Deliveries are Polar's (ADR-0022), signed independently of Polar's SDK.
 
-const SECRET = 'whsec_test_only_not_a_real_secret'
-const now = () => Math.floor(Date.now() / 1000)
-
-async function sign(body: string, secret = SECRET, t = now()) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${body}`))
-  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('')
-  return `t=${t},v1=${hex}`
-}
-
-type SubOpts = {
-  eventId?: string
-  type?: string
-  created?: number
-  subId?: string
-  orgId?: string | null
-  status?: string
-  /** The price's lookup key; defaults to a price the policy sells. */
-  priceKey?: string | null
-}
-function subscriptionEvent(o: SubOpts = {}) {
-  return {
-    id: o.eventId ?? `evt_${crypto.randomUUID()}`,
-    object: 'event',
-    type: o.type ?? 'customer.subscription.updated',
-    created: o.created ?? now(),
-    data: {
-      object: {
-        id: o.subId ?? `sub_${crypto.randomUUID()}`,
-        object: 'subscription',
-        customer: 'cus_test',
-        status: o.status ?? 'active',
-        cancel_at_period_end: false,
-        metadata: o.orgId === null ? {} : { organization_id: o.orgId },
-        items: {
-          object: 'list',
-          data: [
-            {
-              current_period_end: 1_900_000_000,
-              price: {
-                id: 'price_test',
-                lookup_key: o.priceKey === undefined ? 'pro_monthly' : o.priceKey,
-              },
-            },
-          ],
-        },
-      },
-    },
-  }
-}
-
-async function deliver(payload: unknown, opts: { secret?: string; signature?: string } = {}) {
-  const body = typeof payload === 'string' ? payload : JSON.stringify(payload)
-  const signature = opts.signature ?? (await sign(body))
-  const res = await handleStripeWebhook(
-    new Request('http://localhost/api/billing/webhooks/stripe', {
-      method: 'POST',
-      headers: { 'stripe-signature': signature, 'content-type': 'application/json' },
-      body,
-    }),
-    'secret' in opts ? opts.secret : SECRET,
-  )
-  const json = res.headers.get('content-type')?.includes('json')
-    ? ((await res.json()) as { outcome: string })
-    : null
-  return { status: res.status, outcome: json?.outcome }
-}
+stubPolarApi()
 
 // Direct SQL for assertions and fixtures only (apps/web doesn't depend on drizzle-orm).
 type RawQuery = (sql: string, params: unknown[]) => Promise<{ rowCount: number | null }>
@@ -142,26 +76,29 @@ beforeAll(async () => {
   ;[orgA, orgB] = (await Promise.all([freshOrg('bill-a'), freshOrg('bill-b')])).map((o) => o.orgId)
 })
 
-describe('Stripe webhook: verification', () => {
+describe('billing webhook: verification', () => {
   it('fails closed without a configured secret', async () => {
-    const event = subscriptionEvent({ orgId: orgA })
-    expect((await deliver(event, { secret: undefined })).status).toBe(503)
-    expect(await eventRecorded(event.id)).toBe(false)
+    const id = deliveryId()
+    expect(
+      (await deliver(subscriptionEvent({ orgId: orgA }), { id, secret: undefined })).status,
+    ).toBe(503)
+    expect(await eventRecorded(id)).toBe(false)
   })
 
   it('rejects a bad, missing, stale or foreign signature before touching the database', async () => {
     const event = subscriptionEvent({ orgId: orgA })
     const body = JSON.stringify(event)
-    for (const signature of [
-      '',
-      't=1,v1=00',
-      await sign(body, 'whsec_someone_else'),
-      await sign(body, SECRET, now() - 3600), // outside Stripe's 5-minute tolerance
-      await sign(`${body} `), // signed a different body
+    const id = deliveryId()
+    for (const headers of [
+      {},
+      { 'webhook-id': id, 'webhook-timestamp': String(now()), 'webhook-signature': 'v1,AAAA' },
+      await signed(body, id, 'polar_whs_someone_else'),
+      await signed(body, id, SECRET, now() - 3600), // outside the Standard Webhooks tolerance
+      await signed(`${body} `, id), // signed a different body
     ]) {
-      expect((await deliver(body, { signature })).status).toBe(400)
+      expect((await deliver(body, { headers })).status).toBe(400)
     }
-    expect(await eventRecorded(event.id)).toBe(false)
+    expect(await eventRecorded(id)).toBe(false)
     expect(await subscriptionOf(orgA)).toBeNull()
   })
 
@@ -173,29 +110,30 @@ describe('Stripe webhook: verification', () => {
 
   it('rejects a verified event with an unexpected shape, without recording it', async () => {
     const event = subscriptionEvent({ orgId: orgA })
-    const broken = { ...event, data: { object: { object: 'subscription', id: 'sub_x' } } }
-    expect((await deliver(broken)).status).toBe(400)
-    expect(await eventRecorded(event.id)).toBe(false)
+    const id = deliveryId()
+    const broken = { ...event, data: { id: 'sub_x', status: 'active' } }
+    expect((await deliver(broken, { id })).status).toBe(400)
+    expect(await eventRecorded(id)).toBe(false)
   })
 })
 
-describe('Stripe webhook: state', () => {
+describe('billing webhook: state', () => {
   const subId = `sub_${crypto.randomUUID()}`
   const t0 = now() - 100
 
   it('stores the subscription on the organization named in its metadata', async () => {
     const r = await deliver(
-      subscriptionEvent({ orgId: orgA, subId, created: t0, type: 'customer.subscription.created' }),
+      subscriptionEvent({ orgId: orgA, subId, created: t0, type: 'subscription.created' }),
     )
     expect(r).toEqual({ status: 200, outcome: 'applied' })
     expect(await subscriptionOf(orgA)).toMatchObject({
-      provider: 'stripe',
-      providerCustomerId: 'cus_test',
+      provider: 'polar',
+      providerCustomerId: 'polar-customer-test',
       providerSubscriptionId: subId,
-      providerPriceId: 'price_test',
+      providerPriceId: 'polar-product-test',
       planKey: 'pro',
       status: 'active',
-      currentPeriodEnd: new Date(1_900_000_000 * 1000),
+      currentPeriodEnd: new Date('2030-01-01T00:00:00Z'),
       cancelAtPeriodEnd: false,
     })
     // Cross-tenant: nothing leaks to another organization.
@@ -204,10 +142,11 @@ describe('Stripe webhook: state', () => {
 
   it('processes a redelivered event only once', async () => {
     const event = subscriptionEvent({ orgId: orgA, subId, created: t0 + 10, status: 'past_due' })
-    expect((await deliver(event)).outcome).toBe('applied')
-    // Same event id, different content: a duplicate is acknowledged and changes nothing.
-    const replay = { ...event, data: { object: { ...event.data.object, status: 'canceled' } } }
-    expect(await deliver(replay)).toEqual({ status: 200, outcome: 'duplicate' })
+    const id = deliveryId()
+    expect((await deliver(event, { id })).outcome).toBe('applied')
+    // Same delivery id, different content: a duplicate is acknowledged and changes nothing.
+    const replay = { ...event, data: { ...event.data, status: 'canceled' } }
+    expect(await deliver(replay, { id })).toEqual({ status: 200, outcome: 'duplicate' })
     expect((await subscriptionOf(orgA))?.status).toBe('past_due')
   })
 
@@ -230,22 +169,19 @@ describe('Stripe webhook: state', () => {
   })
 
   it('acknowledges but does not apply events it cannot link to an organization', async () => {
-    const noMeta = subscriptionEvent({ orgId: null })
-    expect(await deliver(noMeta)).toEqual({ status: 200, outcome: 'unlinked' })
+    const id = deliveryId()
+    const noMeta = subscriptionEvent({ orgId: null, customerExternalId: null })
+    expect(await deliver(noMeta, { id })).toEqual({ status: 200, outcome: 'unlinked' })
     const unknownOrg = subscriptionEvent({ orgId: `org-${crypto.randomUUID()}` })
     expect(await deliver(unknownOrg)).toEqual({ status: 200, outcome: 'unlinked' })
-    expect(await eventRecorded(noMeta.id)).toBe(true)
+    expect(await eventRecorded(id)).toBe(true)
   })
 
   it('records other event types without changing state', async () => {
-    const e = {
-      id: `evt_${crypto.randomUUID()}`,
-      type: 'invoice.paid',
-      created: now(),
-      data: { object: { object: 'invoice' } },
-    }
-    expect(await deliver(e)).toEqual({ status: 200, outcome: 'ignored' })
-    expect(await eventRecorded(e.id)).toBe(true)
+    const id = deliveryId()
+    const e = { type: 'order.paid', timestamp: new Date().toISOString(), data: { id: 'order_x' } }
+    expect(await deliver(e, { id })).toEqual({ status: 200, outcome: 'ignored' })
+    expect(await eventRecorded(id)).toBe(true)
   })
 
   it('never moves a subscription to another organization (acknowledged, not applied)', async () => {
@@ -257,7 +193,7 @@ describe('Stripe webhook: state', () => {
   })
 })
 
-describe('Stripe webhook: replacing a subscription', () => {
+describe('billing webhook: replacing a subscription', () => {
   it('orders per subscription, not per organization', async () => {
     const { orgId } = await freshOrg()
     const [old, next, late] = ['old', 'next', 'late'].map((n) => `sub_${n}_${crypto.randomUUID()}`)
@@ -289,10 +225,15 @@ describe('Stripe webhook: replacing a subscription', () => {
     const t = now() - 1000
     const older = subscriptionEvent({ orgId, created: t })
     const newer = subscriptionEvent({ orgId, created: t + 10 })
-    const results = await Promise.all([deliver(older), deliver(newer), deliver(newer)])
+    const id = deliveryId()
+    const results = await Promise.all([
+      deliver(older),
+      deliver(newer, { id }),
+      deliver(newer, { id }),
+    ])
     expect(results.map((r) => r.status)).toEqual([200, 200, 200])
     expect(results.filter((r) => r.outcome === 'duplicate')).toHaveLength(1)
-    expect((await subscriptionOf(orgId))?.providerSubscriptionId).toBe(newer.data.object.id)
+    expect((await subscriptionOf(orgId))?.providerSubscriptionId).toBe(newer.data.id)
   })
 })
 
@@ -595,68 +536,12 @@ describe('billing actions', () => {
     await openBillingPortal(owner.headers, { tenant: slug }, provider)
     expect(calls.portal[0]).toMatchObject({
       organizationId: orgId,
-      customerId: 'cus_test',
+      customerId: 'polar-customer-test',
       userId: owner.userId,
     })
 
     await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
     await startCheckout(owner.headers, { tenant: slug, price }, provider)
-    expect(calls.checkout[0]).toMatchObject({ customerId: 'cus_test', trialDays: 0 })
-  })
-})
-
-// The Stripe adapter's own request (the service tests above use a fake provider). Stripe's fetch
-// client reads globalThis.fetch when the provider is built, so the stub answers its two calls.
-describe('stripe adapter checkout request', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  async function stripeCheckoutBody(customerId: string | null) {
-    const bodies: URLSearchParams[] = []
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      if (new URL(url).pathname === '/v1/prices')
-        return Response.json({
-          object: 'list',
-          data: [{ id: 'price_1', object: 'price' }],
-          has_more: false,
-          url: '/v1/prices',
-        })
-      bodies.push(new URLSearchParams(String(init.body)))
-      return Response.json({
-        id: 'cs_1',
-        object: 'checkout.session',
-        url: 'https://stripe.test/cs',
-      })
-    })
-    const url = await stripeProvider('sk_test_only_not_a_real_key').checkout({
-      organizationId: 'org_1',
-      organizationName: 'Acme Org Name',
-      customerId,
-      userId: 'user_seam_1',
-      customerEmail: 'owner@example.com',
-      priceKey: 'pro_monthly',
-      trialDays: 14,
-      successUrl: 'https://app.test/ok',
-      cancelUrl: 'https://app.test/back',
-    })
-    expect(url).toBe('https://stripe.test/cs')
-    expect(bodies).toHaveLength(1)
-    return bodies[0]!
-  }
-
-  it('always enables automatic tax and sends neither the user id nor the organization name', async () => {
-    const first = await stripeCheckoutBody(null)
-    expect(first.get('automatic_tax[enabled]')).toBe('true')
-    expect(first.get('customer_email')).toBe('owner@example.com')
-    expect(first.has('customer_update[address]')).toBe(false)
-    expect(first.get('subscription_data[metadata][organization_id]')).toBe('org_1')
-
-    const returning = await stripeCheckoutBody('cus_1')
-    expect(returning.get('automatic_tax[enabled]')).toBe('true')
-    expect(returning.get('customer')).toBe('cus_1')
-    expect(returning.get('customer_update[address]')).toBe('auto')
-    expect(returning.has('customer_email')).toBe(false)
-
-    for (const body of [first, returning])
-      expect([...body.values()].join(' ')).not.toMatch(/user_seam_1|Acme Org Name/)
+    expect(calls.checkout[0]).toMatchObject({ customerId: 'polar-customer-test', trialDays: 0 })
   })
 })

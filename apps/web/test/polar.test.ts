@@ -1,116 +1,29 @@
 import { createAuth } from '@saas-foundation/auth'
 import { billing, findOrganizationBySlug, listOwners } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
 import type { WebhookParser } from '../src/modules/billing/provider'
 import { polarWebhookParser } from '../src/modules/billing/providers/polar'
 import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
 import { createOrg, randomIp, signUp, type TestUser } from './helpers'
+import {
+  SECRET,
+  deliver,
+  now,
+  polar,
+  signed,
+  stubPolarApi,
+  subscriptionEvent,
+} from './polar-webhook'
 
 // ADR-0022: the Polar webhook (Standard Webhooks signature, linking by metadata AND customer
 // external_id) and the owner-role hooks that keep Polar members in step (revoke before, grant after).
 
-const SECRET = 'polar_whs_test_only_not_a_real_secret'
-const now = () => Math.floor(Date.now() / 1000)
 const orgIdOf = async (slug: string) => (await withDb((db) => findOrganizationBySlug(db, slug)))!.id
 
-// Standard Webhooks: base64(HMAC-SHA256(secret, `${id}.${timestamp}.${body}`)); Polar's SDK accepts
-// the dashboard secret as the raw key.
-async function signed(body: string, id: string, secret = SECRET, t = now()) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const mac = new Uint8Array(
-    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${id}.${t}.${body}`)),
-  )
-  return {
-    'webhook-id': id,
-    'webhook-timestamp': String(t),
-    'webhook-signature': `v1,${btoa(String.fromCharCode(...mac))}`,
-  }
-}
-
-type SubOpts = {
-  type?: string
-  subId?: string
-  orgId?: string | null
-  customerExternalId?: string | null
-  status?: string
-  priceKey?: string
-  timestamp?: string
-}
-// The shape observed in the sandbox (eval run r2-0929), reduced to what the adapter reads.
-function subscriptionEvent(o: SubOpts = {}) {
-  return {
-    type: o.type ?? 'subscription.updated',
-    timestamp: o.timestamp ?? new Date().toISOString(),
-    api_version: '2026-04',
-    data: {
-      id: o.subId ?? crypto.randomUUID(),
-      status: o.status ?? 'active',
-      customer_id: 'polar-customer-test',
-      customer: {
-        external_id: o.customerExternalId === undefined ? o.orgId : o.customerExternalId,
-      },
-      product_id: 'polar-product-test',
-      product: { metadata: { price_key: o.priceKey ?? 'pro_monthly' } },
-      metadata: o.orgId === null ? {} : { organization_id: o.orgId },
-      current_period_end: '2030-01-01T00:00:00Z',
-      cancel_at_period_end: false,
-    },
-  }
-}
-
-const config = { accessToken: 'polar_oat_test_only', server: 'sandbox' as const }
-/** Polar's current subscriptions, as the stubbed GET /v1/subscriptions/{id} answers them. */
-const polarState = new Map<string, unknown>()
-let polarDown = false
-beforeEach(() => {
-  polarDown = false
-  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-    const url = input instanceof Request ? input.url : String(input)
-    const subId = new URL(url).pathname.match(/^\/v1\/subscriptions\/([^/]+)$/)?.[1]
-    if (polarDown || !subId || !polarState.has(subId))
-      return new Response('{"detail":"unavailable"}', {
-        status: polarDown ? 500 : 404,
-        headers: { 'content-type': 'application/json' },
-      })
-    return Response.json(polarState.get(subId))
-  })
-})
-afterEach(() => vi.unstubAllGlobals())
-
-/**
- * Delivers through the Polar-mode parser. Polar's current state for the subscription is the
- * payload's own unless `current` says otherwise.
- */
-async function deliver(
-  payload: { type?: string; data?: { id?: string } },
-  opts: { secret?: string; id?: string; headers?: Record<string, string>; current?: unknown } = {},
-) {
-  const body = JSON.stringify(payload)
-  if (payload.data?.id) polarState.set(payload.data.id, opts.current ?? payload.data)
-  const headers = opts.headers ?? (await signed(body, opts.id ?? `msg_${crypto.randomUUID()}`))
-  const res = await handleBillingWebhook(
-    new Request('http://localhost/api/billing/webhooks/polar', {
-      method: 'POST',
-      headers: { ...headers, 'content-type': 'application/json' },
-      body,
-    }),
-    'secret' in opts ? opts.secret : SECRET,
-    polarWebhookParser(config),
-  )
-  const json = res.headers.get('content-type')?.includes('json')
-    ? ((await res.json()) as { outcome: string })
-    : null
-  return { status: res.status, outcome: json?.outcome }
-}
+stubPolarApi()
 
 async function newOrg(prefix: string) {
   const owner = await signUp()
@@ -175,7 +88,7 @@ describe('polar webhook', () => {
     const id = `msg_${crypto.randomUUID()}`
     const event = subscriptionEvent({ orgId })
     expect((await deliver(event, { id })).outcome).toBe('applied')
-    polarDown = true
+    polar.down = true
     expect(await deliver(event, { id })).toEqual({ status: 200, outcome: 'duplicate' })
     // A new delivery can't be applied without the re-read: retried later.
     expect((await deliver(subscriptionEvent({ orgId }))).status).toBe(503)

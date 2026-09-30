@@ -8,8 +8,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 const providerSdksOnlyInProviders = {
-  // Anchored: gitignore-style groups would also match our own `./providers/stripe`.
-  regex: '^(stripe|@polar-sh/[^/]+)(/.*)?$',
+  regex: '^@polar-sh/[^/]+(/.*)?$',
   message:
     'Only apps/web/src/modules/billing/providers/** may import a billing provider SDK (AGENTS.md invariant 6).',
 }

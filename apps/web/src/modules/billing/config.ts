@@ -11,7 +11,6 @@ import {
   polarWebhookParser,
   type PolarConfig,
 } from './providers/polar'
-import { stripeProvider } from './providers/stripe'
 
 // Which provider is configured, from Worker secrets and vars. Kept apart from service.ts so
 // server/auth.ts can wire the member sync without importing the service (which imports the tenant
@@ -21,7 +20,6 @@ const vars = env as unknown as {
   BILLING_PROVIDER?: string
   POLAR_ACCESS_TOKEN?: string
   POLAR_SERVER?: string
-  STRIPE_SECRET_KEY?: string
 }
 
 /**
@@ -41,11 +39,8 @@ const polarConfig = (): PolarConfig | null =>
 
 /** The configured provider, or null (local dev, previews): billing actions then answer 503. */
 export const configuredProvider = (): BillingProvider | null => {
-  if (polarMode()) {
-    const polar = polarConfig()
-    return polar && polarProvider(polar)
-  }
-  return vars.STRIPE_SECRET_KEY ? stripeProvider(vars.STRIPE_SECRET_KEY) : null
+  const polar = polarMode() ? polarConfig() : null
+  return polar && polarProvider(polar)
 }
 
 /** In Polar mode without a token, owner changes are refused rather than left unsynced. */
