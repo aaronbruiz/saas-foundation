@@ -2,7 +2,7 @@
 # Daily snapshot of production `main` as a Neon branch without compute (ADR-0003, backup option A).
 # Keeps the newest BACKUP_KEEP snapshots (default 3; Neon Free: 10 branches and 0.5 GB per project).
 # Snapshots live with the same provider: they cover mistakes older than Neon's 6 h restore window,
-# not a Neon outage. An off-provider dump (option B) is registered for later in ADR-0003.
+# not a Neon outage; the off-provider dump (option B) is `dump.sh` (ADR-0023).
 # Usage: NEON_PROJECT_ID=... [NEON_API_KEY=...] [BACKUP_KEEP=3] [DRY_RUN=1] scripts/backup/snapshot.sh
 set -euo pipefail
 : "${NEON_PROJECT_ID:?}"

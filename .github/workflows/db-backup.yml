@@ -1,15 +1,16 @@
-name: DB snapshots
+name: DB backups
 
-# ADR-0003 backup option A: a daily Neon branch snapshot of production `main` (no compute),
-# keeping the newest BACKUP_KEEP (default 3). Covers mistakes older than Neon Free's 6 h
-# restore window; not a provider outage (option B, an off-provider dump, is registered for later).
+# ADR-0003 backup option A (`snapshot`): a daily Neon branch snapshot of production `main` (no compute),
+# keeping the newest BACKUP_KEEP (default 3). Covers mistakes older than Neon Free's 6 h restore window.
+# ADR-0023 backup option B (`dump`): a daily pg_dump of `main` to Cloudflare R2, kept 30 days by the
+# bucket's lifecycle rule. Covers a Neon outage or the loss of the Neon project. The jobs are independent.
 on:
   schedule:
     - cron: '23 4 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: db-snapshots
+  group: db-backups
   cancel-in-progress: false
 
 permissions:
@@ -37,3 +38,26 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           BACKUP_KEEP: ${{ vars.BACKUP_KEEP || '3' }}
         run: scripts/backup/snapshot.sh
+
+  dump:
+    runs-on: ubuntu-latest
+    # Same fence as `snapshot`: every credential below lives only in `production` (ADR-0019, ADR-0023).
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: pnpm install --frozen-lockfile
+      - name: Dump production main to R2
+        # Secrets only reach this step, not checkout/setup/install (dependency lifecycle scripts).
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          R2_BACKUP_ENDPOINT: ${{ secrets.R2_BACKUP_ENDPOINT }}
+          R2_BACKUP_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
+        run: scripts/backup/dump.sh
