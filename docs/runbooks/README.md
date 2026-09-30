@@ -69,7 +69,7 @@ Not connected yet: without the secrets below, the billing actions and the webhoo
 
 1. Stripe dashboard → Product "Pro" with two recurring prices (USD in the reference setup) whose **lookup keys** are `pro_monthly` and `pro_yearly`, matching `PLANS` in `apps/web/src/modules/billing/policy.ts`. Amounts live only in Stripe.
 2. Customer portal settings: allow cancel (at period end), switching between those two prices, payment method updates and invoice history.
-3. Stripe Tax: activate it and add registrations. `CHECKOUT.automaticTax` is on, so Checkout fails without it.
+3. Stripe Tax: activate it and add registrations. The Stripe adapter turns automatic tax on for every checkout, so Checkout fails without it.
 4. Webhook endpoint `https://<production hostname>/api/billing/webhooks/stripe`, events `customer.subscription.created`, `.updated`, `.deleted`, `.paused`, `.resumed`, `.trial_will_end`.
 5. Worker secrets (owner): `pnpm --filter web exec wrangler secret put STRIPE_SECRET_KEY`, and `… STRIPE_WEBHOOK_SECRET` (the endpoint's signing secret).
    - `STRIPE_SECRET_KEY` can be a restricted key. The code calls only `prices.list`, `checkout.sessions.create` and `billingPortal.sessions.create`, so it needs read access to Prices and write access to Checkout Sessions and billing portal sessions. Step 6 exercises all three; a missing permission shows up there as a Stripe permission error.

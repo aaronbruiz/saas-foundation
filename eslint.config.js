@@ -7,10 +7,11 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
-const stripeOnlyInProviders = {
-  name: 'stripe',
+const providerSdksOnlyInProviders = {
+  // Anchored: gitignore-style groups would also match our own `./providers/stripe`.
+  regex: '^(stripe|@polar-sh/[^/]+)(/.*)?$',
   message:
-    'Only apps/web/src/modules/billing/providers/** may import stripe (AGENTS.md invariant 6).',
+    'Only apps/web/src/modules/billing/providers/** may import a billing provider SDK (AGENTS.md invariant 6).',
 }
 
 const uiMustNotTouchDataOrAuth = {
@@ -44,7 +45,7 @@ export default defineConfig([
   {
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
-      'no-restricted-imports': ['error', { paths: [stripeOnlyInProviders] }],
+      'no-restricted-imports': ['error', { patterns: [providerSdksOnlyInProviders] }],
     },
   },
   {
@@ -60,7 +61,7 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [stripeOnlyInProviders], patterns: [uiMustNotTouchDataOrAuth] },
+        { patterns: [providerSdksOnlyInProviders, uiMustNotTouchDataOrAuth] },
       ],
     },
   },
@@ -71,8 +72,8 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          paths: [stripeOnlyInProviders],
           patterns: [
+            providerSdksOnlyInProviders,
             {
               ...uiMustNotTouchDataOrAuth,
               group: uiMustNotTouchDataOrAuth.group.filter((g) => !g.includes('/auth')),
@@ -87,7 +88,7 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [stripeOnlyInProviders], patterns: [noInternalPackages] },
+        { patterns: [providerSdksOnlyInProviders, noInternalPackages] },
       ],
     },
   },

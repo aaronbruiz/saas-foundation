@@ -5,21 +5,27 @@ import { planForPrice } from './policy'
 import {
   InvalidPayload,
   InvalidSignature,
-  parseStripeWebhook,
   type ProviderEvent,
-} from './providers/stripe'
+  type WebhookParser,
+} from './provider'
+import { parseStripeWebhook } from './providers/stripe'
 
-// Bytes. Stripe's payloads are far below this; anything bigger isn't worth buffering or an HMAC.
+// Bytes. Provider payloads are far below this; anything bigger isn't worth buffering or an HMAC.
 const MAX_BODY = 512 * 1024
 
+/** Stripe webhook endpoint (ADR-0018). Worker secret STRIPE_WEBHOOK_SECRET. */
+export const handleStripeWebhook = (request: Request, secret: string | undefined) =>
+  handleBillingWebhook(request, secret, parseStripeWebhook)
+
 /**
- * Stripe webhook endpoint (ADR-0018). Verified on the raw body, deduplicated by event id, applied
- * in one transaction. Without a configured secret it refuses everything (fail closed): previews
- * and local dev have none.
+ * A provider's webhook endpoint (ADR-0018). Verified on the raw body by the provider's `parse`,
+ * deduplicated by event id, applied in one transaction. Without a configured secret it refuses
+ * everything (fail closed): previews and local dev have none.
  */
-export async function handleStripeWebhook(
+export async function handleBillingWebhook(
   request: Request,
   secret: string | undefined,
+  parse: WebhookParser,
 ): Promise<Response> {
   const rayId = request.headers.get('cf-ray') ?? undefined
   if (!secret) {
@@ -31,7 +37,7 @@ export async function handleStripeWebhook(
 
   let parsed: ProviderEvent
   try {
-    parsed = await parseStripeWebhook(body, request.headers.get('stripe-signature'), secret)
+    parsed = await parse(body, request.headers, secret)
   } catch (e) {
     if (e instanceof InvalidSignature) {
       logWarn('billing.webhook.bad_signature', { rayId })

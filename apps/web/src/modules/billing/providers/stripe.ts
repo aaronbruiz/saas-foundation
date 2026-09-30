@@ -1,22 +1,23 @@
 // The only place that knows Stripe (ADR-0009, AGENTS.md invariant 6). Turns a signed webhook
 // delivery into a provider-neutral event, and creates Checkout and billing-portal sessions.
 // Nothing Stripe-shaped leaves this file.
-import type { BillingEvent, SubscriptionSnapshot, SubscriptionStatus } from '@saas-foundation/db'
+import type { SubscriptionStatus } from '@saas-foundation/db'
 import Stripe from 'stripe'
 import { z } from 'zod'
-import type { BillingProvider, CheckoutRequest, PortalRequest } from '../provider'
+import {
+  InvalidPayload,
+  InvalidSignature,
+  PriceNotFound,
+  type BillingProvider,
+  type CheckoutRequest,
+  type PortalRequest,
+  type WebhookParser,
+} from '../provider'
 
 export const PROVIDER = 'stripe'
 
 /** Metadata key our checkout sets on the subscription to link it to an organization. */
 export const ORGANIZATION_METADATA_KEY = 'organization_id'
-
-export class InvalidSignature extends Error {
-  name = 'InvalidSignature'
-}
-export class InvalidPayload extends Error {
-  name = 'InvalidPayload'
-}
 
 const STATUS: Record<string, SubscriptionStatus> = {
   active: 'active',
@@ -54,23 +55,15 @@ const eventSchema = z.object({
   data: z.object({ object: z.object({ object: z.string() }).loose() }),
 })
 
-/** A verified event; the plan isn't known here (the product policy maps `priceKey` to it). */
-export type ProviderEvent = Omit<BillingEvent, 'subscription'> & {
-  subscription: (Omit<SubscriptionSnapshot, 'planKey'> & { priceKey: string | null }) | null
-}
-
 /**
- * Verifies the signature on the raw body BEFORE parsing anything (AGENTS.md invariant 11), then
- * maps the event. Throws InvalidSignature or InvalidPayload.
+ * Verifies the `stripe-signature` header on the raw body BEFORE parsing anything (AGENTS.md
+ * invariant 11), then maps the event. Throws InvalidSignature or InvalidPayload.
  */
-export async function parseStripeWebhook(
-  rawBody: string,
-  signature: string | null,
-  secret: string,
-): Promise<ProviderEvent> {
+export const parseStripeWebhook: WebhookParser = async (rawBody, headers, secret) => {
+  const signature = headers.get('stripe-signature') ?? ''
   let verified: unknown
   try {
-    verified = await Stripe.webhooks.constructEventAsync(rawBody, signature ?? '', secret)
+    verified = await Stripe.webhooks.constructEventAsync(rawBody, signature, secret)
   } catch {
     throw new InvalidSignature('signature verification failed')
   }
@@ -100,11 +93,11 @@ export async function parseStripeWebhook(
   }
 }
 
-export class PriceNotFound extends Error {
-  name = 'PriceNotFound'
-}
-
-/** Stripe behind the provider interface. `secretKey` is the Worker secret STRIPE_SECRET_KEY. */
+/**
+ * Stripe behind the provider interface. `secretKey` is the Worker secret STRIPE_SECRET_KEY. Tax is
+ * Stripe Tax (ADR-0020): automatic tax on every checkout, which needs tax registrations before
+ * going live.
+ */
 export function stripeProvider(secretKey: string): BillingProvider {
   const stripe = new Stripe(secretKey)
   return {
@@ -131,10 +124,10 @@ export function stripeProvider(secretKey: string): BillingProvider {
         ...(req.customerId
           ? {
               customer: req.customerId,
-              ...(req.automaticTax && { customer_update: { address: 'auto' as const } }),
+              customer_update: { address: 'auto' as const },
             }
           : { customer_email: req.customerEmail }),
-        automatic_tax: { enabled: req.automaticTax },
+        automatic_tax: { enabled: true },
         success_url: req.successUrl,
         cancel_url: req.cancelUrl,
       })
