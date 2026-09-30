@@ -47,6 +47,13 @@ A gap found while doing this: TanStack Start turns errors thrown in server funct
 
   If Cloudflare's Workers observability alerts can express this on our plan, configure them and record it here. If not, that unmet requirement is the trigger for Sentry.
 
+  - _Checked 2026-09-30 (Cloudflare docs "Workers Issues" and "Set up an automation"; owner in the dashboard):_
+    - **Workers Issues** (open beta, free during the beta, all Workers plans) is enabled in `wrangler.jsonc` (`observability.issues`). It records an occurrence for uncaught exceptions, failed invocations, `5xx` responses and error-level console logs, so `logError`'s `server_fn.unhandled` and `health.db_down` are covered, and groups them into issues.
+    - Alerting from it is an **automation** (dashboard: the Worker's Issues → Automations): trigger "occurrence threshold" (minimum 1; runs once per issue when crossed) or "recurrence after inactivity" (1 hour to 365 days); destinations: generic webhook (with a secret or mTLS), chat, incident management, coding agents. **No email destination** is documented.
+    - Gaps against this requirement: no email; a threshold automation doesn't re-alert while a known issue keeps occurring; no rate rule (5xx share over 5 minutes); delivery latency isn't documented. Cloudflare's webhook reference lists a `workers_observability_alert` notification type, but its setup isn't documented, and creating it in the dashboard failed for the owner (not retried).
+    - **Not configured here** (owner decision): no automation and no destination. The deploying project chooses the destination, adds the automations (threshold 1 and recurrence after 1 hour), tests one controlled failure end to end within 15 minutes, and decides the rate rule (the Cloudflare notification, if it works by then, or Sentry). Issue data carries error messages and stack traces: vet the destination's access and data handling first.
+    - **Until then this requirement is unmet, and the ADR-0014 data gate stays closed on it.**
+
 - **Sentry (next step, not adopted).** Adopt it with a new ADR (DSN as a Worker secret, PII scrubbing on, source maps uploaded from CI) only when one of these is needed **and** Cloudflare has been checked and doesn't cover it:
   - issue grouping;
   - alerting;

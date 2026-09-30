@@ -37,6 +37,7 @@ Where to look when production fails:
   - A user-reported Cloudflare ray id (shown on Cloudflare error pages) matches `rayId`.
   - Each request's invocation log shows its status and outcome.
 - **Live:** `pnpm --filter web exec wrangler tail saas-foundation --format pretty --search '"level":"error"'`. Don't rely on `--status error`: it filters on the invocation's outcome, and server-function failures are turned into responses, so those invocations end `ok`.
+- **Issues:** Workers & Pages → `saas-foundation` → Issues groups exceptions, `5xx` responses and error-level logs (ADR-0015). No automation or destination is configured yet, so nothing alerts; check it by hand.
 - **Health:** `curl -s https://<domain>/api/health` returns `{ ok, db }`. A `503` means the database is unreachable; the reason is in the `health.db_down` event.
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
