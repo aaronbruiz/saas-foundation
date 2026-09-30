@@ -1,6 +1,6 @@
 # ADR-0023: Off-provider database dumps to Cloudflare R2
 
-Status: Accepted (owner decisions 2026-09-30). First live dump 2026-09-30; a restore drill passed 2026-09-30 on a dump from a manually dispatched run of the job; the data gate's restore test on a scheduled run's dump is pending (runbook "Database"). · Date: 2026-09-30
+Status: Accepted (owner decisions 2026-09-30). First live dump 2026-09-30; restore test passed 2026-09-30 on a dump from a manually dispatched run of the job, which the owner accepted as the data gate's restore test (runbook "Database"). · Date: 2026-09-30
 
 Implements [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md)'s backup option B, the trigger [ADR-0007](0007-defer-cloudflare-products.md) names for R2, and the backup half of [ADR-0014](0014-first-production-launch-gates.md)'s data gate.
 
@@ -25,7 +25,8 @@ Implements [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md)'s backup opt
 3. **Credentials** (environment `production`, `main` only; runbook "CI credentials"): secrets `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY` and `R2_BACKUP_ENDPOINT` from the account API token `r2-dump-backups` (Object Read & Write on this bucket only), variable `R2_BACKUP_BUCKET`. The token's bearer value isn't stored. Like `NEON_API_KEY`, they reach only the dump step.
 4. **Encryption: R2's managed encryption at rest only** (owner decision; this is also the template default). **Accepted risk:** anyone holding the R2 credentials, or with dashboard access to the bucket, can read every dump in plain text. The credentials' only defense is the `production` environment's fence.
    - **Documented, not built:** client-side public-key encryption with `age`. CI would hold only the public key (`BACKUP_AGE_RECIPIENT`) and the owner the private key, offline; a leaked R2 credential would then expose nothing (the Neon key still reaches production data directly). Adopting it later is a change to `dump.sh` and the restore procedure, recorded in a new ADR.
-5. **Restore** (runbook "Database"): download a dump and its `.sha256` from the dashboard, check it, `pg_restore --no-owner --no-acl` into a local `postgres:17` container, and compare exact row counts per table with production. Nothing touches Neon. The data gate's "restore tested" condition is met when this is done once against a dump written by the scheduled job and recorded in the runbook.
+5. **Restore** (runbook "Database"): download a dump and its `.sha256` from the dashboard, check it, `pg_restore --no-owner --no-acl` into a local `postgres:17` container, and compare exact row counts per table with production. Nothing touches Neon. The data gate's "restore tested" condition is met when this is done once against a dump written by the `dump` job and recorded in the runbook.
+   - _Clarification (owner, 2026-09-30):_ a dump from a manually dispatched run of the job counts; it runs the same workflow, script, image and credentials as the schedule. Met on 2026-09-30 (runbook "Database").
 6. **No Worker binding.** R2 is reached only through its S3 API from CI; `apps/web/wrangler.jsonc` doesn't change and no preview can see the bucket. Previews stay isolated because the credentials exist only in `production`, which PR code never runs in.
 
 ## Alternatives
