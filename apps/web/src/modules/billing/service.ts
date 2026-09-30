@@ -65,6 +65,8 @@ export async function startCheckout(
         customerId: sub?.providerCustomerId ?? null,
         userId: ctx.userId,
         customerEmail: ctx.email,
+        // Set by Cloudflare's edge, which overwrites any client value (like auth's rate limit).
+        customerIp: headers.get('cf-connecting-ip'),
         priceKey: price,
         trialDays: trialDaysFor(sub),
         successUrl: `${back}?checkout=success`,

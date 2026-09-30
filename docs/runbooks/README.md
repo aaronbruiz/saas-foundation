@@ -75,7 +75,7 @@ Polar is the billing provider and merchant of record: it computes, collects and 
 6. Worker secrets (owner), `pnpm --filter web exec wrangler secret put <NAME>` for each: `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER` (`sandbox` or `production`; unset = sandbox), then `BILLING_PROVIDER` (`polar`) last.
    - In Polar mode without the token, billing actions and subscription webhooks answer 503, and owner removals, demotions and organization deletion are refused (fail closed); without the webhook secret the webhook answers 503.
    - Don't unset `BILLING_PROVIDER` once organizations have Polar customers: owner changes would stop reaching Polar.
-7. Check it: as the owner, Billing → Upgrade → test card (sandbox) → back on Billing, the plan shows Pro once the webhook has arrived; Manage billing opens the Polar portal showing only this organization's subscription.
+7. Check it: as the owner, Billing → Upgrade → the checkout should start at your own country (the app forwards Cloudflare's `cf-connecting-ip`; local dev sends `127.0.0.1`, so none there) → test card (sandbox) → back on Billing, the plan shows Pro once the webhook has arrived; Manage billing opens the Polar portal showing only this organization's subscription.
 
 The adapter itself can also be exercised against the sandbox with `apps/web/eval/polar-provider.test.ts` (not part of `pnpm test`; see its header).
 
@@ -83,7 +83,7 @@ The adapter itself can also be exercised against the sandbox with `apps/web/eval
 
 Each check must pass in the sandbox, through a checkout opened by the app, and be recorded here (date and what was observed) in a PR before production is switched to Polar. Webhook deliveries need the endpoint reachable from Polar; Polar's delivery log shows each event.
 
-- [ ] **Billing country:** the checkout starts with no country or the buyer's, never an unrelated default; the country the buyer picks is what Polar stores (customer billing address) and what the invoice shows. Open: the eval runs' checkouts stored Angola, then `AR`, neither chosen.
+- [ ] **Billing country:** the checkout starts with no country or the buyer's, never an unrelated default; the country the buyer picks is what Polar stores (customer billing address) and what the invoice shows. 2026-09-29 (sandbox): checkouts opened by the app without the buyer's IP started with no country; the app now forwards Cloudflare's `cf-connecting-ip` as `customer_ip_address`, and checkouts opened through the adapter (sandbox eval, IP supplied by the harness) with a Peruvian IP started prefilled `PE` (direct API probes: `8.8.8.8` → `US`, `127.0.0.1` → none, accepted). Kept as prefilled, the paid order stored `PE`; changed to Chile on Polar's page, the paid order stored `CL` and the invoice billed to Chile. The eval runs' earlier `AO`, `AR` and `PE` were likewise the buyer's deliberate picks, each stored and invoiced as picked. Remaining: the same through the deployed app (step 7): the checkout starts at the buyer's country; then tick this.
 - [ ] **Plan change:** switching `pro_monthly` ↔ `pro_yearly` in the portal produces `subscription.updated` events that link to the organization and map to the new `price_key`, with Polar's proration.
 - [ ] **Failed renewal:** a subscription whose renewal is charged to a failing test card goes `past_due` (plan kept, ADR-0020) and then `unpaid` or `canceled` (Free), each event linked and applied.
 - [ ] **Cancellation at period end:** cancelling in the portal keeps `active` with `cancel_at_period_end` until the period ends, then Free.

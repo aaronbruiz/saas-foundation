@@ -21,3 +21,4 @@ test-results
 
 # local-only notes (handoffs etc.)
 .local/
+.claude/worktrees/

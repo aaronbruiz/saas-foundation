@@ -12,6 +12,8 @@ export type CheckoutRequest = {
   /** The member starting the checkout (`billing:manage`). */
   userId: string
   customerEmail: string
+  /** The buyer's IP (Cloudflare's `cf-connecting-ip`), so the provider prefills their country. */
+  customerIp: string | null
   priceKey: string
   trialDays: number
   successUrl: string

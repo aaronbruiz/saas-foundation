@@ -4,7 +4,7 @@ import { env } from 'cloudflare:workers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
 import type { WebhookParser } from '../src/modules/billing/provider'
-import { polarWebhookParser } from '../src/modules/billing/providers/polar'
+import { polarProvider, polarWebhookParser } from '../src/modules/billing/providers/polar'
 import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
 import { createOrg, randomIp, signUp, type TestUser } from './helpers'
@@ -190,6 +190,68 @@ describe('polar webhook in Polar mode (subscription re-read)', () => {
       outcome: 'applied',
     })
     expect((await getEntitlements(orgId)).planKey).toBe('pro')
+  })
+})
+
+describe('polar checkout request', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  /** Polar's API for one existing customer and product; returns the checkout create bodies. */
+  function stubCheckoutApi(userId: string) {
+    const bodies: Record<string, unknown>[] = []
+    const page = (items: unknown[]) => ({ items, pagination: { total_count: 1, max_page: 1 } })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init)
+      const path = new URL(req.url).pathname
+      if (path.startsWith('/v1/customers/external/')) return Response.json({ id: 'cus_1' })
+      if (path === '/v1/customers/cus_1/members')
+        return Response.json(page([{ external_id: userId }]))
+      if (path === '/v1/products/')
+        return Response.json(page([{ id: 'prod_1', metadata: { price_key: 'pro_monthly' } }]))
+      if (req.method === 'POST' && path === '/v1/checkouts/') {
+        bodies.push((await req.json()) as Record<string, unknown>)
+        return Response.json({ url: 'https://sandbox.polar.sh/checkout/test' })
+      }
+      return new Response(`{"detail":"unexpected ${req.method} ${path}"}`, { status: 500 })
+    })
+    return bodies
+  }
+  const request = (customerIp: string | null) => ({
+    organizationId: 'org-1',
+    organizationName: 'Org 1',
+    customerId: null,
+    userId: 'user-1',
+    customerEmail: 'owner@test.local',
+    customerIp,
+    priceKey: 'pro_monthly',
+    trialDays: 14,
+    successUrl: 'http://localhost:3000/t/org-1/billing?checkout=success',
+    cancelUrl: 'http://localhost:3000/t/org-1/billing',
+  })
+  const provider = polarProvider({ accessToken: 'polar_oat_test_only', server: 'sandbox' })
+
+  it("forwards the buyer's IP so Polar prefills their billing country", async () => {
+    const bodies = stubCheckoutApi('user-1')
+    expect(await provider.checkout(request('190.12.64.1'))).toBe(
+      'https://sandbox.polar.sh/checkout/test',
+    )
+    expect(bodies).toEqual([
+      expect.objectContaining({
+        products: ['prod_1'],
+        customer_id: 'cus_1',
+        customer_ip_address: '190.12.64.1',
+        metadata: { organization_id: 'org-1' },
+      }),
+    ])
+    // Never a preset address: that would force the full address form (and it isn't ours to guess).
+    expect(bodies[0]).not.toHaveProperty('customer_billing_address')
+  })
+
+  it('sends no IP when the request has none (Polar leaves the country blank)', async () => {
+    const bodies = stubCheckoutApi('user-1')
+    await provider.checkout(request(null))
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0]).not.toHaveProperty('customer_ip_address')
   })
 })
 
