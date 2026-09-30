@@ -207,8 +207,8 @@ importers:
         specifier: ^17.12.0
         version: 17.12.0
       neon:
-        specifier: 6.2.3
-        version: 6.2.3(hono@4.13.9)(supports-color@10.2.2)
+        specifier: 6.3.0
+        version: 6.3.0(hono@4.13.9)(supports-color@10.2.2)
       prettier:
         specifier: ^3.9.9
         version: 3.9.9
@@ -3307,8 +3307,8 @@ packages:
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
-  neon@6.2.3:
-    resolution: {integrity: sha512-VB4O3mBCeSx1lbNVI9TbiO8uywF7VtztukFm/F1acIaY25+sDMLjh47+tW1Ft+HQpx/hqRYGGNag0g42NQE+jw==}
+  neon@6.3.0:
+    resolution: {integrity: sha512-syW7/QufQz2zR+yKZyx5OjUf1dxniJMwB2XhO+KTul4u/kGebRbGYRF6VUPpOoWDoUOf4RdBl2Onb054ujRTPg==}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -6672,7 +6672,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  neon@6.2.3(hono@4.13.9)(supports-color@10.2.2):
+  neon@6.3.0(hono@4.13.9)(supports-color@10.2.2):
     dependencies:
       '@clack/core': 0.4.2
       '@clack/prompts': 0.10.1
