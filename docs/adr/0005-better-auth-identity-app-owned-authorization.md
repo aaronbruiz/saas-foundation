@@ -55,7 +55,7 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
 
 **No test exemption** (owner decision 2026-09-28): E2E runs against the real limit; any bypass would be code or config that could reach production. Each run makes 3 sign-ups, so leave about a minute between local runs.
 
-**Accepted limits:** counting is per IP only, so distributed credential stuffing (many IPs) is not stopped by either layer; per-account lockout and bot protection (Turnstile) wait for a trigger (abuse observed or before public launch). Every `/api/auth/*` request costs one extra DB round-trip. Users behind one NAT share a bucket.
+**Accepted limits:** counting is per IP only, so distributed credential stuffing (many IPs) is not stopped by either layer; per-account lockout and bot protection (Turnstile) wait for a trigger (abuse observed or before public launch). _2026-10-01: bot protection decided in [ADR-0025](0025-turnstile-bot-protection-on-auth.md) (Turnstile on sign-up, sign-in and the unauthenticated email endpoints, after this rate limit); per-account lockout still waits._ Every `/api/auth/*` request costs one extra DB round-trip. Users behind one NAT share a bucket.
 
 ## Consequences
 

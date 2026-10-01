@@ -28,6 +28,9 @@ export default defineConfig({
           BETTER_AUTH_URL: 'http://localhost:3000',
           // ADR-0014: tests sign up many users; the closed/allowlist modes are tested explicitly.
           SIGNUP_MODE: 'open',
+          // ADR-0025: Cloudflare's always-pass test keys; siteverify is answered by test/setup.ts.
+          TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+          TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
         },
       },
     }),
@@ -41,6 +44,7 @@ export default defineConfig({
     maxWorkers: 4,
     // Node-side: apply migrations to app_test before any workerd test runs.
     globalSetup: ['./test/global-setup.ts'],
+    setupFiles: ['./test/setup.ts'],
   },
   resolve: {
     // Test runner only: pg's CommonJS `require()` of pg-protocol resolves to its ESM build under the

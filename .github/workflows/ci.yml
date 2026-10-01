@@ -83,7 +83,10 @@ jobs:
       - name: E2E (local dev server)
         run: |
           { echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"; echo 'BETTER_AUTH_URL=http://localhost:3000'
-            echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'; } >apps/web/.dev.vars
+            echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'
+            # ADR-0025: Cloudflare's public always-pass Turnstile test keys.
+            echo 'TURNSTILE_SITE_KEY=1x00000000000000000000AA'
+            echo 'TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA'; } >apps/web/.dev.vars
           pnpm db:migrate
           pnpm --filter web exec playwright install --with-deps chromium
           pnpm test:e2e

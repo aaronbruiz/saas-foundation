@@ -1,5 +1,5 @@
 import { env, waitUntil } from 'cloudflare:workers'
-import { createAuth } from '@saas-foundation/auth'
+import { createAuth, type BotProtection } from '@saas-foundation/auth'
 import { billing, listOwners, type Db } from '@saas-foundation/db'
 import { configuredMembers } from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
@@ -30,16 +30,61 @@ export function signUpPolicy(mode: string | undefined, allowlist: string | undef
  */
 export function emailVerificationRequired(setting: string | undefined, appUrl: string) {
   if (setting !== 'off') return true
-  if (/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$/.test(appUrl)) return false
+  if (isPreviewUrl(appUrl)) return false
   logWarn('auth.email_verification_off_refused')
   return true
+}
+
+const isPreviewUrl = (appUrl: string) =>
+  /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$/.test(appUrl)
+const isLocalUrl = (appUrl: string) => /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(appUrl)
+
+/**
+ * Cloudflare's documented Turnstile test keys (site `1x00000000000000000000AA`, secret
+ * `1x0000000000000000000000000000000AA` and their always-fail/spent variants): they pass or fail
+ * without a real challenge.
+ */
+const TEST_KEY = /^[123]x0{20,}[A-F]{2}$/
+
+/**
+ * ADR-0025: Turnstile needs both keys. Test keys only on localhost and workers.dev previews; a
+ * missing key, or a test key anywhere else, makes the protected endpoints refuse (503, logged)
+ * rather than skip the check. With real keys the token must also have been issued for this app's
+ * hostname (a test key's token reports `example.com`).
+ */
+export function botProtectionFor(
+  secretKey: string | undefined,
+  siteKey: string | undefined,
+  appUrl: string,
+): BotProtection {
+  if (!secretKey || !siteKey) {
+    logWarn('auth.turnstile_misconfigured', { reason: 'missing_key' })
+    return 'unavailable'
+  }
+  const testKeys = TEST_KEY.test(secretKey) || TEST_KEY.test(siteKey)
+  if (!testKeys) return { secretKey, allowedHostnames: [new URL(appUrl).hostname] }
+  // Bound to the app's own host: a production Worker misconfigured with a preview or localhost
+  // URL still refuses the dummy token on its real domain.
+  if (isLocalUrl(appUrl) || isPreviewUrl(appUrl))
+    return { secretKey, requestHost: new URL(appUrl).host }
+  logWarn('auth.turnstile_misconfigured', { reason: 'test_key' })
+  return 'unavailable'
 }
 
 const vars = env as unknown as {
   SIGNUP_MODE?: string
   SIGNUP_ALLOWLIST?: string
   EMAIL_VERIFICATION?: string
+  TURNSTILE_SECRET_KEY?: string
+  TURNSTILE_SITE_KEY?: string
 }
+
+/** The Turnstile site key the auth pages render with, or null while bot protection is unavailable. */
+export const turnstileSiteKey = () =>
+  botProtectionFor(vars.TURNSTILE_SECRET_KEY, vars.TURNSTILE_SITE_KEY, env.BETTER_AUTH_URL) ===
+  'unavailable'
+    ? null
+    : vars.TURNSTILE_SITE_KEY!
 
 export function authFor(db: Db) {
   const mailer = mailerFor(env as unknown as EmailConfig)
@@ -51,6 +96,11 @@ export function authFor(db: Db) {
     allowSignUp: signUpPolicy(vars.SIGNUP_MODE, vars.SIGNUP_ALLOWLIST),
     requireEmailVerification: emailVerificationRequired(
       vars.EMAIL_VERIFICATION,
+      env.BETTER_AUTH_URL,
+    ),
+    botProtection: botProtectionFor(
+      vars.TURNSTILE_SECRET_KEY,
+      vars.TURNSTILE_SITE_KEY,
       env.BETTER_AUTH_URL,
     ),
     log: logBetterAuth,

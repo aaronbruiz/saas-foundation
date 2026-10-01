@@ -8,6 +8,7 @@ import {
   createOrganization,
   inviteMember,
 } from '../src/modules/organizations/service'
+import { captchaHeader } from './turnstile-fake'
 
 export type TestUser = { headers: Headers; userId: string; email: string }
 
@@ -20,7 +21,10 @@ export const PASSWORD = 'correct-horse-battery-staple'
 export const randomIp = () =>
   `10.${Array.from(crypto.getRandomValues(new Uint8Array(3))).join('.')}`
 
-/** POSTs JSON to a Better Auth endpoint through the real HTTP handler, as client `ip`. */
+/**
+ * POSTs JSON to a Better Auth endpoint through the real HTTP handler, as client `ip`, with the
+ * Turnstile token a test site key produces (ADR-0025).
+ */
 export function authPost(path: string, body: unknown, ip = randomIp(), as?: TestUser) {
   return withDb((db) =>
     authFor(db).handler(
@@ -30,6 +34,7 @@ export function authPost(path: string, body: unknown, ip = randomIp(), as?: Test
           'content-type': 'application/json',
           origin: env.BETTER_AUTH_URL,
           'cf-connecting-ip': ip,
+          ...captchaHeader,
           ...(as && { cookie: as.headers.get('cookie')! }),
         },
         body: JSON.stringify(body),
