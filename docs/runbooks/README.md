@@ -156,7 +156,7 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
   - read-only compute on the snapshot: pre-change state, writes refused;
   - branch restored from the snapshot: same state, writable;
   - cleaned up afterwards. Repeat it (with a `drill-*` name, so the `backup-*` rotation isn't touched) after changing this procedure.
-- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute) and the 0.5 GB storage ceiling.
+- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute), the 0.5 GB storage ceiling and the 5 GB monthly egress. Proposed in ADR-0026 until the plan is upgraded: the owner checks the Neon console (production project → usage for the current period) every Monday and before each production deploy, and upgrades at CU-hours ≥ 50 before the 15th or ≥ 70 at any point, `main` logical size ≥ 256 MiB, egress ≥ 2.5 GB, or any suspension or failed write. Free has no consumption API (403) and no usage notifications.
 
 ## First production deploy (owner sequence, 2026-09-28)
 
