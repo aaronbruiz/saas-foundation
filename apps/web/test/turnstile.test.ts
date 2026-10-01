@@ -1,5 +1,10 @@
 import { env } from 'cloudflare:workers'
-import { BOT_PROTECTED_PATHS, createAuth, type BotProtection } from '@saas-foundation/auth'
+import {
+  BOT_PROTECTED_PATHS,
+  BOT_PROTECTION_ACTIONS,
+  createAuth,
+  type BotProtection,
+} from '@saas-foundation/auth'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { botProtectionFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
@@ -12,6 +17,7 @@ import {
   PASS_SITE_KEY,
   SPENT_SECRET,
   captchaHeader,
+  realTokenAnswer,
   siteverifyCalls,
   siteverifyOutage,
 } from './turnstile-fake'
@@ -73,6 +79,7 @@ const userExists = (email: string) =>
 
 afterEach(() => {
   siteverifyOutage.mode = null
+  realTokenAnswer.hostname = null
   vi.restoreAllMocks()
 })
 
@@ -113,6 +120,28 @@ describe('Turnstile on the protected endpoints', () => {
       expect(res.status).toBe(403)
       expect(await userExists(email)).toBe(false)
     }
+  })
+
+  it.each(BOT_PROTECTED_PATHS)('%s with real keys requires its own action', async (path) => {
+    // A token solved on one form can't be spent on another endpoint.
+    const realKeys = {
+      secretKey: 'real-secret-for-tests',
+      allowedHostnames: ['app.example.test'],
+      checkAction: true,
+    }
+    for (const [other, action] of Object.entries(BOT_PROTECTION_ACTIONS)) {
+      Object.assign(realTokenAnswer, { hostname: 'app.example.test', action })
+      const res = await post(path, bodyFor(path), { botProtection: realKeys })
+      if (other === path) expect(res.status).not.toBe(403)
+      else expect(res.status).toBe(403)
+    }
+  })
+
+  it('refuses a token longer than any Turnstile token (400) without calling siteverify', async () => {
+    const before = siteverifyCalls.length
+    const res = await post('/sign-up/email', bodyFor('/sign-up/email'), { token: 'x'.repeat(2049) })
+    expect(res.status).toBe(400)
+    expect(siteverifyCalls.length).toBe(before)
   })
 
   it('refuses a token issued for another hostname', async () => {
@@ -214,10 +243,11 @@ describe('botProtectionFor (deployment config)', () => {
     return () => warn.mock.calls.map((c) => JSON.parse(String(c[0])))
   }
 
-  it('uses real keys with the app hostname as the only allowed one', () => {
+  it('uses real keys with the app hostname as the only allowed one, and checks actions', () => {
     expect(botProtectionFor(REAL_SECRET, REAL_SITE_KEY, 'https://app.example.com')).toEqual({
       secretKey: REAL_SECRET,
       allowedHostnames: ['app.example.com'],
+      checkAction: true,
     })
   })
 

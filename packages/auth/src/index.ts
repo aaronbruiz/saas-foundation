@@ -1,6 +1,7 @@
 // Better Auth configuration (server only). Mounted at apps/web/src/routes/api/auth/$.ts.
 export {
   BOT_PROTECTED_PATHS,
+  BOT_PROTECTION_ACTIONS,
   createAuth,
   type Auth,
   type AuthOptions,

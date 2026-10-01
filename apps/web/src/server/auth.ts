@@ -50,7 +50,7 @@ const TEST_KEY = /^[123]x0{20,}[A-F]{2}$/
  * ADR-0025: Turnstile needs both keys. Test keys only on localhost and workers.dev previews; a
  * missing key, or a test key anywhere else, makes the protected endpoints refuse (503, logged)
  * rather than skip the check. With real keys the token must also have been issued for this app's
- * hostname (a test key's token reports `example.com`).
+ * hostname (a test key's token reports `example.com`) and carry its form's action.
  */
 export function botProtectionFor(
   secretKey: string | undefined,
@@ -62,7 +62,8 @@ export function botProtectionFor(
     return 'unavailable'
   }
   const testKeys = TEST_KEY.test(secretKey) || TEST_KEY.test(siteKey)
-  if (!testKeys) return { secretKey, allowedHostnames: [new URL(appUrl).hostname] }
+  if (!testKeys)
+    return { secretKey, allowedHostnames: [new URL(appUrl).hostname], checkAction: true }
   // Bound to the app's own host: a production Worker misconfigured with a preview or localhost
   // URL still refuses the dummy token on its real domain.
   if (isLocalUrl(appUrl) || isPreviewUrl(appUrl))

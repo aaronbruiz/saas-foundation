@@ -4,11 +4,11 @@ import { authClient } from '../lib/auth-client'
 import { safeRedirect, verifiedLoginUrl } from '../lib/safe-redirect'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
 import { useTurnstile } from '../lib/turnstile'
-import { getTurnstileSiteKeyFn } from '../server/turnstile'
+import { getTurnstileConfigFn } from '../server/turnstile'
 
 export const Route = createFileRoute('/signup')({
   validateSearch: (s: Record<string, unknown>) => ({ redirect: safeRedirect(s.redirect) }),
-  loader: () => getTurnstileSiteKeyFn(),
+  loader: () => getTurnstileConfigFn(),
   component: Signup,
 })
 
@@ -19,7 +19,7 @@ function Signup() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [sentTo, setSentTo] = useState<string | null>(null)
-  const turnstile = useTurnstile(Route.useLoaderData())
+  const turnstile = useTurnstile(Route.useLoaderData(), '/sign-up/email')
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()

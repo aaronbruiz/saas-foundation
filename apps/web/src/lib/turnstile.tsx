@@ -9,6 +9,7 @@ type TurnstileApi = {
     el: HTMLElement,
     opts: {
       sitekey: string
+      action: string
       callback: (token: string) => void
       'expired-callback': () => void
       'error-callback': () => void
@@ -43,24 +44,29 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return loading
 }
 
+export type TurnstileConfig = { siteKey: string | null; actions: Record<string, string> }
+
 /**
- * Renders the widget for `siteKey` (null: bot protection unavailable, no widget). `token` is set
- * once the visitor passes and cleared when it expires or errors; `reset()` asks for a fresh one.
+ * Renders the widget for the auth endpoint `path` (no site key: bot protection unavailable, no
+ * widget), with the action that endpoint requires. `token` is set once the visitor passes and
+ * cleared when it expires or errors; `reset()` asks for a fresh one.
  */
-export function useTurnstile(siteKey: string | null) {
+export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string) {
+  const action = actions[path]
   const container = useRef<HTMLDivElement>(null)
   const widget = useRef<{ api: TurnstileApi; id: string } | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    if (!siteKey) return
+    if (!siteKey || !action) return
     let cancelled = false
     loadTurnstile().then(
       (api) => {
         if (cancelled || !container.current) return
         const id = api.render(container.current, {
           sitekey: siteKey,
+          action,
           callback: (t) => {
             setFailed(false)
             setToken(t)
@@ -80,14 +86,14 @@ export function useTurnstile(siteKey: string | null) {
       if (widget.current) widget.current.api.remove(widget.current.id)
       widget.current = null
     }
-  }, [siteKey])
+  }, [siteKey, action])
 
   const reset = useCallback(() => {
     setToken(null)
     if (widget.current) widget.current.api.reset(widget.current.id)
   }, [])
 
-  const unavailable = !siteKey || failed
+  const unavailable = !siteKey || !action || failed
   const element = (
     <>
       <div ref={container} />
