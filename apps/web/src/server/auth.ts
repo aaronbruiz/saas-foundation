@@ -4,7 +4,7 @@ import { billing, listOwners, type Db } from '@saas-foundation/db'
 import { configuredMembers } from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
 import { mailerFor, render, type EmailConfig } from './email'
-import { logBetterAuth } from './log'
+import { logBetterAuth, logWarn } from './log'
 
 /**
  * ADR-0014 sign-up gate. `SIGNUP_MODE=open` (dev, tests, previews, or production once public sign-up
@@ -23,7 +23,23 @@ export function signUpPolicy(mode: string | undefined, allowlist: string | undef
   return (email: string) => allowed.has(email.trim().toLowerCase())
 }
 
-const vars = env as unknown as { SIGNUP_MODE?: string; SIGNUP_ALLOWLIST?: string }
+/**
+ * ADR-0016: email verification is required unless `EMAIL_VERIFICATION` is exactly `off` **and** the
+ * app runs on a workers.dev preview URL (previews send no email, so nobody could verify). An `off`
+ * anywhere else is refused (logged) and verification stays on.
+ */
+export function emailVerificationRequired(setting: string | undefined, appUrl: string) {
+  if (setting !== 'off') return true
+  if (/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$/.test(appUrl)) return false
+  logWarn('auth.email_verification_off_refused')
+  return true
+}
+
+const vars = env as unknown as {
+  SIGNUP_MODE?: string
+  SIGNUP_ALLOWLIST?: string
+  EMAIL_VERIFICATION?: string
+}
 
 export function authFor(db: Db) {
   const mailer = mailerFor(env as unknown as EmailConfig)
@@ -33,6 +49,10 @@ export function authFor(db: Db) {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
     allowSignUp: signUpPolicy(vars.SIGNUP_MODE, vars.SIGNUP_ALLOWLIST),
+    requireEmailVerification: emailVerificationRequired(
+      vars.EMAIL_VERIFICATION,
+      env.BETTER_AUTH_URL,
+    ),
     log: logBetterAuth,
     // ADR-0016. Invitations also return their link to the inviter (inviteMember).
     sendEmail: (email) => mailer(render(email, invitationLink)),

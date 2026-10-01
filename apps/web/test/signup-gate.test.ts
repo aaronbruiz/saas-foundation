@@ -31,14 +31,18 @@ describe('signUpPolicy', () => {
 
 describe('sign-up through the real handler with an allowlist', () => {
   const allowed = `smoke-${crypto.randomUUID()}@test.local`
-  const signUpAs = (email: string) =>
+  const sent: string[] = []
+  const signUpAs = (email: string, requireEmailVerification = true) =>
     withDb(async (db) => {
       const auth = createAuth({
         db,
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: signUpPolicy(undefined, allowed),
-        sendEmail: async () => {},
+        requireEmailVerification,
+        sendEmail: async (e) => {
+          sent.push(e.to)
+        },
       })
       const res = await auth.handler(
         new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-up/email`, {
@@ -56,10 +60,18 @@ describe('sign-up through the real handler with an allowlist', () => {
     })
 
   it('refuses an address outside the allowlist (403) and creates no user', async () => {
-    await expect(signUpAs(`real-${crypto.randomUUID()}@test.local`)).resolves.toEqual({
+    await expect(signUpAs(`real-${crypto.randomUUID()}@test.local`, false)).resolves.toEqual({
       status: 403,
       exists: false,
     })
+  })
+
+  // ADR-0016: with verification required, Better Auth answers a refused sign-up like any other
+  // ("check your email"), so the allowlist can't be probed; no user is created and nothing is sent.
+  it('answers a refused address like any sign-up when verification is required', async () => {
+    const email = `real-${crypto.randomUUID()}@test.local`
+    await expect(signUpAs(email)).resolves.toEqual({ status: 200, exists: false })
+    expect(sent).not.toContain(email)
   })
 
   it('accepts an allowlisted address', async () => {

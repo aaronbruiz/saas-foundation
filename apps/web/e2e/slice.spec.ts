@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import { verificationLink, verifiesEmail } from './mailbox'
 
 // Vertical Slice 001 end to end (spec §8/§11): sign-up → organization → project → invite →
 // accept, and cross-tenant isolation through real URLs (404 page, never data).
@@ -20,14 +21,36 @@ async function newPage(browser: Browser): Promise<Page> {
   return page
 }
 
-async function signUp(browser: Browser, name: string, path = '/signup') {
-  const page = await newPage(browser)
-  const email = `${name.toLowerCase()}-${rand()}@e2e.test`
-  await page.goto(path)
+/** Fills the sign-up form on the current page. */
+async function createAccount(page: Page, name: string, email: string) {
   await page.getByLabel('Name').fill(name)
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Create account' }).click()
+}
+
+/**
+ * ADR-0016: after sign-up there's no session until the address is verified. Follows the emailed
+ * link, then signs in; the page continues to the sign-up page's `redirect`. Without verification
+ * (previews) sign-up signs in directly.
+ */
+async function verifyAndSignIn(page: Page, email: string) {
+  if (!verifiesEmail) return
+  const target = new URL(page.url()).searchParams.get('redirect')
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+  await page.goto(await verificationLink(email, target))
+  await expect(page.getByText('Email verified. Sign in to continue.')).toBeVisible()
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+}
+
+async function signUp(browser: Browser, name: string, path = '/signup') {
+  const page = await newPage(browser)
+  const email = `${name.toLowerCase()}-${rand()}@e2e.test`
+  await page.goto(path)
+  await createAccount(page, name, email)
+  await verifyAndSignIn(page, email)
   return { page, email }
 }
 
@@ -46,6 +69,34 @@ test.afterEach(async () => {
   expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
   await Promise.all(contexts.splice(0).map((c) => c.close()))
   visited.length = 0
+})
+
+test('an unverified account cannot sign in until it follows the emailed link', async ({
+  browser,
+}) => {
+  test.skip(!verifiesEmail, 'previews run without email verification')
+  const page = await newPage(browser)
+  const email = `dana-${rand()}@e2e.test`
+  await page.goto('/signup')
+  await createAccount(page, 'Dana', email)
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+  await page.getByRole('link', { name: 'Sign in' }).click()
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    'Verify your email address first. We sent you a new link.',
+  )
+  await page.goto('/orgs/new')
+  await expect(page).toHaveURL(/\/login/) // still no session
+  // A tampered link is refused and explained.
+  await page.goto((await verificationLink(email, null)).replace('token=', 'token=x'))
+  await expect(page.getByText('That verification link is invalid or has expired.')).toBeVisible()
+  await page.goto(await verificationLink(email, null))
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/\/orgs\/new$/)
 })
 
 test('sign-up, organization, projects, invitation and tenant isolation', async ({ browser }) => {
@@ -80,10 +131,8 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await carol.goto(invitePath)
   await expect(carol).toHaveURL(/\/login\?redirect=/)
   await carol.getByRole('link', { name: 'Sign up' }).click()
-  await carol.getByLabel('Name').fill('Carol')
-  await carol.getByLabel('Email').fill(carolEmail)
-  await carol.getByLabel('Password').fill(PASSWORD)
-  await carol.getByRole('button', { name: 'Create account' }).click()
+  await createAccount(carol, 'Carol', carolEmail)
+  await verifyAndSignIn(carol, carolEmail)
   await expect(carol).toHaveURL(new RegExp(`${invitePath}$`))
   await carol.getByRole('button', { name: 'Accept invitation' }).click()
   await expect(carol).toHaveURL(new RegExp(`/t/${orgA}/projects$`))

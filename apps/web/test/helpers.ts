@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { createEmailVerificationToken } from 'better-auth/api'
 import { authFor } from '../src/server/auth'
 import { findOrganizationBySlug } from '@saas-foundation/db'
 import { withDb } from '../src/server/db'
@@ -37,18 +38,34 @@ export function authPost(path: string, body: unknown, ip = randomIp(), as?: Test
   )
 }
 
-/** Signs up through the real Better Auth HTTP handler and returns the session cookie. */
+/** The link a verification email carries (ADR-0016), signed with the test secret. */
+export async function verificationUrl(email: string) {
+  const token = await createEmailVerificationToken(env.BETTER_AUTH_SECRET, email)
+  return `${env.BETTER_AUTH_URL}/api/auth/verify-email?token=${token}`
+}
+
+const cookieOf = (res: Response) =>
+  res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ')
+
+/**
+ * Signs up through the real Better Auth HTTP handler, follows the verification link (ADR-0016: no
+ * session before that) and signs in, returning the session cookie.
+ */
 export async function signUp(): Promise<TestUser> {
   const email = `u-${crypto.randomUUID()}@test.local`
   const res = await authPost('/sign-up/email', { email, password: PASSWORD, name: email })
   if (!res.ok) throw new Error(`sign-up failed: ${res.status} ${await res.text()}`)
-  const cookie = res.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .join('; ')
-  const body = (await res.json()) as { user: { id: string } }
+  const link = await verificationUrl(email)
+  const verified = await withDb((db) => authFor(db).handler(new Request(link)))
+  if (!verified.ok) throw new Error(`verification failed: ${verified.status}`)
+  const signIn = await authPost('/sign-in/email', { email, password: PASSWORD })
+  if (!signIn.ok) throw new Error(`sign-in failed: ${signIn.status} ${await signIn.text()}`)
+  const body = (await signIn.json()) as { user: { id: string } }
   return {
-    headers: new Headers({ cookie, origin: env.BETTER_AUTH_URL }),
+    headers: new Headers({ cookie: cookieOf(signIn), origin: env.BETTER_AUTH_URL }),
     userId: body.user.id,
     email,
   }

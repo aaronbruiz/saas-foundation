@@ -282,6 +282,7 @@ describe('owner-role hooks (Polar members)', () => {
           secret: env.BETTER_AUTH_SECRET,
           baseURL: env.BETTER_AUTH_URL,
           allowSignUp: () => true,
+          requireEmailVerification: true,
           sendEmail: async () => {},
           billing: {
             memberLimit: async () => null,

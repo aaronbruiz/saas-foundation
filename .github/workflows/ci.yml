@@ -28,6 +28,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: node scripts/check-bindings.mjs HEAD^1
+      - run: node scripts/check-email-verification.mjs # ADR-0016: no `off` outside previews
 
   check:
     name: check + test
