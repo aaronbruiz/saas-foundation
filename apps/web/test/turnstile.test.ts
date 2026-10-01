@@ -159,12 +159,16 @@ describe('Turnstile on the protected endpoints', () => {
   it('refuses (503) test keys bound to another host, accepts them on their own', async () => {
     // A production Worker misconfigured with a preview URL must not take the dummy token on its
     // real domain (the requests here arrive at BETTER_AUTH_URL's host).
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     for (const path of BOT_PROTECTED_PATHS) {
       const res = await post(path, bodyFor(path), {
         botProtection: { secretKey: PASS_SECRET, requestHost: 'app.example.com' },
       })
       expect(res.status).toBe(503)
     }
+    expect(warn.mock.calls.map((c) => JSON.parse(String(c[0])).event)).toContain(
+      'auth.turnstile_wrong_host',
+    )
     const own = await post('/sign-up/email', bodyFor('/sign-up/email'), {
       botProtection: { secretKey: PASS_SECRET, requestHost: new URL(env.BETTER_AUTH_URL).host },
     })

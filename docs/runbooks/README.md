@@ -33,7 +33,7 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 
 Where to look when production fails:
 
-- **Dashboard:** Workers & Pages → `saas-foundation` → Observability (Logs / Events). Filter by `level = error`, by `event` (`server_fn.unhandled`, `health.db_down`, `better_auth`, `auth.captcha_unavailable`, `auth.turnstile_misconfigured`), or by `rayId`.
+- **Dashboard:** Workers & Pages → `saas-foundation` → Observability (Logs / Events). Filter by `level = error`, by `event` (`server_fn.unhandled`, `health.db_down`, `better_auth`, `auth.captcha_unavailable`, `auth.turnstile_misconfigured`, `auth.turnstile_wrong_host`), or by `rayId`.
   - A user-reported Cloudflare ray id (shown on Cloudflare error pages) matches `rayId`.
   - Each request's invocation log shows its status and outcome.
 - **Live:** `pnpm --filter web exec wrangler tail saas-foundation --format pretty --search '"level":"error"'`. Don't rely on `--status error`: it filters on the invocation's outcome, and server-function failures are turned into responses, so those invocations end `ok`.
@@ -90,7 +90,7 @@ Bot check on sign-up, sign-in, password-reset requests and verification-email re
 2. **Owner:** in your own terminal, `pnpm --filter web exec wrangler secret put TURNSTILE_SITE_KEY`, then `pnpm --filter web exec wrangler secret put TURNSTILE_SECRET_KEY` (values at the hidden prompt). `wrangler secret list` shows both names. Each `secret put` creates a Worker version of the deployed code, which ignores them until the deploy.
 3. **Deploy:** `pnpm run deploy` from a clean checkout of `main` (runbook "First production deploy" step 0).
 4. **Browser check** (a smoke-test account): `/login` shows the Turnstile widget and the Sign in button turns on after it passes; signing in works; in DevTools → Network the `sign-in/email` request carries an `x-captcha-response` header and no URL holds a token. `/forgot-password` and `/signup` show the widget too. Logs show no `auth.turnstile_misconfigured`.
-5. **If sign-in answers 503** "Sign-in is temporarily unavailable": a key is missing or a Cloudflare test key reached production (`auth.turnstile_misconfigured`, `reason`). Fix the secret; no deploy needed. A 500 with `auth.captcha_unavailable` means siteverify was unreachable (Cloudflare side); a 403 means the token was rejected (expired, reused, or issued for another hostname).
+5. **If sign-in answers 503** "Sign-in is temporarily unavailable": a key is missing or a Cloudflare test key reached production (`auth.turnstile_misconfigured`, `reason`), or test keys meant for a preview or localhost URL are being reached on another host (`auth.turnstile_wrong_host`: check `BETTER_AUTH_URL`). Fix the secret; no deploy needed. A 500 with `auth.captcha_unavailable` means siteverify was unreachable (Cloudflare side); a 403 means the token was rejected (expired, reused, or issued for another hostname).
 6. **Rotate the secret:** Turnstile → the widget → rotate the secret key, then `wrangler secret put TURNSTILE_SECRET_KEY` with the new value.
 
 Local dev, CI and previews use Cloudflare's public always-pass test keys: `apps/web/.dev.vars` needs `TURNSTILE_SITE_KEY=1x00000000000000000000AA` and `TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA` (the app refuses test keys outside localhost and workers.dev).

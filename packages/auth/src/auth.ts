@@ -230,7 +230,13 @@ export function createAuth({
         ? [refuseBotProtectedPaths(() => true)]
         : [
             ...(botProtection.requestHost
-              ? [refuseBotProtectedPaths((url) => url.host !== botProtection.requestHost)]
+              ? [
+                  refuseBotProtectedPaths((url) => {
+                    if (url.host === botProtection.requestHost) return false
+                    log?.('warn', 'auth.turnstile_wrong_host')
+                    return true
+                  }),
+                ]
               : []),
             captcha({
               provider: 'cloudflare-turnstile',
