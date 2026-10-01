@@ -4,7 +4,7 @@ import { authClient } from '../lib/auth-client'
 import { safeRedirect } from '../lib/safe-redirect'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
 import { useTurnstile } from '../lib/turnstile'
-import { getTurnstileSiteKeyFn } from '../server/turnstile'
+import { getTurnstileConfigFn } from '../server/turnstile'
 
 export const Route = createFileRoute('/login')({
   // `verified` / `error`: where a verification link lands (ADR-0016); Better Auth appends `error`
@@ -16,7 +16,7 @@ export const Route = createFileRoute('/login')({
     ...(String(s.verified) === '1' && { verified: true }),
     ...(s.error !== undefined && { error: true }),
   }),
-  loader: () => getTurnstileSiteKeyFn(),
+  loader: () => getTurnstileConfigFn(),
   component: Login,
 })
 
@@ -26,7 +26,7 @@ function Login() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const turnstile = useTurnstile(Route.useLoaderData())
+  const turnstile = useTurnstile(Route.useLoaderData(), '/sign-in/email')
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()

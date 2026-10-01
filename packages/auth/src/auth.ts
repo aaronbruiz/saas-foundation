@@ -23,7 +23,23 @@ export const BOT_PROTECTED_PATHS = [
   '/sign-in/email',
   '/request-password-reset',
   '/send-verification-email',
-]
+] as const
+export type BotProtectedPath = (typeof BOT_PROTECTED_PATHS)[number]
+
+/**
+ * The Turnstile `action` each path's widget renders with and its token must carry (real keys
+ * only: Cloudflare's test tokens carry no action), so a token solved for one form can't be spent
+ * on another.
+ */
+export const BOT_PROTECTION_ACTIONS: Record<BotProtectedPath, string> = {
+  '/sign-up/email': 'signup',
+  '/sign-in/email': 'login',
+  '/request-password-reset': 'password-reset',
+  '/send-verification-email': 'verification-email',
+}
+
+/** Turnstile tokens are at most 2048 characters (Cloudflare siteverify docs). */
+const MAX_TOKEN_LENGTH = 2048
 
 /**
  * ADR-0025: Cloudflare Turnstile on `BOT_PROTECTED_PATHS`, or `'unavailable'` when the deployment
@@ -33,6 +49,8 @@ export type BotProtection =
   | {
       secretKey: string
       allowedHostnames?: string[]
+      /** Require each path's `BOT_PROTECTION_ACTIONS` action (real keys; test tokens have none). */
+      checkAction?: boolean
       /**
        * Only requests to this host (`host[:port]`) may use these keys; any other host gets the 503.
        * For test keys, whose tokens carry no usable hostname, so they can't serve another domain.
@@ -238,12 +256,19 @@ export function createAuth({
                   }),
                 ]
               : []),
-            captcha({
-              provider: 'cloudflare-turnstile',
-              secretKey: botProtection.secretKey,
-              endpoints: BOT_PROTECTED_PATHS,
-              allowedHostnames: botProtection.allowedHostnames,
-            }),
+            refuseOversizedTokens(),
+            // One instance per path, so each can require its own action.
+            ...BOT_PROTECTED_PATHS.map((path) =>
+              captcha({
+                provider: 'cloudflare-turnstile',
+                secretKey: botProtection.secretKey,
+                endpoints: [path],
+                allowedHostnames: botProtection.allowedHostnames,
+                expectedAction: botProtection.checkAction
+                  ? BOT_PROTECTION_ACTIONS[path]
+                  : undefined,
+              }),
+            ),
           ]),
       organization({
         // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
@@ -328,12 +353,32 @@ const refuseBotProtectedPaths = (refuse: (url: URL) => boolean): BetterAuthPlugi
   onRequest: async (request, ctx) => {
     const base = ctx.options.basePath ?? '/api/auth'
     const url = new URL(request.url)
-    const path = url.pathname.replace(base, '').replace(/\/+$/, '')
-    if (!BOT_PROTECTED_PATHS.includes(path) || !refuse(url)) return
+    if (!isBotProtected(url, base) || !refuse(url)) return
     return {
       response: Response.json(
         { code: 'CAPTCHA_UNAVAILABLE', message: 'Sign-in is temporarily unavailable.' },
         { status: 503 },
+      ),
+    }
+  },
+})
+
+const isBotProtected = (url: URL, base: string) =>
+  (BOT_PROTECTED_PATHS as readonly string[]).includes(
+    url.pathname.replace(base, '').replace(/\/+$/, ''),
+  )
+
+/** A token longer than any Turnstile token is refused (400) without calling siteverify. */
+const refuseOversizedTokens = (): BetterAuthPlugin => ({
+  id: 'captcha-token-size',
+  onRequest: async (request, ctx) => {
+    const token = request.headers.get('x-captcha-response')
+    if (!token || token.length <= MAX_TOKEN_LENGTH) return
+    if (!isBotProtected(new URL(request.url), ctx.options.basePath ?? '/api/auth')) return
+    return {
+      response: Response.json(
+        { code: 'VERIFICATION_FAILED', message: 'Captcha verification failed' },
+        { status: 400 },
       ),
     }
   },

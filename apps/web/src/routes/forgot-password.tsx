@@ -3,11 +3,11 @@ import { useState, type FormEvent } from 'react'
 import { authClient } from '../lib/auth-client'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
 import { useTurnstile } from '../lib/turnstile'
-import { getTurnstileSiteKeyFn } from '../server/turnstile'
+import { getTurnstileConfigFn } from '../server/turnstile'
 
 // Password reset request (ADR-0016). The answer is the same whether or not the account exists.
 export const Route = createFileRoute('/forgot-password')({
-  loader: () => getTurnstileSiteKeyFn(),
+  loader: () => getTurnstileConfigFn(),
   component: ForgotPassword,
 })
 
@@ -16,7 +16,7 @@ function ForgotPassword() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const turnstile = useTurnstile(Route.useLoaderData())
+  const turnstile = useTurnstile(Route.useLoaderData(), '/request-password-reset')
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()

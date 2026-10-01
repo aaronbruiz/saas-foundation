@@ -21,6 +21,13 @@ export const testBotProtection = { secretKey: PASS_SECRET }
 export const siteverifyCalls: Record<string, unknown>[] = []
 /** Set to make siteverify fail: an HTTP status, or `'network'` for a connection error. */
 export const siteverifyOutage: { mode: number | 'network' | null } = { mode: null }
+/**
+ * Set to answer like a production secret does for a real token (hostname and action of the widget
+ * that issued it); test secrets never return an action, so this is the only way to test that check.
+ */
+export const realTokenAnswer: { hostname: string; action: string } | { hostname: null } = {
+  hostname: null,
+}
 
 const testing = { metadata: { result_with_testing_key: true } }
 
@@ -29,6 +36,15 @@ async function answer(request: Request): Promise<Response> {
   siteverifyCalls.push(body)
   if (siteverifyOutage.mode === 'network') throw new TypeError('Network connection lost.')
   if (siteverifyOutage.mode) return new Response('unavailable', { status: siteverifyOutage.mode })
+  if (realTokenAnswer.hostname !== null)
+    return Response.json({
+      success: true,
+      challenge_ts: new Date().toISOString(),
+      hostname: realTokenAnswer.hostname,
+      action: realTokenAnswer.action,
+      'error-codes': [],
+      metadata: {},
+    })
   const fail = (code: string) =>
     Response.json({ success: false, 'error-codes': [code], messages: [], ...testing })
   if (body.secret === PASS_SECRET)
