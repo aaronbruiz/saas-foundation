@@ -1,6 +1,6 @@
 # ADR-0025: Bot protection on sign-up, sign-in and auth email: Cloudflare Turnstile through Better Auth's captcha plugin
 
-Status: Proposed · Date: 2026-10-01
+Status: Accepted (owner 2026-10-01). Deployed 2026-10-01 (#59, #60); production check passed (runbook "Turnstile"). · Date: 2026-10-01
 
 Closes the bot-protection item in [ADR-0005](0005-better-auth-identity-app-owned-authorization.md)'s "Accepted limits" and the Turnstile decision launch milestone D needs (runbook "First production deploy"). Turnstile is a Cloudflare product, so it needs this ADR (AGENTS.md invariant 14); it adds no binding.
 
@@ -21,7 +21,7 @@ Closes the bot-protection item in [ADR-0005](0005-better-auth-identity-app-owned
 
 - **Turnstile through Better Auth's `captcha` plugin** on `/sign-up/email`, `/sign-in/email`, `/request-password-reset` and `/send-verification-email` (`BOT_PROTECTED_PATHS` in `packages/auth`). Other endpoints aren't checked (they need an emailed token or a session).
 - **Keys** come only from Worker `env`: `TURNSTILE_SECRET_KEY` and `TURNSTILE_SITE_KEY`. The site key is public, but it's a Worker secret in production too: config `vars` would break the preview gate, and a build-time value would tie the build to one environment. The auth pages read it, and their form's action, per request through a server function (`getTurnstileConfigFn`).
-  - Production: a widget the owner creates in the Cloudflare dashboard (Managed mode), hostname `app.aaronlabr.dev` only.
+  - Production: a widget the owner creates in the Cloudflare dashboard (Managed mode). _As created 2026-10-01: hostnames `aaronlabr.dev`, `localhost`, `127.0.0.1`, no pre-clearance. The extra hostnames don't widen production: the server accepts only tokens reporting `app.aaronlabr.dev` (`allowedHostnames`), and local dev runs on test keys._
   - Local dev, E2E, Vitest and previews: Cloudflare's always-pass **test keys** (public values: `.dev.vars`, CI's E2E step, `vitest.config.ts`, `lib.sh --var`). Test keys work on any hostname, so the widget lists no other hostname.
 - **No "off"**, and a misconfiguration fails closed (`botProtectionFor` in `apps/web/src/server/auth.ts`):
   - a missing key → the four endpoints answer 503 `CAPTCHA_UNAVAILABLE` and the forms show the bot check as unavailable; logged `auth.turnstile_misconfigured` (`reason: missing_key`);
