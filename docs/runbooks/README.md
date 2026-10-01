@@ -65,7 +65,7 @@ Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`,
   3. The per-Worker token (ADR-0019): `gh secret set CLOUDFLARE_API_TOKEN --env preview` (its value, or roll it in the dashboard to get a new one).
   4. Run a PR preview through `preview.yml` / `preview-cleanup.yml`, then revoke the replaced key or token. Never put a preview secret at repo level.
 - **R2 dump token `r2-dump-backups`** (2026-09-30, ADR-0023): it can read every dump in plain text (R2 has no write-only permission, and the dumps rely on R2's managed encryption only), so treat it as a production-data credential. Rotate: Cloudflare dashboard → R2 → Manage API tokens → create an **Account** token with **Object Read & Write**, applied to **specific buckets → `saas-foundation-prod-db-dumps`** only; in your own terminal, `gh secret set R2_BACKUP_ACCESS_KEY_ID --env production` and `gh secret set R2_BACKUP_SECRET_ACCESS_KEY --env production` (hidden prompt); discard the token's bearer value; run `gh workflow run db-backup.yml` and check the `dump` job; then delete the old token.
-- **Production Neon key:** `saas-foundation`, in `production` as `NEON_API_KEY`; `db-backup.yml` read it successfully on 2026-09-29. It is the only production key; don't revoke it. Production deploys run from the owner's machine (runbook "First production deploy").
+- **Production Neon key:** `saas-foundation`, in `production` as `NEON_API_KEY`; `db-backup.yml` read it successfully on 2026-09-29. It is the only production key; don't revoke it. (If production moves to its own Neon organization, ADR-0026 option 3, replace it first as that ADR describes.) Production deploys run from the owner's machine (runbook "First production deploy").
 
 ## Email (ADR-0016, ADR-0024)
 
@@ -156,7 +156,7 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
   - read-only compute on the snapshot: pre-change state, writes refused;
   - branch restored from the snapshot: same state, writable;
   - cleaned up afterwards. Repeat it (with a `drill-*` name, so the `backup-*` rotation isn't touched) after changing this procedure.
-- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute) and the 0.5 GB storage ceiling.
+- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute), the 0.5 GB storage ceiling and the 5 GB monthly egress. Proposed in ADR-0026 until the plan is upgraded: the owner checks the Neon console (production project → usage for the current period) every Monday and before each production deploy, and upgrades at CU-hours ≥ 50 before the 15th or ≥ 70 at any point, project storage or `main`'s logical size ≥ 256 MiB, egress ≥ 2.5 GB, or any suspension or failed write. Free has no consumption API (403) and no usage notifications. If accepted, take a first reading of CU-hours and egress at acceptance.
 
 ## First production deploy (owner sequence, 2026-09-28)
 

@@ -27,3 +27,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0023](0023-off-provider-database-dumps-to-r2.md): Off-provider database dumps to Cloudflare R2 (ADR-0003 backup option B)
 - [ADR-0024](0024-email-activation-send-email-binding.md): Activate transactional email: the `send_email` binding `EMAIL` (ADR-0016 step 3)
 - [ADR-0025](0025-turnstile-bot-protection-on-auth.md): Bot protection on sign-up, sign-in and auth email: Cloudflare Turnstile through Better Auth's captcha plugin
+- [ADR-0026](0026-neon-plan-capacity-and-upgrade-trigger.md): Neon plan for launch: Free's capacity limits and the upgrade trigger
