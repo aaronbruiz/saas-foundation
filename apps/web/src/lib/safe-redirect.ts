@@ -14,3 +14,12 @@ export function safeRedirect(target: unknown, fallback = '/'): string {
     return fallback
   }
 }
+
+/**
+ * Where a verification link lands (ADR-0016): the sign-in page, saying the address is verified,
+ * then on to `target` (itself limited to same-site paths). Built with URLSearchParams, never by
+ * string concatenation.
+ */
+export function verifiedLoginUrl(target: unknown): string {
+  return `/login?${new URLSearchParams({ verified: '1', redirect: safeRedirect(target) })}`
+}

@@ -3,6 +3,7 @@ import { createAuth, type AuthEmail } from '@saas-foundation/auth'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mailerFor, render, type EmailMessage } from '../src/server/email'
 import { withDb } from '../src/server/db'
+import { emailVerificationRequired } from '../src/server/auth'
 import { PASSWORD, randomIp } from './helpers'
 
 // ADR-0016: auth emails behind one mailer seam; tokens travel in query strings (ADR-0015).
@@ -107,15 +108,42 @@ describe('mailerFor', () => {
   })
 })
 
+describe('emailVerificationRequired', () => {
+  const preview = 'https://pr-12-saas-foundation-preview.example.workers.dev'
+
+  it('is on unless set to exactly "off"', () => {
+    for (const v of [undefined, '', 'on', 'OFF', 'false', '0', ' off'])
+      expect(emailVerificationRequired(v, preview)).toBe(true)
+  })
+
+  it('honours "off" only on a workers.dev preview URL', () => {
+    expect(emailVerificationRequired('off', preview)).toBe(false)
+  })
+
+  it('refuses "off" anywhere else, and logs it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const url of [
+      'https://app.aaronlabr.dev',
+      'http://localhost:3000',
+      'http://x.workers.dev',
+      'https://x.workers.dev.evil.test',
+      'https://x.workers.dev/path',
+    ])
+      expect(emailVerificationRequired('off', url)).toBe(true)
+    expect(String(warn.mock.calls[0]![0])).toContain('auth.email_verification_off_refused')
+  })
+})
+
 describe('auth email flows through the real handler', () => {
   const sent: AuthEmail[] = []
-  const call = (path: string, init: RequestInit = {}) =>
+  const call = (path: string, init: RequestInit = {}, requireEmailVerification = true) =>
     withDb((db) =>
       createAuth({
         db,
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: () => true,
+        requireEmailVerification,
         sendEmail: async (e) => {
           sent.push(e)
         },
@@ -153,23 +181,92 @@ describe('auth email flows through the real handler', () => {
       } | null
     )?.user ?? null
 
-  it('sends a verification email on sign-up; its link verifies the address', async () => {
+  const verificationTo = async (email: string) => {
+    const mail = await lastTo(email, 'verification')
+    if (mail.kind !== 'verification') throw new Error('unreachable')
+    return mail.url
+  }
+  /** Signs up, follows the emailed link and signs in (ADR-0016); returns the session cookie. */
+  const verifiedSession = async (email: string) => {
+    expect((await post('/sign-up/email', { email, password: PASSWORD, name: 'x' })).status).toBe(
+      200,
+    )
+    expect((await call(await verificationTo(email), { redirect: 'manual' })).status).toBeLessThan(
+      400,
+    )
+    const res = await post('/sign-in/email', { email, password: PASSWORD })
+    expect(res.status).toBe(200)
+    return cookieOf(res)
+  }
+
+  it('requires a verified address: no session at sign-up, sign-in refused and resent', async () => {
     const email = `v-${crypto.randomUUID()}@test.local`
     const res = await post('/sign-up/email', { email, password: PASSWORD, name: 'v' })
     expect(res.status).toBe(200)
-    const cookie = cookieOf(res)
-    const mail = await lastTo(email, 'verification')
-    if (mail.kind !== 'verification') throw new Error('unreachable')
-    expect(mail.url).toMatch(/\/api\/auth\/verify-email\?token=/)
-    expect((await sessionUser(cookie))?.emailVerified).toBe(false)
-    const verified = await call(mail.url, { redirect: 'manual' })
+    expect(((await res.json()) as { token: string | null }).token).toBeNull()
+    expect(cookieOf(res)).not.toContain('session_token')
+    const first = await verificationTo(email)
+    expect(first).toMatch(/\/api\/auth\/verify-email\?token=/)
+
+    // The right password, unverified: refused, and a fresh link goes out.
+    sent.length = 0
+    const refused = await post('/sign-in/email', { email, password: PASSWORD })
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { code: string }).code).toBe('EMAIL_NOT_VERIFIED')
+    expect(cookieOf(refused)).not.toContain('session_token')
+    const resent = await verificationTo(email)
+
+    // A wrong password sends nothing.
+    sent.length = 0
+    expect((await post('/sign-in/email', { email, password: 'wrong-password-123' })).status).toBe(
+      401,
+    )
+    await new Promise((r) => setTimeout(r, 200))
+    expect(sent.filter((e) => e.to === email)).toEqual([])
+
+    // Following the link verifies the address but signs nobody in.
+    const verified = await call(resent, { redirect: 'manual' })
     expect(verified.status).toBeLessThan(400)
-    expect((await sessionUser(cookie))?.emailVerified).toBe(true)
+    expect(cookieOf(verified)).not.toContain('session_token')
+    const ok = await post('/sign-in/email', { email, password: PASSWORD })
+    expect(ok.status).toBe(200)
+    expect((await sessionUser(cookieOf(ok)))?.emailVerified).toBe(true)
+  })
+
+  it('refuses invitation acceptance by an unverified session', async () => {
+    const owner = await verifiedSession(`o-${crypto.randomUUID()}@test.local`)
+    const slug = `ver-${crypto.randomUUID().slice(0, 8)}`
+    const org = (await (
+      await post('/organization/create', { name: 'Ver Org', slug }, { cookie: owner })
+    ).json()) as { id: string }
+    // A session created before verification was enforced (as on existing deployments).
+    const invitee = `i-${crypto.randomUUID()}@test.local`
+    const legacy = await call(
+      '/sign-up/email',
+      { method: 'POST', body: JSON.stringify({ email: invitee, password: PASSWORD, name: 'i' }) },
+      false,
+    )
+    const cookie = cookieOf(legacy)
+    expect(cookie).toContain('session_token')
+    const inv = (await (
+      await post(
+        '/organization/invite-member',
+        { email: invitee, role: 'member', organizationId: org.id },
+        { cookie: owner },
+      )
+    ).json()) as { id: string }
+    const res = await post('/organization/accept-invitation', { invitationId: inv.id }, { cookie })
+    expect(res.status).toBe(403)
+    // Once verified, the same session can accept.
+    await call(await verificationTo(invitee), { redirect: 'manual' })
+    expect(
+      (await post('/organization/accept-invitation', { invitationId: inv.id }, { cookie })).status,
+    ).toBe(200)
   })
 
   it('resets a password via a query-string token and revokes existing sessions', async () => {
     const email = `r-${crypto.randomUUID()}@test.local`
-    const old = cookieOf(await post('/sign-up/email', { email, password: PASSWORD, name: 'r' }))
+    const old = await verifiedSession(email)
     expect(await sessionUser(old)).not.toBeNull()
 
     expect(
@@ -207,6 +304,7 @@ describe('auth email flows through the real handler', () => {
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: () => true,
+        requireEmailVerification: true,
         sendEmail: () => gate, // a provider that hasn't answered yet
         runInBackground: (p) => void background.push(p),
       }).handler(
@@ -238,9 +336,7 @@ describe('auth email flows through the real handler', () => {
 
   it('sends an invitation email with the organization name', async () => {
     const owner = `o-${crypto.randomUUID()}@test.local`
-    const cookie = cookieOf(
-      await post('/sign-up/email', { email: owner, password: PASSWORD, name: 'o' }),
-    )
+    const cookie = await verifiedSession(owner)
     const slug = `mail-${crypto.randomUUID().slice(0, 8)}`
     const org = (await (
       await post('/organization/create', { name: 'Mail Org', slug }, { cookie })

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { authClient } from '../lib/auth-client'
-import { safeRedirect } from '../lib/safe-redirect'
+import { safeRedirect, verifiedLoginUrl } from '../lib/safe-redirect'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
 
 export const Route = createFileRoute('/signup')({
@@ -15,21 +15,44 @@ function Signup() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [sentTo, setSentTo] = useState<string | null>(null)
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
+    const email = String(form.get('email'))
     setBusy(true)
-    const { error } = await authClient.signUp.email({
+    const { data, error } = await authClient.signUp.email({
       name: String(form.get('name')),
-      email: String(form.get('email')),
+      email,
       password: String(form.get('password')),
+      callbackURL: verifiedLoginUrl(redirect),
     })
     setBusy(false)
     if (error) return setError(error.message ?? 'Sign-up failed')
+    // ADR-0016: no session until the address is verified (always the answer where verification is
+    // required, whether or not the address already had an account).
+    if (!data?.token) return setSentTo(email)
     await router.invalidate()
     await router.navigate({ href: redirect })
   }
+
+  if (sentTo)
+    return (
+      <main className="mx-auto max-w-sm p-8">
+        <h1 className="mb-6 text-2xl font-semibold">Check your email</h1>
+        <p role="status" className="mb-4">
+          We sent a verification link to {sentTo}. Open it, then sign in.
+        </p>
+        <p className="text-sm text-gray-600">
+          Didn't receive it?{' '}
+          <Link to="/login" search={{ redirect }} className="underline">
+            Sign in
+          </Link>{' '}
+          again to receive a new verification link.
+        </p>
+      </main>
+    )
 
   return (
     <main className="mx-auto max-w-sm p-8">

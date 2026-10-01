@@ -178,8 +178,10 @@ new_auth_secret() {
 
 # Deploy the preview on the preview Worker with its own auth settings, then smoke-test it.
 # Args: extra `wrangler preview` args (e.g. --config). Needs AUTH_SECRET. Previews hold synthetic
-# data only, so sign-up is open there (ADR-0014; production defaults to closed). The URL is
-# deterministic, so Better Auth's origin checks match it.
+# data only, so sign-up is open there (ADR-0014; production defaults to closed), and they send no
+# email, so email verification is off (ADR-0016; the app honours `off` only on a workers.dev URL,
+# and `pnpm run deploy` refuses it for production). The URL is deterministic, so Better Auth's
+# origin checks match it.
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 deploy_preview() {
   local subdomain auth_url out url
@@ -194,7 +196,8 @@ deploy_preview() {
   # or settings from the dashboard's Preview base config (ADR-0024: previews get no email binding).
   out="$(pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
     --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
-    --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" --secrets-file "$SECRETS_FILE")"
+    --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" \
+    --var "EMAIL_VERIFICATION:off" --secrets-file "$SECRETS_FILE")"
   url="$(printf '%s' "$out" | node -e '
     const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
     const d = JSON.parse(t.slice(i)); process.stdout.write(d.preview.urls[0]);')"

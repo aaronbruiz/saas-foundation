@@ -24,6 +24,11 @@ export type AuthOptions = {
    */
   allowSignUp: (email: string) => boolean
   /**
+   * ADR-0016: email+password sign-in and invitation actions need a verified address. Required, so
+   * every caller decides explicitly; only deployments that can't send email (previews) turn it off.
+   */
+  requireEmailVerification: boolean
+  /**
    * Receives Better Auth's own log lines (level + message only; its extra arguments can hold request
    * data, so they're dropped). The app routes them to its structured logger (ADR-0015).
    */
@@ -78,6 +83,7 @@ export function createAuth({
   secret,
   baseURL,
   allowSignUp,
+  requireEmailVerification,
   log,
   sendEmail,
   runInBackground,
@@ -116,10 +122,14 @@ export function createAuth({
         await sendEmail({ kind: 'password-reset', to: user.email, url })
       },
       revokeSessionsOnPasswordReset: true,
+      // ADR-0016: no session until the address is verified. Sign-up then answers the same for new
+      // and existing addresses, and a sign-in with the right password resends the link.
+      requireEmailVerification,
     },
-    // Sent on sign-up; not yet required to sign in (ADR-0016: enforced once production email works).
     emailVerification: {
       sendOnSignUp: true,
+      sendOnSignIn: true,
+      // A session always needs the password, even after following the link.
       autoSignInAfterVerification: false,
       async sendVerificationEmail({ user, url }) {
         await sendEmail({ kind: 'verification', to: user.email, url })
@@ -181,6 +191,9 @@ export function createAuth({
     },
     plugins: [
       organization({
+        // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
+        // covers sessions created before verification was enforced.
+        requireEmailVerificationOnInvitation: requireEmailVerification,
         organizationHooks: {
           // Backstop for deletions that don't come through the HTTP middleware above.
           async beforeDeleteOrganization({ organization }) {

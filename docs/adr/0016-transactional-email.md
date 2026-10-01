@@ -30,9 +30,15 @@ Auth needs three emails: invitations, password reset, and email verification. Th
   - all other sessions are revoked;
   - the request answers the same whether or not the account exists;
   - Better Auth's built-in limits apply (3 per 60 s per IP on reset and verification requests).
-- **Email verification:** sent on sign-up. **Not yet required** to sign in or to accept invitations.
-  - Trigger to enforce it (`requireEmailVerification`, `requireEmailVerificationOnInvitation`): production email delivery is live, and before the ADR-0014 data gate is lifted.
-  - It needs an E2E mailbox strategy, because the Playwright flow signs up users.
+- **Email verification:** sent on sign-up, and **required** (enforced 2026-10-01, once production delivery was live and before the ADR-0014 data gate lifts; owner decisions in the PR):
+  - `requireEmailVerification` (email + password sign-in) and `requireEmailVerificationOnInvitation` (accepting or rejecting an invitation; this also covers sessions created before enforcement).
+  - **Sign-up** creates no session. Better Auth then answers every sign-up alike, including an existing address or one refused by the ADR-0014 allowlist (no user, no email). The page says "Check your email".
+  - **Resend = sign in.** A sign-in with the right password and an unverified address is refused (`403 EMAIL_NOT_VERIFIED`) and sends a fresh link (`sendOnSignIn`, under the login rate limit). There is no separate resend endpoint in the UI.
+  - **No auto sign-in** after verifying (`autoSignInAfterVerification: false`): the link proves the mailbox, and the password still creates the session.
+  - **The link lands on** `/login?verified=1&redirect=<same-site path>` (built with `URLSearchParams` from `safeRedirect`). An invalid or expired link lands there with `error`, and the page shows a fixed message (never the parameter's text). A link resent by sign-in lands on `/` (Better Auth's client would follow a sign-in `callbackURL` on success too).
+  - **Previews only:** `EMAIL_VERIFICATION=off` (passed by `scripts/preview/lib.sh`), because previews send no email. The app honours `off` only when `BETTER_AUTH_URL` is a workers.dev URL; anywhere else it logs `auth.email_verification_off_refused` and keeps verification on. Any other value, or unset, means on. CI fails if `wrangler.jsonc` sets it, and `pnpm run deploy` refuses while the production Worker has an `EMAIL_VERIFICATION` secret (`scripts/check-email-verification.mjs`).
+  - **E2E mailbox:** verification links are JWTs signed with `BETTER_AUTH_SECRET`. The Playwright runner reads the secret from `apps/web/.dev.vars`, signs the same link with Better Auth's exported `createEmailVerificationToken`, and the browser follows it through the real `/api/auth/verify-email`. The secret never leaves the runner's Node process. The emailed link itself is covered by Vitest, which captures `sendEmail`. The preview E2E (no secrets) runs with verification off.
+  - **Rollout:** existing sessions of unverified users stay valid until revoked, so the owner deletes them once after deploying (runbook "Email" step 5).
 - **Invitations** are emailed when delivery is on, and the inviter still gets the shareable link.
 
 ## Activation (owner steps first, then a PR)
@@ -48,6 +54,6 @@ Auth needs three emails: invitations, password reset, and email verification. Th
 
 ## Consequences
 
-- Password reset and verification work end to end in tests. In dev they print to the console. In previews and production nothing is sent until activation.
+- Password reset and verification work end to end in tests; enforced verification is exercised by Vitest and by the local/CI E2E suite, not by preview E2E. In dev they print to the console. In previews and production nothing is sent until activation.
 - The provider lock-in is one file.
 - Deliverability (SPF/DKIM/DMARC, bounces, suppression) becomes an operational concern at activation.
