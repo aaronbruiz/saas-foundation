@@ -35,6 +35,10 @@ export default defineConfig({
   test: {
     // Workers tests only; e2e/ is Playwright's.
     include: ['test/**/*.test.ts'],
+    // Each worker is a workerd instance. Vitest's default (CPUs - 1) ran 7 on an 8-CPU, 4 GB machine:
+    // free memory fell to ~70 MB, it swapped and tests hit the 5 s timeout. 4 took the same wall
+    // time (~47 s) with ~600 MB free. CI's 4-vCPU runner already gets 3.
+    maxWorkers: 4,
     // Node-side: apply migrations to app_test before any workerd test runs.
     globalSetup: ['./test/global-setup.ts'],
   },
