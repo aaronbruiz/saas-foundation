@@ -2,6 +2,8 @@
 
 Status: Accepted (owner decision 2026-09-28, Q7). Delivery activation pending the sending domain. · Date: 2026-09-28
 
+Superseded in part by [ADR-0024](0024-email-activation-send-email-binding.md): activation step 3 (binding, previews, where the production settings live).
+
 ## Context
 
 Auth needs three emails: invitations, password reset, and email verification. The app runs on Cloudflare Workers, and Cloudflare Email Service offers a native `send_email` Worker binding (no API keys).

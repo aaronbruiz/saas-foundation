@@ -4,11 +4,13 @@
 //   - name and account are the committed ones; no build command; no_bundle;
 //   - main stays inside dist/server; assets are exactly dist/client (never the server bundle);
 //   - no vars (previews set theirs with --var);
-//   - the only binding is the Hyperdrive DB, with the fail-closed previews sentinel;
+//   - the only binding is the Hyperdrive DB, with the fail-closed previews sentinel; the email
+//     binding is accepted only exactly as committed, and then removed (previews never send email,
+//     ADR-0024);
 //   - every other key is either known-harmless or empty (new wrangler keys must stay empty).
 // Then it points both DB ids at the PR's own Hyperdrive config, turns preview URLs on, turns source
 // map upload off (wrangler would follow a bundle's sourceMappingURL to files outside the artifact),
-// and drops routes and the build-machine redirect paths. Writes the file in place.
+// and drops routes, the email binding and the build-machine redirect paths. Writes the file in place.
 // Usage: prepare-config.mjs <dist/server/wrangler.json> <pinned-account-id> [<hyperdrive-id> <production-hyperdrive-id>]
 // Without a Hyperdrive id it only validates. The production id is refused as a target (ADR-0021).
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
@@ -16,6 +18,10 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 const WORKER_NAME = 'saas-foundation' // `name` in the committed apps/web/wrangler.jsonc
 const PREVIEWS_SENTINEL = '0'.repeat(32)
+// `send_email` in the committed apps/web/wrangler.jsonc (ADR-0024). Removed from every preview.
+const COMMITTED_SEND_EMAIL = [
+  { name: 'EMAIL', allowed_sender_addresses: ['no-reply@mail.aaronlabr.dev'] },
+]
 const hex32 = /^[0-9a-f]{32}$/
 
 const [file, accountId, hyperdriveId, productionId] = process.argv.slice(2)
@@ -99,6 +105,7 @@ const rules = {
     hex32.test(v[0].id ?? '') &&
     Object.keys(v[0]).every((k) => ['binding', 'id', 'localConnectionString'].includes(k)),
   previews: (v) => sameJson(v, { hyperdrive: [{ binding: 'DB', id: PREVIEWS_SENTINEL }] }),
+  send_email: (v) => sameJson(v, COMMITTED_SEND_EMAIL),
   upload_source_maps: (v) => typeof v === 'boolean',
   observability: isPlain,
   python_modules: isPlain,
@@ -123,7 +130,14 @@ if (hyperdriveId === undefined) {
   process.exit(0)
 }
 
-for (const key of ['configPath', 'userConfigPath', 'topLevelName', 'definedEnvironments', 'routes'])
+for (const key of [
+  'configPath',
+  'userConfigPath',
+  'topLevelName',
+  'definedEnvironments',
+  'routes',
+  'send_email',
+])
   delete cfg[key]
 cfg.preview_urls = true
 cfg.upload_source_maps = false
