@@ -59,7 +59,11 @@ export async function signUp(): Promise<TestUser> {
   const res = await authPost('/sign-up/email', { email, password: PASSWORD, name: email })
   if (!res.ok) throw new Error(`sign-up failed: ${res.status} ${await res.text()}`)
   const link = await verificationUrl(email)
-  const verified = await withDb((db) => authFor(db).handler(new Request(link)))
+  // Its own client IP: without one, every verification shares Better Auth's `no-trusted-ip` bucket
+  // (100/min, persisted in app_test), which back-to-back runs overflow with 429s.
+  const verified = await withDb((db) =>
+    authFor(db).handler(new Request(link, { headers: { 'cf-connecting-ip': randomIp() } })),
+  )
   if (!verified.ok) throw new Error(`verification failed: ${verified.status}`)
   const signIn = await authPost('/sign-in/email', { email, password: PASSWORD })
   if (!signIn.ok) throw new Error(`sign-in failed: ${signIn.status} ${await signIn.text()}`)
