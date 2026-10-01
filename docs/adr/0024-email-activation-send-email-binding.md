@@ -1,6 +1,6 @@
 # ADR-0024: Activate transactional email: the `send_email` binding `EMAIL`
 
-Status: Accepted (owner decisions 2026-09-30). Production secrets set 2026-10-01; reset, verification and invitation emails delivered; the smoke test's SPF/DKIM check is pending (runbook "Email"). · Date: 2026-09-30
+Status: Accepted (owner decisions 2026-09-30). Production secrets set and smoke test passed 2026-10-01: reset, verification and invitation emails in the inbox with SPF, DKIM and DMARC passing (runbook "Email"). · Date: 2026-09-30
 
 Supersedes in part [ADR-0016](0016-transactional-email.md): its "Activation" step 3 (the binding, the previews override "[to confirm]", where `EMAIL_DELIVERY` and `EMAIL_FROM` live).
 
