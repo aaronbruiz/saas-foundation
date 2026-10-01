@@ -8,6 +8,7 @@ import { polarProvider, polarWebhookParser } from '../src/modules/billing/provid
 import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
 import { createOrg, randomIp, signUp, type TestUser } from './helpers'
+import { testBotProtection, withSiteverify } from './turnstile-fake'
 import {
   SECRET,
   deliver,
@@ -134,15 +135,18 @@ describe('polar webhook in Polar mode (subscription re-read)', () => {
   /** Polar's GET /v1/subscriptions/{id}, answering `state` (or failing with `status`). */
   function stubPolar(state: ReturnType<typeof subscriptionEvent>['data'] | { status: number }) {
     const calls: string[] = []
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = input instanceof Request ? input.url : String(input)
-      calls.push(new URL(url).pathname)
-      if ('id' in state) return Response.json(state)
-      return new Response('{"detail":"unavailable"}', {
-        status: state.status,
-        headers: { 'content-type': 'application/json' },
-      })
-    })
+    vi.stubGlobal(
+      'fetch',
+      withSiteverify(async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input)
+        calls.push(new URL(url).pathname)
+        if ('id' in state) return Response.json(state)
+        return new Response('{"detail":"unavailable"}', {
+          status: state.status,
+          headers: { 'content-type': 'application/json' },
+        })
+      }),
+    )
     return calls
   }
   async function deliverWith(parse: WebhookParser, payload: unknown, id: string) {
@@ -200,20 +204,23 @@ describe('polar checkout request', () => {
   function stubCheckoutApi(userId: string) {
     const bodies: Record<string, unknown>[] = []
     const page = (items: unknown[]) => ({ items, pagination: { total_count: 1, max_page: 1 } })
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const req = new Request(input, init)
-      const path = new URL(req.url).pathname
-      if (path.startsWith('/v1/customers/external/')) return Response.json({ id: 'cus_1' })
-      if (path === '/v1/customers/cus_1/members')
-        return Response.json(page([{ external_id: userId }]))
-      if (path === '/v1/products/')
-        return Response.json(page([{ id: 'prod_1', metadata: { price_key: 'pro_monthly' } }]))
-      if (req.method === 'POST' && path === '/v1/checkouts/') {
-        bodies.push((await req.json()) as Record<string, unknown>)
-        return Response.json({ url: 'https://sandbox.polar.sh/checkout/test' })
-      }
-      return new Response(`{"detail":"unexpected ${req.method} ${path}"}`, { status: 500 })
-    })
+    vi.stubGlobal(
+      'fetch',
+      withSiteverify(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const req = new Request(input, init)
+        const path = new URL(req.url).pathname
+        if (path.startsWith('/v1/customers/external/')) return Response.json({ id: 'cus_1' })
+        if (path === '/v1/customers/cus_1/members')
+          return Response.json(page([{ external_id: userId }]))
+        if (path === '/v1/products/')
+          return Response.json(page([{ id: 'prod_1', metadata: { price_key: 'pro_monthly' } }]))
+        if (req.method === 'POST' && path === '/v1/checkouts/') {
+          bodies.push((await req.json()) as Record<string, unknown>)
+          return Response.json({ url: 'https://sandbox.polar.sh/checkout/test' })
+        }
+        return new Response(`{"detail":"unexpected ${req.method} ${path}"}`, { status: 500 })
+      }),
+    )
     return bodies
   }
   const request = (customerIp: string | null) => ({
@@ -283,6 +290,7 @@ describe('owner-role hooks (Polar members)', () => {
           baseURL: env.BETTER_AUTH_URL,
           allowSignUp: () => true,
           requireEmailVerification: true,
+          botProtection: testBotProtection,
           sendEmail: async () => {},
           billing: {
             memberLimit: async () => null,

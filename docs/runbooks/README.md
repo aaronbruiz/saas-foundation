@@ -33,7 +33,7 @@ Incident 2026-09-27 (PR #4): `up.sh`'s stdout was captured into the step output.
 
 Where to look when production fails:
 
-- **Dashboard:** Workers & Pages → `saas-foundation` → Observability (Logs / Events). Filter by `level = error`, by `event` (`server_fn.unhandled`, `health.db_down`, `better_auth`), or by `rayId`.
+- **Dashboard:** Workers & Pages → `saas-foundation` → Observability (Logs / Events). Filter by `level = error`, by `event` (`server_fn.unhandled`, `health.db_down`, `better_auth`, `auth.captcha_unavailable`, `auth.turnstile_misconfigured`), or by `rayId`.
   - A user-reported Cloudflare ray id (shown on Cloudflare error pages) matches `rayId`.
   - Each request's invocation log shows its status and outcome.
 - **Live:** `pnpm --filter web exec wrangler tail saas-foundation --format pretty --search '"level":"error"'`. Don't rely on `--status error`: it filters on the invocation's outcome, and server-function failures are turned into responses, so those invocations end `ok`.
@@ -81,6 +81,19 @@ Sender `SaaS Foundation <no-reply@mail.aaronlabr.dev>` through Cloudflare Email 
    - Then revoke those sessions: `DELETE FROM session WHERE user_id IN (SELECT id FROM "user" WHERE NOT email_verified);` (deletes exactly `their_sessions` rows). Their next sign-in is refused and sends a fresh link.
    - Check: a verified smoke-test account signs in as before; an unverified one gets "Verify your email address first. We sent you a new link.", the link arrives, and after following it, sign-in works.
    - _Done 2026-10-01 (UTC; owner, production version `d23847d9` deployed from `main` at #56, 02:07:53Z): count before revoking: 2 unverified users holding 1 session; the `DELETE` ran (the SQL Editor showed no row count); afterwards the count of sessions belonging to unverified users was 0. A verified smoke-test account signed in as before. A fourth smoke-test plus-address (allowlisted) signed up and got "Check your email"; its verification email arrived at 02:12:39Z (`From: SaaS Foundation <no-reply@mail.aaronlabr.dev>` in the downloaded `.eml`), `Authentication-Results` (header lines only) `spf=pass`, `dkim=pass` (`@mail.aaronlabr.dev` and `@cloudflare-smtp.net`), `dmarc=pass`; the link was `/api/auth/verify-email?token=…&callbackURL=/login?verified=1&redirect=/` (URL-encoded). Signing in before following it showed "Verify your email address first. We sent you a new link."; that second email arrived at 02:34:42Z (downloaded `.eml`: same `From`, `spf=pass`, `dkim=pass`, `dmarc=pass`, link `/api/auth/verify-email?token=…&callbackURL=/`, as a sign-in resend lands on `/`). After following that resent (02:34:42Z) link (owner) and signing in, the account reached "New organization" (whether the "Email verified" notice showed wasn't reported). Step 5 complete._
+
+## Turnstile (ADR-0025)
+
+Bot check on sign-up, sign-in, password-reset requests and verification-email requests. Without both keys those endpoints answer 503 (`auth.turnstile_misconfigured`), and `pnpm run deploy` refuses to deploy, so set the secrets **before** deploying the release that adds Turnstile.
+
+1. **Owner, once:** Cloudflare dashboard (production account) → Turnstile → Add widget: hostname `app.aaronlabr.dev` only, widget mode **Managed**, no pre-clearance. Copy the site key and the secret key.
+2. **Owner:** in your own terminal, `pnpm --filter web exec wrangler secret put TURNSTILE_SITE_KEY`, then `pnpm --filter web exec wrangler secret put TURNSTILE_SECRET_KEY` (values at the hidden prompt). `wrangler secret list` shows both names. Each `secret put` creates a Worker version of the deployed code, which ignores them until the deploy.
+3. **Deploy:** `pnpm run deploy` from a clean checkout of `main` (runbook "First production deploy" step 0).
+4. **Browser check** (a smoke-test account): `/login` shows the Turnstile widget and the Sign in button turns on after it passes; signing in works; in DevTools → Network the `sign-in/email` request carries an `x-captcha-response` header and no URL holds a token. `/forgot-password` and `/signup` show the widget too. Logs show no `auth.turnstile_misconfigured`.
+5. **If sign-in answers 503** "Sign-in is temporarily unavailable": a key is missing or a Cloudflare test key reached production (`auth.turnstile_misconfigured`, `reason`). Fix the secret; no deploy needed. A 500 with `auth.captcha_unavailable` means siteverify was unreachable (Cloudflare side); a 403 means the token was rejected (expired, reused, or issued for another hostname).
+6. **Rotate the secret:** Turnstile → the widget → rotate the secret key, then `wrangler secret put TURNSTILE_SECRET_KEY` with the new value.
+
+Local dev, CI and previews use Cloudflare's public always-pass test keys: `apps/web/.dev.vars` needs `TURNSTILE_SITE_KEY=1x00000000000000000000AA` and `TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA` (the app refuses test keys outside localhost and workers.dev).
 
 ## Polar (ADR-0022, ADR-0018, ADR-0020)
 

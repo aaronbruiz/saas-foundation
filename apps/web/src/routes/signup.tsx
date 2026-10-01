@@ -3,9 +3,12 @@ import { useState, type FormEvent } from 'react'
 import { authClient } from '../lib/auth-client'
 import { safeRedirect, verifiedLoginUrl } from '../lib/safe-redirect'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
+import { useTurnstile } from '../lib/turnstile'
+import { getTurnstileSiteKeyFn } from '../server/turnstile'
 
 export const Route = createFileRoute('/signup')({
   validateSearch: (s: Record<string, unknown>) => ({ redirect: safeRedirect(s.redirect) }),
+  loader: () => getTurnstileSiteKeyFn(),
   component: Signup,
 })
 
@@ -16,6 +19,7 @@ function Signup() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [sentTo, setSentTo] = useState<string | null>(null)
+  const turnstile = useTurnstile(Route.useLoaderData())
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -27,8 +31,10 @@ function Signup() {
       email,
       password: String(form.get('password')),
       callbackURL: verifiedLoginUrl(redirect),
+      fetchOptions: { headers: turnstile.headers },
     })
     setBusy(false)
+    turnstile.reset()
     if (error) return setError(error.message ?? 'Sign-up failed')
     // ADR-0016: no session until the address is verified (always the answer where verification is
     // required, whether or not the address already had an account).
@@ -67,8 +73,13 @@ function Signup() {
         <Field label="Password">
           <input name="password" type="password" required minLength={8} className={inputClass} />
         </Field>
+        {turnstile.element}
         <ErrorText error={error} />
-        <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
+        <button
+          type="submit"
+          disabled={!hydrated || busy || !turnstile.token}
+          className={buttonClass}
+        >
           Create account
         </button>
       </form>

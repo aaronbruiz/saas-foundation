@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, vi } from 'vitest'
 import { polarWebhookParser } from '../src/modules/billing/providers/polar'
 import { handleBillingWebhook } from '../src/modules/billing/webhook'
+import { withSiteverify } from './turnstile-fake'
 
 // Polar webhook deliveries for tests (ADR-0022): signed like Polar signs them, delivered through
 // the Polar-mode parser, with Polar's subscription re-read answered by a fetch stub.
@@ -69,16 +70,19 @@ export const polar = { state: new Map<string, unknown>(), down: false }
 export function stubPolarApi() {
   beforeEach(() => {
     polar.down = false
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = input instanceof Request ? input.url : String(input)
-      const subId = new URL(url).pathname.match(/^\/v1\/subscriptions\/([^/]+)$/)?.[1]
-      if (polar.down || !subId || !polar.state.has(subId))
-        return new Response('{"detail":"unavailable"}', {
-          status: polar.down ? 500 : 404,
-          headers: { 'content-type': 'application/json' },
-        })
-      return Response.json(polar.state.get(subId))
-    })
+    vi.stubGlobal(
+      'fetch',
+      withSiteverify(async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const subId = new URL(url).pathname.match(/^\/v1\/subscriptions\/([^/]+)$/)?.[1]
+        if (polar.down || !subId || !polar.state.has(subId))
+          return new Response('{"detail":"unavailable"}', {
+            status: polar.down ? 500 : 404,
+            headers: { 'content-type': 'application/json' },
+          })
+        return Response.json(polar.state.get(subId))
+      }),
+    )
   })
   afterEach(() => vi.unstubAllGlobals())
 }

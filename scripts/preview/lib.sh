@@ -180,8 +180,9 @@ new_auth_secret() {
 # Args: extra `wrangler preview` args (e.g. --config). Needs AUTH_SECRET. Previews hold synthetic
 # data only, so sign-up is open there (ADR-0014; production defaults to closed), and they send no
 # email, so email verification is off (ADR-0016; the app honours `off` only on a workers.dev URL,
-# and `pnpm run deploy` refuses it for production). The URL is deterministic, so Better Auth's
-# origin checks match it.
+# and `pnpm run deploy` refuses it for production). Turnstile runs on Cloudflare's public
+# always-pass test keys (ADR-0025; the app accepts test keys only on workers.dev and localhost).
+# The URL is deterministic, so Better Auth's origin checks match it.
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 deploy_preview() {
   local subdomain auth_url out url
@@ -197,7 +198,9 @@ deploy_preview() {
   out="$(pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
     --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
     --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" \
-    --var "EMAIL_VERIFICATION:off" --secrets-file "$SECRETS_FILE")"
+    --var "EMAIL_VERIFICATION:off" --var "TURNSTILE_SITE_KEY:1x00000000000000000000AA" \
+    --var "TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA" \
+    --secrets-file "$SECRETS_FILE")"
   url="$(printf '%s' "$out" | node -e '
     const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
     const d = JSON.parse(t.slice(i)); process.stdout.write(d.preview.urls[0]);')"

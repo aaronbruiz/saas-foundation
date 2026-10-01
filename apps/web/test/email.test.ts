@@ -5,6 +5,7 @@ import { mailerFor, render, type EmailMessage } from '../src/server/email'
 import { withDb } from '../src/server/db'
 import { emailVerificationRequired } from '../src/server/auth'
 import { PASSWORD, randomIp } from './helpers'
+import { captchaHeader, testBotProtection } from './turnstile-fake'
 
 // ADR-0016: auth emails behind one mailer seam; tokens travel in query strings (ADR-0015).
 afterEach(() => vi.restoreAllMocks())
@@ -144,6 +145,7 @@ describe('auth email flows through the real handler', () => {
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: () => true,
         requireEmailVerification,
+        botProtection: testBotProtection,
         sendEmail: async (e) => {
           sent.push(e)
         },
@@ -154,6 +156,7 @@ describe('auth email flows through the real handler', () => {
             'content-type': 'application/json',
             origin: env.BETTER_AUTH_URL,
             'cf-connecting-ip': randomIp(),
+            ...captchaHeader,
             ...(init.headers as Record<string, string>),
           },
         }),
@@ -305,6 +308,7 @@ describe('auth email flows through the real handler', () => {
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: () => true,
         requireEmailVerification: true,
+        botProtection: testBotProtection,
         sendEmail: () => gate, // a provider that hasn't answered yet
         runInBackground: (p) => void background.push(p),
       }).handler(
@@ -314,6 +318,7 @@ describe('auth email flows through the real handler', () => {
             'content-type': 'application/json',
             origin: env.BETTER_AUTH_URL,
             'cf-connecting-ip': randomIp(),
+            ...captchaHeader,
           },
           body: JSON.stringify({ email, redirectTo: '/reset-password' }),
         }),

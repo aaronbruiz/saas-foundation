@@ -2,15 +2,21 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { authClient } from '../lib/auth-client'
 import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
+import { useTurnstile } from '../lib/turnstile'
+import { getTurnstileSiteKeyFn } from '../server/turnstile'
 
 // Password reset request (ADR-0016). The answer is the same whether or not the account exists.
-export const Route = createFileRoute('/forgot-password')({ component: ForgotPassword })
+export const Route = createFileRoute('/forgot-password')({
+  loader: () => getTurnstileSiteKeyFn(),
+  component: ForgotPassword,
+})
 
 function ForgotPassword() {
   const hydrated = useHydrated()
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const turnstile = useTurnstile(Route.useLoaderData())
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -19,8 +25,10 @@ function ForgotPassword() {
     const { error } = await authClient.requestPasswordReset({
       email: String(form.get('email')),
       redirectTo: '/reset-password',
+      fetchOptions: { headers: turnstile.headers },
     })
     setBusy(false)
+    turnstile.reset()
     if (error) return setError(error.message ?? 'Request failed')
     setSent(true)
   }
@@ -37,8 +45,13 @@ function ForgotPassword() {
           <Field label="Email">
             <input name="email" type="email" required className={inputClass} />
           </Field>
+          {turnstile.element}
           <ErrorText error={error} />
-          <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
+          <button
+            type="submit"
+            disabled={!hydrated || busy || !turnstile.token}
+            className={buttonClass}
+          >
             Send reset link
           </button>
         </form>

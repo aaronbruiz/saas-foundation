@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { authPost, PASSWORD, randomIp, signUp } from './helpers'
+import { captchaHeader } from './turnstile-fake'
 
 // Login rate limiting (ADR-0005): 5 requests per 60 s per IP on sign-in and sign-up, counted in
 // Postgres (the memory limiter is per isolate, so it can't hold across Workers).
@@ -53,7 +54,11 @@ describe('login rate limiting', () => {
         authFor(db).handler(
           new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-in/email`, {
             method: 'POST',
-            headers: { 'content-type': 'application/json', origin: env.BETTER_AUTH_URL },
+            headers: {
+              'content-type': 'application/json',
+              origin: env.BETTER_AUTH_URL,
+              ...captchaHeader,
+            },
             body: JSON.stringify({ email, password: 'wrong-password-123' }),
           }),
         ),

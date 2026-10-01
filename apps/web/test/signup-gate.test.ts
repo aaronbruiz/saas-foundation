@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { signUpPolicy } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { PASSWORD, randomIp } from './helpers'
+import { captchaHeader, testBotProtection } from './turnstile-fake'
 
 // ADR-0014 data gate: until off-provider backups are restore-tested, production admits only
 // allowlisted (synthetic) accounts. Unset configuration means closed.
@@ -40,6 +41,7 @@ describe('sign-up through the real handler with an allowlist', () => {
         baseURL: env.BETTER_AUTH_URL,
         allowSignUp: signUpPolicy(undefined, allowed),
         requireEmailVerification,
+        botProtection: testBotProtection,
         sendEmail: async (e) => {
           sent.push(e.to)
         },
@@ -51,6 +53,7 @@ describe('sign-up through the real handler with an allowlist', () => {
             'content-type': 'application/json',
             origin: env.BETTER_AUTH_URL,
             'cf-connecting-ip': randomIp(),
+            ...captchaHeader,
           },
           body: JSON.stringify({ email, password: PASSWORD, name: 'x' }),
         }),

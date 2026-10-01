@@ -1,7 +1,7 @@
-import { betterAuth } from 'better-auth'
+import { betterAuth, type BetterAuthPlugin } from 'better-auth'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { organization } from 'better-auth/plugins'
+import { captcha, organization } from 'better-auth/plugins'
 import { countMembers, findMembership, schema, type Db } from '@saas-foundation/db'
 
 /**
@@ -12,6 +12,24 @@ export type AuthEmail =
   | { kind: 'invitation'; to: string; invitationId: string; organizationName: string }
   | { kind: 'password-reset'; to: string; url: string }
   | { kind: 'verification'; to: string; url: string }
+
+/**
+ * Unauthenticated endpoints that create accounts, try passwords or send email: each needs a bot
+ * check (ADR-0025). Better Auth's captcha defaults plus `/send-verification-email`, which needs no
+ * session and sends mail (our UI never calls it; sign-in resends the link instead).
+ */
+export const BOT_PROTECTED_PATHS = [
+  '/sign-up/email',
+  '/sign-in/email',
+  '/request-password-reset',
+  '/send-verification-email',
+]
+
+/**
+ * ADR-0025: Cloudflare Turnstile on `BOT_PROTECTED_PATHS`, or `'unavailable'` when the deployment
+ * isn't configured for it, which refuses those paths (503) instead of skipping the check.
+ */
+export type BotProtection = { secretKey: string; allowedHostnames?: string[] } | 'unavailable'
 
 export type AuthOptions = {
   /** Per-request Drizzle client (ADR-0003: one pg client per request, uncached `DB` binding). */
@@ -33,6 +51,8 @@ export type AuthOptions = {
    * data, so they're dropped). The app routes them to its structured logger (ADR-0015).
    */
   log?: (level: 'debug' | 'info' | 'warn' | 'error', message: unknown) => void
+  /** Bot check on sign-up, sign-in and email-sending endpoints. Required: there is no "off". */
+  botProtection: BotProtection
   /** Delivers auth emails (invitation, password reset, verification). */
   sendEmail: (email: AuthEmail) => Promise<void>
   /**
@@ -84,6 +104,7 @@ export function createAuth({
   baseURL,
   allowSignUp,
   requireEmailVerification,
+  botProtection,
   log,
   sendEmail,
   runInBackground,
@@ -168,7 +189,10 @@ export function createAuth({
     },
     logger: {
       level: 'warn',
-      ...(log && { log: (level, message: unknown) => log(level, message) }),
+      ...(log && {
+        log: (level, message: unknown, ...args: unknown[]) =>
+          log(level, isCaptchaFailure(level, args) ? 'auth.captcha_unavailable' : message),
+      }),
     },
     // Cloudflare's edge sets cf-connecting-ip (overwriting any client value). Without a trusted IP,
     // Better Auth puts every client into one shared rate-limit bucket.
@@ -190,6 +214,16 @@ export function createAuth({
       },
     },
     plugins: [
+      // Runs after the rate limit (Better Auth's router order), so the limit also caps siteverify
+      // calls. A siteverify error or timeout answers 500: fail closed.
+      botProtection === 'unavailable'
+        ? refuseBotProtectedPaths()
+        : captcha({
+            provider: 'cloudflare-turnstile',
+            secretKey: botProtection.secretKey,
+            endpoints: BOT_PROTECTED_PATHS,
+            allowedHostnames: botProtection.allowedHostnames,
+          }),
       organization({
         // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
         // covers sessions created before verification was enforced.
@@ -252,6 +286,33 @@ export function createAuth({
     ],
   })
 }
+
+/**
+ * The captcha plugin's own failure (siteverify unreachable, erroring or timing out; it answers 500):
+ * logged at error level with the protected endpoint's URL. Its message is whatever was thrown, so
+ * it gets a stable event name instead.
+ */
+const isCaptchaFailure = (level: string, args: unknown[]) => {
+  const endpoint = (args[0] as { endpoint?: unknown } | undefined)?.endpoint
+  if (level !== 'error' || typeof endpoint !== 'string') return false
+  return BOT_PROTECTED_PATHS.some((path) => new URL(endpoint).pathname.endsWith(path))
+}
+
+/** Stands in for the captcha plugin when bot protection isn't configured: refuse, never skip. */
+const refuseBotProtectedPaths = (): BetterAuthPlugin => ({
+  id: 'captcha-unavailable',
+  onRequest: async (request, ctx) => {
+    const base = ctx.options.basePath ?? '/api/auth'
+    const path = new URL(request.url).pathname.replace(base, '').replace(/\/+$/, '')
+    if (!BOT_PROTECTED_PATHS.includes(path)) return
+    return {
+      response: Response.json(
+        { code: 'CAPTCHA_UNAVAILABLE', message: 'Sign-in is temporarily unavailable.' },
+        { status: 503 },
+      ),
+    }
+  },
+})
 
 const billingAccessUnavailable = () =>
   new APIError('SERVICE_UNAVAILABLE', {

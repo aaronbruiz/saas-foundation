@@ -71,7 +71,8 @@ export function logUnexpected(event: string, err: unknown, fields: Fields = {}):
 
 /**
  * Better Auth's own log lines. It sometimes passes an Error (or other value) instead of a string;
- * only a redacted name/message is kept either way.
+ * only a redacted name/message is kept either way. Stable `auth.*` names from our auth package
+ * (e.g. `auth.captcha_unavailable`, ADR-0025) become the event.
  */
 export function logBetterAuth(level: 'debug' | 'info' | 'warn' | 'error', message: unknown) {
   const text =
@@ -80,7 +81,11 @@ export function logBetterAuth(level: 'debug' | 'info' | 'warn' | 'error', messag
       : message instanceof Error
         ? `${message.name}: ${message.message}`
         : `non-string log message (${typeof message})`
-  const line = JSON.stringify({ level, event: 'better_auth', message: redact(text) })
+  const line = JSON.stringify(
+    /^auth\.[a-z_]+$/.test(text)
+      ? { level, event: text }
+      : { level, event: 'better_auth', message: redact(text) },
+  )
   if (level === 'error') console.error(line)
   else console.warn(line)
 }
