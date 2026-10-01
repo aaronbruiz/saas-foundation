@@ -61,9 +61,15 @@ export function useTurnstile(siteKey: string | null) {
         if (cancelled || !container.current) return
         const id = api.render(container.current, {
           sitekey: siteKey,
-          callback: setToken,
+          callback: (t) => {
+            setFailed(false)
+            setToken(t)
+          },
           'expired-callback': () => setToken(null),
-          'error-callback': () => setToken(null),
+          'error-callback': () => {
+            setToken(null)
+            setFailed(true)
+          },
         })
         widget.current = { api, id }
       },

@@ -63,7 +63,10 @@ export function botProtectionFor(
   }
   const testKeys = TEST_KEY.test(secretKey) || TEST_KEY.test(siteKey)
   if (!testKeys) return { secretKey, allowedHostnames: [new URL(appUrl).hostname] }
-  if (isLocalUrl(appUrl) || isPreviewUrl(appUrl)) return { secretKey }
+  // Bound to the app's own host: a production Worker misconfigured with a preview or localhost
+  // URL still refuses the dummy token on its real domain.
+  if (isLocalUrl(appUrl) || isPreviewUrl(appUrl))
+    return { secretKey, requestHost: new URL(appUrl).host }
   logWarn('auth.turnstile_misconfigured', { reason: 'test_key' })
   return 'unavailable'
 }

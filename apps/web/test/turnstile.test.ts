@@ -156,6 +156,21 @@ describe('Turnstile on the protected endpoints', () => {
     expect(siteverifyCalls.length - before).toBe(LOGIN_LIMIT)
   })
 
+  it('refuses (503) test keys bound to another host, accepts them on their own', async () => {
+    // A production Worker misconfigured with a preview URL must not take the dummy token on its
+    // real domain (the requests here arrive at BETTER_AUTH_URL's host).
+    for (const path of BOT_PROTECTED_PATHS) {
+      const res = await post(path, bodyFor(path), {
+        botProtection: { secretKey: PASS_SECRET, requestHost: 'app.example.com' },
+      })
+      expect(res.status).toBe(503)
+    }
+    const own = await post('/sign-up/email', bodyFor('/sign-up/email'), {
+      botProtection: { secretKey: PASS_SECRET, requestHost: new URL(env.BETTER_AUTH_URL).host },
+    })
+    expect(own.status).toBe(200)
+  })
+
   it('leaves other endpoints alone', async () => {
     const res = await withDb((db) =>
       createAuth({
@@ -204,7 +219,10 @@ describe('botProtectionFor (deployment config)', () => {
 
   it('accepts test keys only on localhost and workers.dev previews', () => {
     for (const url of ['http://localhost:3000', 'https://pr-1-web.acme.workers.dev'])
-      expect(botProtectionFor(PASS_SECRET, PASS_SITE_KEY, url)).toEqual({ secretKey: PASS_SECRET })
+      expect(botProtectionFor(PASS_SECRET, PASS_SITE_KEY, url)).toEqual({
+        secretKey: PASS_SECRET,
+        requestHost: new URL(url).host,
+      })
   })
 
   it('refuses test keys anywhere else (logged)', () => {
@@ -244,6 +262,6 @@ describe('botProtectionFor (deployment config)', () => {
     const vars = env as unknown as Record<string, string | undefined>
     expect(
       botProtectionFor(vars.TURNSTILE_SECRET_KEY, vars.TURNSTILE_SITE_KEY, env.BETTER_AUTH_URL),
-    ).toEqual({ secretKey: PASS_SECRET })
+    ).toEqual({ secretKey: PASS_SECRET, requestHost: new URL(env.BETTER_AUTH_URL).host })
   })
 })

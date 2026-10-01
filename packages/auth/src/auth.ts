@@ -29,7 +29,17 @@ export const BOT_PROTECTED_PATHS = [
  * ADR-0025: Cloudflare Turnstile on `BOT_PROTECTED_PATHS`, or `'unavailable'` when the deployment
  * isn't configured for it, which refuses those paths (503) instead of skipping the check.
  */
-export type BotProtection = { secretKey: string; allowedHostnames?: string[] } | 'unavailable'
+export type BotProtection =
+  | {
+      secretKey: string
+      allowedHostnames?: string[]
+      /**
+       * Only requests to this host (`host[:port]`) may use these keys; any other host gets the 503.
+       * For test keys, whose tokens carry no usable hostname, so they can't serve another domain.
+       */
+      requestHost?: string
+    }
+  | 'unavailable'
 
 export type AuthOptions = {
   /** Per-request Drizzle client (ADR-0003: one pg client per request, uncached `DB` binding). */
@@ -216,14 +226,19 @@ export function createAuth({
     plugins: [
       // Runs after the rate limit (Better Auth's router order), so the limit also caps siteverify
       // calls. A siteverify error or timeout answers 500: fail closed.
-      botProtection === 'unavailable'
-        ? refuseBotProtectedPaths()
-        : captcha({
-            provider: 'cloudflare-turnstile',
-            secretKey: botProtection.secretKey,
-            endpoints: BOT_PROTECTED_PATHS,
-            allowedHostnames: botProtection.allowedHostnames,
-          }),
+      ...(botProtection === 'unavailable'
+        ? [refuseBotProtectedPaths(() => true)]
+        : [
+            ...(botProtection.requestHost
+              ? [refuseBotProtectedPaths((url) => url.host !== botProtection.requestHost)]
+              : []),
+            captcha({
+              provider: 'cloudflare-turnstile',
+              secretKey: botProtection.secretKey,
+              endpoints: BOT_PROTECTED_PATHS,
+              allowedHostnames: botProtection.allowedHostnames,
+            }),
+          ]),
       organization({
         // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
         // covers sessions created before verification was enforced.
@@ -298,13 +313,17 @@ const isCaptchaFailure = (level: string, args: unknown[]) => {
   return BOT_PROTECTED_PATHS.some((path) => new URL(endpoint).pathname.endsWith(path))
 }
 
-/** Stands in for the captcha plugin when bot protection isn't configured: refuse, never skip. */
-const refuseBotProtectedPaths = (): BetterAuthPlugin => ({
+/**
+ * Refuses (503) protected-path requests for which `refuse(url)` holds: all of them when bot
+ * protection isn't configured (refuse, never skip), or those to the wrong host for test keys.
+ */
+const refuseBotProtectedPaths = (refuse: (url: URL) => boolean): BetterAuthPlugin => ({
   id: 'captcha-unavailable',
   onRequest: async (request, ctx) => {
     const base = ctx.options.basePath ?? '/api/auth'
-    const path = new URL(request.url).pathname.replace(base, '').replace(/\/+$/, '')
-    if (!BOT_PROTECTED_PATHS.includes(path)) return
+    const url = new URL(request.url)
+    const path = url.pathname.replace(base, '').replace(/\/+$/, '')
+    if (!BOT_PROTECTED_PATHS.includes(path) || !refuse(url)) return
     return {
       response: Response.json(
         { code: 'CAPTCHA_UNAVAILABLE', message: 'Sign-in is temporarily unavailable.' },

@@ -26,6 +26,7 @@ Closes the bot-protection item in [ADR-0005](0005-better-auth-identity-app-owned
 - **No "off"**, and a misconfiguration fails closed (`botProtectionFor` in `apps/web/src/server/auth.ts`):
   - a missing key → the four endpoints answer 503 `CAPTCHA_UNAVAILABLE` and the forms show the bot check as unavailable; logged `auth.turnstile_misconfigured` (`reason: missing_key`);
   - a test key (either one) on any URL but `http://localhost`/`127.0.0.1` or a `https://*.workers.dev` preview → the same 503, `reason: test_key`;
+  - test keys accepted on localhost or a preview are bound to that URL's host: a protected request arriving at any other host (e.g. a production Worker misconfigured with a workers.dev `BETTER_AUTH_URL`, reached on its custom domain) gets the same 503;
   - with real keys, the token must report the app's own hostname (`allowedHostnames` = the host of `BETTER_AUTH_URL`), which also rejects any test-key token (`example.com`).
   - `pnpm run deploy` refuses when the production Worker lacks either secret name (`scripts/check-turnstile.mjs --deployed`; values can't be read back, so the app's check above covers them).
 - **Siteverify down:** the plugin answers 500 and nothing is created (fail closed). Logged at error level as `auth.captcha_unavailable` (the plugin's own message is whatever was thrown, so `packages/auth` maps it to that stable name); Workers Issues groups error-level logs (ADR-0015). A rejected token is Better Auth's warn-level log (`better_auth`).
@@ -45,7 +46,7 @@ Closes the bot-protection item in [ADR-0005](0005-better-auth-identity-app-owned
 
 - Sign-in, sign-up and password-reset requests need the visitor's browser to pass Turnstile; scripts and API clients can't use these endpoints without a token. A blocked or failing widget (e.g. the script blocked by an extension) means the form can't be submitted; the page says so.
 - Production can't sign anyone in until both secrets are set, so the owner sets them **before** deploying this release (runbook "Turnstile").
-- Each protected request costs one siteverify call (bounded by the rate limit).
+- A protected request that carries a token and passes the rate limit costs one siteverify call; requests without a token, rate-limited ones and the 503 mode make none.
 - Turnstile becomes a subprocessor for the legal pages milestone D needs.
 - Local dev needs the two test keys in `apps/web/.dev.vars` (see `.dev.vars.example`); without them sign-in answers 503 locally too.
 - Order of work: this PR (code, tests, docs) → owner creates the widget, sets the secrets, deploys, browser check (runbook "Turnstile") → status Accepted with the date.
