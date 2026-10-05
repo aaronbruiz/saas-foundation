@@ -207,8 +207,8 @@ importers:
         specifier: ^17.12.0
         version: 17.12.0
       neon:
-        specifier: 6.3.0
-        version: 6.3.0(hono@4.13.9)(supports-color@10.2.2)
+        specifier: 8.0.5
+        version: 8.0.5(hono@4.13.9)(supports-color@10.2.2)
       prettier:
         specifier: ^3.9.9
         version: 3.9.9
@@ -1510,16 +1510,16 @@ packages:
       '@neodrag/core': 3.0.0-next.11
       solid-js: ^1.0.0
 
-  '@neon/config-runtime@1.7.2':
-    resolution: {integrity: sha512-AoR+lN5odFFvv0i7rownGfy2NLSTe1ESxyf5BIZT0MCJwWKUkkt8/ypuv9W8idzHzeoDBhQYatl+uyk59VUsfA==}
+  '@neon/config-runtime@1.7.3':
+    resolution: {integrity: sha512-pkMF3FBLd+jhOyZd837GHHVaU+Zkl5PhNveL0dM4CsFt8aLzK/ArDd/boJTYBO7A4sE/9656nn63pREYUwPGKQ==}
     engines: {node: '>=20.19.0'}
 
-  '@neon/config@1.8.2':
-    resolution: {integrity: sha512-3xDn25mBuCDpsnczI+ToLPjuKJgzHKWYYH3NmbewFYD/Sxiwc5L5S2VP5CxLoxZQsLn4/bq8QmWzVObLAWp5/Q==}
+  '@neon/config@1.8.3':
+    resolution: {integrity: sha512-/UmkgmHrm9tTOoFd7g3DttqlFFA3KG+d6JULLk7JzhvU2CwHrUaKiRmE1OmhOQAqJ3Mm49c/G5nDVbSefyFCrw==}
     engines: {node: '>=20.19.0'}
 
-  '@neon/sdk@6.1.2':
-    resolution: {integrity: sha512-HiLtvM48xfAJxCy/v6ACIaMcPfv2+dQBOyti4NbxmYrcltfBqaw06qP0spFJctYbKeCEuyBzCM3hzQVNCtZ0Og==}
+  '@neon/sdk@7.0.0':
+    resolution: {integrity: sha512-hF/Om50SmpKK2PQldcwYxi6b3p7S2wlwW8fX+54jx88xHaEu7hB4dojuuuP8nwQz24qq/p/jxVm0P9DztKPoJA==}
     engines: {node: '>=20.19.0'}
 
   '@noble/ciphers@2.4.0':
@@ -3307,8 +3307,8 @@ packages:
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
-  neon@6.3.0:
-    resolution: {integrity: sha512-syW7/QufQz2zR+yKZyx5OjUf1dxniJMwB2XhO+KTul4u/kGebRbGYRF6VUPpOoWDoUOf4RdBl2Onb054ujRTPg==}
+  neon@8.0.5:
+    resolution: {integrity: sha512-QN/Ga32qM+6c+fhH69Z3JnZkqo3CN40VG9KMvhsbEPoInTWBWb8lngS/E9p1oC+KIN1OrWoV+AbN02IhtodRDQ==}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -4976,9 +4976,9 @@ snapshots:
       '@neodrag/core': 3.0.0-next.11
       solid-js: 1.9.15
 
-  '@neon/config-runtime@1.7.2(supports-color@10.2.2)':
+  '@neon/config-runtime@1.7.3(supports-color@10.2.2)':
     dependencies:
-      '@neon/config': 1.8.2
+      '@neon/config': 1.8.3
       '@vercel/nft': 1.11.0(supports-color@10.2.2)
       esbuild: 0.28.1
       fflate: 0.8.3
@@ -4987,13 +4987,13 @@ snapshots:
       - rollup
       - supports-color
 
-  '@neon/config@1.8.2':
+  '@neon/config@1.8.3':
     dependencies:
-      '@neon/sdk': 6.1.2
+      '@neon/sdk': 7.0.0
       jiti: 2.7.0
       zod: 4.6.5
 
-  '@neon/sdk@6.1.2': {}
+  '@neon/sdk@7.0.0': {}
 
   '@noble/ciphers@2.4.0': {}
 
@@ -6672,14 +6672,14 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  neon@6.3.0(hono@4.13.9)(supports-color@10.2.2):
+  neon@8.0.5(hono@4.13.9)(supports-color@10.2.2):
     dependencies:
       '@clack/core': 0.4.2
       '@clack/prompts': 0.10.1
       '@hono/node-server': 2.0.4(hono@4.13.9)
-      '@neon/config': 1.8.2
-      '@neon/config-runtime': 1.7.2(supports-color@10.2.2)
-      '@neon/sdk': 6.1.2
+      '@neon/config': 1.8.3
+      '@neon/config-runtime': 1.7.3(supports-color@10.2.2)
+      '@neon/sdk': 7.0.0
       '@segment/analytics-node': 1.3.0
       add-mcp: 2.0.0
       chalk: 5.3.0
