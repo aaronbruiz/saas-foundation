@@ -39,7 +39,7 @@ export const subprocessors: Subprocessor[] = [
     name: 'Cloudflare',
     service: 'Database connection (Hyperdrive, caching disabled)',
     data: 'Database queries and results pass through; nothing is cached',
-    location: "Cloudflare's network",
+    location: 'Not recorded in the ADRs',
     source: 'ADR-0003, ADR-0004',
   },
   {
@@ -47,14 +47,14 @@ export const subprocessors: Subprocessor[] = [
     service:
       'Bot protection (Turnstile) on sign-up, sign-in, password reset and verification email',
     data: "The Turnstile token and the visitor's IP address, sent for verification",
-    location: "Cloudflare's network",
+    location: 'Not recorded in the ADRs',
     source: 'ADR-0025',
   },
   {
     name: 'Cloudflare',
     service: 'Transactional email (Email Service)',
     data: "Recipient's email address and message content (verification, password reset, invitation)",
-    location: "Cloudflare's network",
+    location: 'Not recorded in the ADRs',
     source: 'ADR-0016, ADR-0024',
   },
   {
@@ -74,9 +74,9 @@ export const subprocessors: Subprocessor[] = [
   {
     name: 'Polar Software, Inc.',
     service: 'Billing, as merchant of record (sandbox mode; no real payments yet)',
-    data: "Organization id and name; billing managers' user ids and email addresses; what the buyer enters in Polar's checkout",
+    data: "Organization id and name; billing managers' user ids and email addresses; the IP address of whoever starts a checkout; what the buyer enters in Polar's checkout",
     location: 'Not recorded in the ADRs',
-    source: 'ADR-0022',
+    source: 'ADR-0022, modules/billing/service.ts and providers/polar.ts (customer_ip_address)',
   },
   {
     name: 'GitHub',
