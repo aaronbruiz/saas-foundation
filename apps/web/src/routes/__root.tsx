@@ -38,6 +38,19 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body className="min-h-screen bg-gray-50 text-gray-900">
         {children}
+        <footer className="mx-auto max-w-3xl p-8 text-sm text-gray-600">
+          <nav aria-label="Legal" className="flex gap-4">
+            <Link to="/privacy" className="underline">
+              Privacy
+            </Link>
+            <Link to="/terms" className="underline">
+              Terms
+            </Link>
+            <Link to="/subprocessors" className="underline">
+              Subprocessors
+            </Link>
+          </nav>
+        </footer>
         <Scripts />
       </body>
     </html>

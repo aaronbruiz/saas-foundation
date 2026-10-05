@@ -75,6 +75,18 @@ function Signup() {
         </Field>
         {turnstile.element}
         <ErrorText error={error} />
+        {/* Wording is the owner's (or their lawyer's) to confirm; acceptance isn't recorded. */}
+        <p className="text-sm text-gray-600">
+          By creating an account you agree to the{' '}
+          <Link to="/terms" className="underline">
+            Terms
+          </Link>{' '}
+          and acknowledge the{' '}
+          <Link to="/privacy" className="underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
         <button
           type="submit"
           disabled={!hydrated || busy || !turnstile.token}
