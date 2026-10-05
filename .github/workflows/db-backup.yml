@@ -41,9 +41,10 @@ jobs:
         run: scripts/backup/snapshot.sh
 
   dump:
-    # Started together, the two `production` deployments sometimes left `dump` stuck at the environment
-    # gate ("waiting", no runner) for days, holding the `db-backups` concurrency group (3 of 8 runs,
-    # 2026-09-30 to 2026-10-02). Running it after `snapshot` keeps one deployment at a time.
+    # When both jobs started together, `dump` sometimes stayed at the `production` environment gate
+    # ("waiting", no runner) for days, holding the `db-backups` concurrency group (3 of 8 runs,
+    # 2026-09-30 to 2026-10-02). Cause unproven (other simultaneous starts ran fine); running it after
+    # `snapshot` is a workaround for a suspected gate race.
     needs: snapshot
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
