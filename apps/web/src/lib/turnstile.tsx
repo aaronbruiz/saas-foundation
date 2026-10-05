@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 
 // ADR-0025: Cloudflare Turnstile widget for the auth forms. The token goes to Better Auth in the
 // `x-captcha-response` header (never in a URL); tokens are single-use, so the widget resets after
@@ -46,20 +46,30 @@ function loadTurnstile(): Promise<TurnstileApi> {
 
 export type TurnstileConfig = { siteKey: string | null; actions: Record<string, string> }
 
-/**
- * Renders the widget for the auth endpoint `path` (no site key: bot protection unavailable, no
- * widget), with the action that endpoint requires. `token` is set once the visitor passes and
- * cleared when it expires or errors; `reset()` asks for a fresh one.
- */
-export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string) {
-  const action = actions[path]
-  const container = useRef<HTMLDivElement>(null)
-  const widget = useRef<{ api: TurnstileApi; id: string } | null>(null)
-  const [token, setToken] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
+type Widget = { api: TurnstileApi; id: string }
 
-  useEffect(() => {
-    if (!siteKey || !action) return
+/**
+ * Owns the widget's container and, with it, the widget: rendered on mount, removed on unmount. A
+ * page can drop the form (and this component) while the hook stays mounted, e.g. for a
+ * confirmation view; removing the widget here keeps Turnstile from losing track of it. A layout
+ * effect, so the cleanup runs before React detaches the container.
+ */
+function TurnstileWidget({
+  siteKey,
+  action,
+  widget,
+  setToken,
+  setFailed,
+}: {
+  siteKey: string
+  action: string
+  widget: RefObject<Widget | null>
+  setToken: (token: string | null) => void
+  setFailed: (failed: boolean) => void
+}) {
+  const container = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
     let cancelled = false
     loadTurnstile().then(
       (api) => {
@@ -85,8 +95,23 @@ export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string
       cancelled = true
       if (widget.current) widget.current.api.remove(widget.current.id)
       widget.current = null
+      setToken(null) // the token belonged to the removed widget
     }
-  }, [siteKey, action])
+  }, [siteKey, action, widget, setToken, setFailed])
+
+  return <div ref={container} />
+}
+
+/**
+ * Renders the widget for the auth endpoint `path` (no site key: bot protection unavailable, no
+ * widget), with the action that endpoint requires. `token` is set once the visitor passes and
+ * cleared when it expires or errors; `reset()` asks for a fresh one.
+ */
+export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string) {
+  const action = actions[path]
+  const widget = useRef<Widget | null>(null)
+  const [token, setToken] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
 
   const reset = useCallback(() => {
     setToken(null)
@@ -96,7 +121,15 @@ export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string
   const unavailable = !siteKey || !action || failed
   const element = (
     <>
-      <div ref={container} />
+      {siteKey && action && (
+        <TurnstileWidget
+          siteKey={siteKey}
+          action={action}
+          widget={widget}
+          setToken={setToken}
+          setFailed={setFailed}
+        />
+      )}
       {unavailable && (
         <p role="alert" className="text-sm text-red-600">
           Bot check unavailable. Reload the page or try again later.

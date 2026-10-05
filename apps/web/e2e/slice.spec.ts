@@ -12,12 +12,19 @@ const notFound = (page: Page) =>
 // them (a pre-hydration native submit once put the password into the URL).
 const contexts: BrowserContext[] = []
 const visited: string[] = []
+// Turnstile logs when a widget's element disappears without `turnstile.remove()` (or is removed
+// twice); any such message means the widget lifecycle is broken.
+const turnstileLogs: string[] = []
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext()
   contexts.push(context)
   const page = await context.newPage()
   page.on('framenavigated', (f) => visited.push(f.url()))
+  page.on('console', (m) => {
+    if (m.text().includes('[Cloudflare Turnstile]'))
+      turnstileLogs.push(`${m.type()} on ${page.url()}: ${m.text()}`)
+  })
   return page
 }
 
@@ -65,6 +72,8 @@ async function createOrg(page: Page, prefix: string) {
 }
 
 test.afterEach(async () => {
+  // Soft, so the cleanup below still runs and an earlier test failure is reported alongside it.
+  expect.soft(turnstileLogs.splice(0), 'Turnstile console messages').toEqual([])
   expect(visited.length).toBeGreaterThan(0)
   expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
   await Promise.all(contexts.splice(0).map((c) => c.close()))
@@ -97,6 +106,21 @@ test('an unverified account cannot sign in until it follows the emailed link', a
   await page.getByLabel('Password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/orgs\/new$/)
+})
+
+test('a password reset request shows the same confirmation for any address', async ({
+  browser,
+}) => {
+  const page = await newPage(browser)
+  await page.goto('/forgot-password')
+  await page.getByLabel('Email').fill(`nobody-${rand()}@e2e.test`)
+  await page.getByRole('button', { name: 'Send reset link' }).click()
+  await expect(page.getByRole('status')).toHaveText(
+    "If an account exists for that address, we've sent a link to reset the password.",
+  )
+  // Leave the page so the guard also covers the hook unmounting.
+  await page.getByRole('link', { name: 'Back to sign in' }).click()
+  await expect(page).toHaveURL(/\/login/)
 })
 
 test('sign-up, organization, projects, invitation and tenant isolation', async ({ browser }) => {
