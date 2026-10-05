@@ -65,7 +65,14 @@ async function createOrg(page: Page, prefix: string) {
   const slug = `${prefix}-${rand()}`
   await expect(page).toHaveURL(/\/orgs\/new$/)
   await page.getByLabel('Organization name').fill(`Org ${slug}`)
-  await page.getByLabel('URL slug').fill(slug)
+  // The browser checks the slug before submitting (it ignores a `pattern` that isn't a valid
+  // `v`-flag regex, so a broken one would let this through).
+  const slugField = page.getByLabel('URL slug')
+  const mismatch = () => slugField.evaluate((el: HTMLInputElement) => el.validity.patternMismatch)
+  await slugField.fill('Bad_slug-')
+  expect(await mismatch()).toBe(true)
+  await slugField.fill(slug)
+  expect(await mismatch()).toBe(false)
   await page.getByRole('button', { name: 'Create organization' }).click()
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/projects$`))
   return slug
