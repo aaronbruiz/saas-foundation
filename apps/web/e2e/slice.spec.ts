@@ -74,7 +74,9 @@ async function createOrg(page: Page, prefix: string) {
 test.afterEach(async () => {
   // Soft, so the cleanup below still runs and an earlier test failure is reported alongside it.
   expect.soft(turnstileLogs.splice(0), 'Turnstile console messages').toEqual([])
-  expect(visited.length).toBeGreaterThan(0)
+  // A test that skipped itself before opening a page (previews skip email verification) has
+  // nothing to check.
+  if (contexts.length > 0) expect(visited.length).toBeGreaterThan(0)
   expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
   await Promise.all(contexts.splice(0).map((c) => c.close()))
   visited.length = 0
