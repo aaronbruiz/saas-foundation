@@ -41,7 +41,11 @@ function NewOrganization() {
           <input
             name="slug"
             required
-            pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+            minLength={2}
+            maxLength={48}
+            // Mirrors contracts' TenantSlug. Browsers compile `pattern` with the `v` flag, where a
+            // bare `-` in a class is a syntax error and the whole pattern is ignored: keep `\-`.
+            pattern="[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?"
             className={inputClass}
           />
         </Field>
