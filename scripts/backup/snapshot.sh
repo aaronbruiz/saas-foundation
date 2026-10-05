@@ -18,10 +18,10 @@ if ! [[ "$KEEP" =~ ^[1-7]$ ]]; then echo "[backup] ERROR: BACKUP_KEEP must be an
 NAME="backup-$(date -u +%Y%m%d)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 log() { echo "[backup] $*" >&2; }
-neon() {
-  if [ -n "${NEON_API_KEY:-}" ]; then pnpm --dir "$ROOT" exec neon --api-key "$NEON_API_KEY" "$@"
-  else pnpm --dir "$ROOT" exec neon "$@"; fi
-}
+# The CLI reads NEON_API_KEY from the environment (its --api-key default), so the key stays out of argv;
+# without it, the caller's own Neon login. No analytics: they'd make extra account calls with the key
+# and send the run's GitHub details to a third party.
+neon() { pnpm --dir "$ROOT" exec neon --no-analytics "$@"; }
 branches() {
   neon branches list --project-id "$NEON_PROJECT_ID" --output json | jq 'if type == "array" then . else .branches end'
 }

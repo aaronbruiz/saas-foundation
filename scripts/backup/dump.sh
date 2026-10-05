@@ -44,8 +44,8 @@ fi
 if [ -z "${DATABASE_URL:-}" ]; then
   : "${NEON_PROJECT_ID:?}"
   # The CLI reads NEON_API_KEY from the environment (its --api-key default), so the key stays out of argv.
-  # Direct (non-pooler) URL; never printed.
-  DATABASE_URL="$(pnpm --dir "$ROOT" exec neon connection-string main --project-id "$NEON_PROJECT_ID" \
+  # No analytics (see snapshot.sh). Direct (non-pooler) URL; never printed.
+  DATABASE_URL="$(pnpm --dir "$ROOT" exec neon --no-analytics connection-string main --project-id "$NEON_PROJECT_ID" \
     --database-name app --role-name app_owner)"
 fi
 [ -n "${GITHUB_ACTIONS:-}" ] && echo "::add-mask::$DATABASE_URL"
