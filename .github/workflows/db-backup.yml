@@ -3,7 +3,8 @@ name: DB backups
 # ADR-0003 backup option A (`snapshot`): a daily Neon branch snapshot of production `main` (no compute),
 # keeping the newest BACKUP_KEEP (default 3). Covers mistakes older than Neon Free's 6 h restore window.
 # ADR-0023 backup option B (`dump`): a daily pg_dump of `main` to Cloudflare R2, kept 30 days by the
-# bucket's lifecycle rule. Covers a Neon outage or the loss of the Neon project. The jobs are independent.
+# bucket's lifecycle rule. Covers a Neon outage or the loss of the Neon project. The jobs are independent:
+# `dump` runs whatever `snapshot`'s outcome, only after it.
 on:
   schedule:
     - cron: '23 4 * * *'
@@ -40,6 +41,12 @@ jobs:
         run: scripts/backup/snapshot.sh
 
   dump:
+    # When both jobs started together, `dump` sometimes stayed at the `production` environment gate
+    # ("waiting", no runner) for days, holding the `db-backups` concurrency group (3 of 8 runs,
+    # 2026-09-30 to 2026-10-02). Cause unproven (other simultaneous starts ran fine); running it after
+    # `snapshot` is a workaround for a suspected gate race.
+    needs: snapshot
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Same fence as `snapshot`: every credential below lives only in `production` (ADR-0019, ADR-0023).
     environment: production
