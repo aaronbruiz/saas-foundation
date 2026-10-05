@@ -45,7 +45,7 @@ The owner rejected the ADR-0011 exposure as a permanent risk. Facts, checked 202
    - The owner then **rotates** (revokes) the current `CLOUDFLARE_API_TOKEN`, which can deploy production.
    - Its token is an account-owned token scoped to that Worker, plus the Hyperdrive permissions previews need.
    - The production Worker is then out of the preview token's reach.
-   - The trusted deploy job targets that Worker itself: `wrangler preview --config dist/server/wrangler.json --worker-name saas-foundation-preview` (both flags exist in the pinned Wrangler 4.142.0). It never relies on the artifact's `name`.
+   - The trusted deploy job targets that Worker itself: `wrangler preview --config dist/server/wrangler.json --worker-name saas-foundation-preview` (both flags exist in Wrangler 4.142.0 and, rechecked with `--help`, in 4.147.0). It never relies on the artifact's `name`.
    - Preview URLs, `BETTER_AUTH_URL`, the URL-shape guard, `down.sh` and the janitor switch to the preview Worker's name.
 3. **Split the preview job so secrets never meet PR code:**
    - **`check` (T0):** already builds. For same-repo PRs it also uploads an artifact: `apps/web/dist` and `packages/db/drizzle`.
