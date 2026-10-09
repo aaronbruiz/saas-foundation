@@ -11,10 +11,10 @@
   },
   "dependencies": {
     "@saas-foundation/db": "workspace:*",
-    "better-auth": "^1.7.6",
+    "better-auth": "^1.7.7",
     "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
-    "auth": "1.7.6"
+    "auth": "1.7.7"
   }
 }
