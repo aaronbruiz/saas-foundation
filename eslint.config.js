@@ -55,8 +55,14 @@ const noServerDbInUi = {
 }
 
 // no-restricted-imports doesn't see import(), so the same limits for dynamic
-// imports. Selector regexes can't contain '/', hence \x2F.
+// imports, which must take a string literal for lint to check them. Selector regexes
+// can't contain '/', hence \x2F.
 const noDynamicRawDb = [
+  {
+    selector: "ImportExpression[source.type!='Literal']",
+    message:
+      'import() takes a plain string literal, so lint can check it (AGENTS.md invariants 2-3).',
+  },
   {
     selector: 'ImportExpression[source.value=/^drizzle-orm($|\\x2F)/]',
     message: noDrizzleOrm.message,
@@ -83,20 +89,25 @@ const moduleNames = readdirSync(new URL('./apps/web/src/modules', import.meta.ur
   .map((d) => d.name)
 
 function moduleBoundary(self) {
+  // A separator may carry `./` or extra slashes: `.././billing/x` is still billing's.
+  const sep = '(/\\.?)*/'
   const others = moduleNames
     .filter((m) => m !== self)
     .map((m) => {
       const open = publicEntryPoints[m] ?? []
-      return open.length ? `${m}/(?!(${open.join('|')})(\\.[cm]?[jt]sx?)?$)` : `${m}/`
+      return open.length
+        ? `${m}${sep}(?!(\\.?/)*(${open.join('|')})(\\.[cm]?[jt]sx?)?$)`
+        : `${m}${sep}`
     })
   // `../<module>/` (relative) or `modules/<module>/` (aliased or from deeper files).
-  const regex = `(^|/)(modules|\\.\\.)/(${others.join('|')})`
+  const regex = `(^|/)(modules|\\.\\.)${sep}(${others.join('|')})`
   const message =
     'Use another module only through its public entry points: modules/billing/{entitlements,policy} (AGENTS.md invariant 3).'
   return {
     pattern: { regex, message },
     selector: {
-      selector: `ImportExpression[source.value=/${regex.replaceAll('/', '\\x2F')}/]`,
+      // Also type-level `import('…').T`.
+      selector: `:matches(ImportExpression, TSImportType)[source.value=/${regex.replaceAll('/', '\\x2F')}/]`,
       message,
     },
   }
