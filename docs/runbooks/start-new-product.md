@@ -10,6 +10,7 @@ Steps marked **owner** need dashboard or account access.
   ```
   git clone https://github.com/aaronbruiz/saas-foundation.git <product>
   cd <product> && git remote rename origin upstream
+  gh repo create <owner>/<product> --private   # empty, no README or license
   git remote add origin https://github.com/<owner>/<product>.git && git push -u origin main
   ```
 - Later: `git fetch upstream && git merge upstream/main`. Keep product code in new directories and modules so these merges stay clean.
@@ -56,13 +57,13 @@ Check the names against `grep -ohE '(secrets|vars)\.[A-Z0-9_]+' .github/workflow
 
 ## 5. Verify, including tenant isolation
 
-1. `pnpm install --frozen-lockfile`, `pnpm db:up`, `pnpm db:migrate`, then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass locally.
+1. Local setup as in `README.md`: `pnpm install --frozen-lockfile`; `cp apps/web/.dev.vars.example apps/web/.dev.vars` and set a new `BETTER_AUTH_SECRET` (`openssl rand -base64 32`; the Turnstile test keys are in runbook "Turnstile"); `pnpm db:up`, `pnpm db:migrate`; `pnpm --filter web exec playwright install --with-deps chromium`. Then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass.
 2. Tenant isolation is covered by `apps/web/test/tenancy.test.ts`, `database-isolation.test.ts` and `roles.test.ts`, plus the E2E slice. They must pass unchanged. Every tenant-owned table the product adds gets cross-tenant tests for URL **and** server-function input (AGENTS.md recipe "Add a tenant-owned table").
 3. Open a first PR: CI green, the preview deploys from its own Neon branch, and preview E2E passes.
 4. Production: follow runbook "First production deploy" from step 0 with the product's values. The data gate (ADR-0014) and the launch milestones apply to each product separately.
 
 ## 6. Record product decisions
 
-- Foundation ADRs stay as they are: they're the product's history too. A product decision that differs gets a **new ADR in the product repo** naming the one it amends or supersedes (ADR README convention). Don't edit the inherited ones.
+- Foundation ADRs stay as they are: they're the product's history too. A product decision that differs gets a **new ADR in the product repo** naming the one it amends or supersedes (ADR README convention). Don't edit the inherited ones except to mark them superseded, as the ADR README allows.
 - First product ADRs, typically: what the product is and its non-goals; any foundation default it changes (plan, region, sign-up mode); any new deployable or runtime (ADR-0027 criteria and checklist).
 - A fix or pattern that every product needs goes back to the foundation as a PR there, then reaches products through `git merge upstream/main`.
