@@ -25,19 +25,26 @@ const uiMustNotTouchDataOrAuth = {
   message: 'Routes and components go through modules/ or server/ (AGENTS.md invariants 1-2).',
 }
 
-// Raw database access (a client, the schema, query builders) stays behind
-// packages/db repositories (AGENTS.md invariant 2). A `Db` reaches `db.query.*`
-// without any import, so routes and components can't import `server/db` either.
+// Raw database access (the Drizzle client, the schema, query builders) stays behind
+// packages/db repositories (AGENTS.md invariant 2). A `Db` is an opaque handle; the
+// client behind it comes only from @saas-foundation/db/internal. Routes and components
+// go through modules/, so they don't import `server/db` either.
 const noDrizzleOrm = {
   group: ['drizzle-orm', 'drizzle-orm/*'],
   message: 'Query tables through packages/db repository functions (AGENTS.md invariant 2).',
 }
 
-const noDbClientOrSchema = {
+const noDbClient = {
   group: ['@saas-foundation/db'],
-  importNames: ['createDb', 'schema'],
+  importNames: ['createDb'],
   message:
-    'Only server/db.ts and server/health.ts create a database client; use repository functions (AGENTS.md invariant 2).',
+    'Only server/db.ts and server/health.ts create a database client; use withDb (AGENTS.md invariant 2).',
+}
+
+const noRawDb = {
+  group: ['@saas-foundation/db/internal'],
+  message:
+    'The raw client and schema are for packages/auth and tests; use repository functions (AGENTS.md invariant 2).',
 }
 
 const noServerDbInUi = {
@@ -54,9 +61,9 @@ const noDynamicRawDb = [
     message: noDrizzleOrm.message,
   },
   {
-    selector: "ImportExpression[source.value='@saas-foundation/db']",
+    selector: 'ImportExpression[source.value=/^@saas-foundation\\x2Fdb($|\\x2F)/]',
     message:
-      'Import repository functions statically; import() exposes createDb and schema (AGENTS.md invariant 2).',
+      'Import @saas-foundation/db statically; import() bypasses the createDb and internal limits (AGENTS.md invariant 2).',
   },
 ]
 
@@ -100,7 +107,7 @@ export default defineConfig([
       'react-hooks/exhaustive-deps': 'warn',
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noDbClientOrSchema] },
+        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noDbClient, noRawDb] },
       ],
       'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
@@ -138,7 +145,10 @@ export default defineConfig([
     // The only two places that create a database client.
     files: ['apps/web/src/server/db.ts', 'apps/web/src/server/health.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [providerSdksOnlyInProviders, noDrizzleOrm] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noRawDb] },
+      ],
     },
   },
   {
@@ -163,7 +173,7 @@ export default defineConfig([
     // Providers may import their SDK, but get no raw database access.
     files: ['apps/web/src/modules/billing/providers/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [noDrizzleOrm, noDbClientOrSchema] }],
+      'no-restricted-imports': ['error', { patterns: [noDrizzleOrm, noDbClient, noRawDb] }],
     },
   },
   prettier,

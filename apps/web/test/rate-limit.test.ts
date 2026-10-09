@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:workers'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import { authPost, PASSWORD, randomIp, signUp } from './helpers'
 import { captchaHeader } from './turnstile-fake'
 
@@ -10,7 +11,7 @@ import { captchaHeader } from './turnstile-fake'
 const LIMIT = 5
 
 const counterRow = (key: string) =>
-  withDb((db) => db.query.rateLimit.findFirst({ where: (t, { eq }) => eq(t.key, key) }))
+  withDb((db) => rawDb(db).query.rateLimit.findFirst({ where: (t, { eq }) => eq(t.key, key) }))
 
 async function statuses(n: number, request: () => Promise<Response>) {
   const out: Response[] = []

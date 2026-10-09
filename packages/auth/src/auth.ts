@@ -2,7 +2,8 @@ import { betterAuth, type BetterAuthPlugin } from 'better-auth'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { captcha, organization } from 'better-auth/plugins'
-import { countMembers, findMembership, schema, type Db } from '@saas-foundation/db'
+import { countMembers, findMembership, type Db } from '@saas-foundation/db'
+import { rawDb, schema } from '@saas-foundation/db/internal'
 
 /**
  * Emails Better Auth asks the app to send (ADR-0016). The app renders and delivers them; links that
@@ -161,7 +162,7 @@ export function createAuth({
   return betterAuth({
     secret,
     baseURL,
-    database: drizzleAdapter(db, { provider: 'pg', schema }),
+    database: drizzleAdapter(rawDb(db), { provider: 'pg', schema }),
     emailAndPassword: {
       enabled: true,
       // Our own page, token in the query string (Better Auth's default link has it in the path,

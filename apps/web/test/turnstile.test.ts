@@ -8,6 +8,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { botProtectionFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import { logBetterAuth } from '../src/server/log'
 import { PASSWORD, randomIp, signUp } from './helpers'
 import {
@@ -74,7 +75,8 @@ const bodyFor = (path: string, email = `t-${crypto.randomUUID()}@test.local`) =>
 
 const userExists = (email: string) =>
   withDb(
-    async (db) => !!(await db.query.user.findFirst({ where: (t, { eq }) => eq(t.email, email) })),
+    async (db) =>
+      !!(await rawDb(db).query.user.findFirst({ where: (t, { eq }) => eq(t.email, email) })),
   )
 
 afterEach(() => {

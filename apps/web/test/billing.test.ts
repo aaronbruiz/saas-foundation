@@ -1,4 +1,4 @@
-import { billing, findOrganizationBySlug } from '@saas-foundation/db'
+import { billing, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getEntitlements } from '../src/modules/billing/entitlements'
@@ -26,6 +26,7 @@ import { acceptInvitation, inviteMember } from '../src/modules/organizations/ser
 import { createProject, listProjects } from '../src/modules/projects/service'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import {
   authPost,
   createOrg,
@@ -52,7 +53,7 @@ stubPolarApi()
 
 // Direct SQL for assertions and fixtures only (apps/web doesn't depend on drizzle-orm).
 type RawQuery = (sql: string, params: unknown[]) => Promise<{ rowCount: number | null }>
-const raw = (db: unknown) => (db as { $client: { query: RawQuery } }).$client
+const raw = (db: Db) => (rawDb(db) as unknown as { $client: { query: RawQuery } }).$client
 
 const subscriptionOf = (orgId: string) => withDb((db) => billing(db, { orgId }).subscription())
 const eventRecorded = (eventId: string) =>

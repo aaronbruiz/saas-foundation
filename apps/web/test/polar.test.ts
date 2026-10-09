@@ -7,6 +7,7 @@ import type { WebhookParser } from '../src/modules/billing/provider'
 import { polarProvider, polarWebhookParser } from '../src/modules/billing/providers/polar'
 import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import { createOrg, randomIp, signUp, type TestUser } from './helpers'
 import { testBotProtection, withSiteverify } from './turnstile-fake'
 import {
@@ -314,7 +315,9 @@ describe('owner-role hooks (Polar members)', () => {
 
   type RawQuery = (sql: string, params: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
   const query = (sql: string, params: unknown[]) =>
-    withDb((db) => (db as unknown as { $client: { query: RawQuery } }).$client.query(sql, params))
+    withDb((db) =>
+      (rawDb(db) as unknown as { $client: { query: RawQuery } }).$client.query(sql, params),
+    )
   const roleOf = async (orgId: string, userId: string) =>
     (
       await query('SELECT id, role FROM member WHERE organization_id = $1 AND user_id = $2', [
