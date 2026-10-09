@@ -21,4 +21,11 @@ test-results
 
 # local-only notes (handoffs etc.)
 .local/
+
+# Agent config: .claude/settings.json, hooks/ and CLAUDE.md are shared (committed);
+# these are machine-local (skills are per-machine symlinks).
+.claude/settings.local.json
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/skills/
+.agents/

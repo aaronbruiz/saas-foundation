@@ -1,0 +1,1 @@
+- Do not create or modify a script solely to get around a Bash PreToolUse hook. If a hook rejects a command, change the execution strategy as its message says instead of moving the rejected command into a script file.
