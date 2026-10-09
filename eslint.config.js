@@ -25,9 +25,54 @@ const uiMustNotTouchDataOrAuth = {
   message: 'Routes and components go through modules/ or server/ (AGENTS.md invariants 1-2).',
 }
 
+// Raw database access (a client, the schema, query builders) stays behind
+// packages/db repositories (AGENTS.md invariant 2). A `Db` reaches `db.query.*`
+// without any import, so routes and components can't import `server/db` either.
+const noDrizzleOrm = {
+  group: ['drizzle-orm', 'drizzle-orm/*'],
+  message: 'Query tables through packages/db repository functions (AGENTS.md invariant 2).',
+}
+
+const noDbClientOrSchema = {
+  group: ['@saas-foundation/db'],
+  importNames: ['createDb', 'schema'],
+  message:
+    'Only server/db.ts and server/health.ts create a database client; use repository functions (AGENTS.md invariant 2).',
+}
+
+const noServerDbInUi = {
+  // Patterns match the import string, so this covers relative and aliased spellings.
+  regex: '(^|/)server/db(\\.[cm]?[jt]sx?)?$',
+  message: 'Routes and components reach data through modules/, not withDb (AGENTS.md invariant 2).',
+}
+
+// no-restricted-imports doesn't see import(), so the same limits for dynamic
+// imports. Selector regexes can't contain '/', hence \x2F.
+const noDynamicRawDb = [
+  {
+    selector: 'ImportExpression[source.value=/^drizzle-orm($|\\x2F)/]',
+    message: noDrizzleOrm.message,
+  },
+  {
+    selector: "ImportExpression[source.value='@saas-foundation/db']",
+    message:
+      'Import repository functions statically; import() exposes createDb and schema (AGENTS.md invariant 2).',
+  },
+]
+
+const noDynamicServerDbInUi = {
+  selector: 'ImportExpression[source.value=/(^|\\x2F)server\\x2Fdb(\\.[cm]?[jt]sx?)?$/]',
+  message: noServerDbInUi.message,
+}
+
 const noInternalPackages = {
   group: ['@saas-foundation/*'],
   message: 'This package must not import other workspace packages (AGENTS.md module map).',
+}
+
+const onlyDbPackage = {
+  group: ['@saas-foundation/*', '!@saas-foundation/db'],
+  message: 'packages/auth may import only @saas-foundation/db (AGENTS.md module map).',
 }
 
 export default defineConfig([
@@ -53,6 +98,11 @@ export default defineConfig([
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+      'no-restricted-imports': [
+        'error',
+        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noDbClientOrSchema] },
+      ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
   },
   {
@@ -60,8 +110,9 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, uiMustNotTouchDataOrAuth] },
+        { patterns: [providerSdksOnlyInProviders, uiMustNotTouchDataOrAuth, noServerDbInUi] },
       ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb, noDynamicServerDbInUi],
     },
   },
   {
@@ -80,6 +131,14 @@ export default defineConfig([
           ],
         },
       ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb],
+    },
+  },
+  {
+    // The only two places that create a database client.
+    files: ['apps/web/src/server/db.ts', 'apps/web/src/server/health.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [providerSdksOnlyInProviders, noDrizzleOrm] }],
     },
   },
   {
@@ -92,8 +151,20 @@ export default defineConfig([
     },
   },
   {
+    files: ['packages/auth/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [providerSdksOnlyInProviders, onlyDbPackage] },
+      ],
+    },
+  },
+  {
+    // Providers may import their SDK, but get no raw database access.
     files: ['apps/web/src/modules/billing/providers/**/*.ts'],
-    rules: { 'no-restricted-imports': 'off' },
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [noDrizzleOrm, noDbClientOrSchema] }],
+    },
   },
   prettier,
 ])
