@@ -98,11 +98,11 @@ Investigated 2026-09-28/29 on the preview Worker, with evidence (test PR numbers
 
 ## Notes (2026-10-09)
 
-**Zombie behaviour re-verified.** Read-only `GET /api/health`, 3 requests per closed PR's Preview URL, at 07:31Z:
+**Zombie behaviour re-verified.** Read-only `GET /api/health`, 3 requests per Preview URL of PRs #63–#82 and of a name that never existed, at about 07:31Z (#80's response body re-read at 07:35Z):
 
-- Still executing, 3/3 `503 {"ok":false,"db":"down"}`: #73 (closed 7.5 h earlier), #75, #77, #78, #79, #80 and #82. The deleted Previews' code still runs, and the per-PR revocation holds: none reaches a database.
-- Stopped, generic 404 with `x-preview-user-error: true` (the same as a name that never existed): every PR closed on 2026-10-05 or earlier that had a preview (#63–#72; #63, #64 and #66 still executed on 2026-10-05 at 05:20Z), and #76 (closed 1.6 h earlier).
-- So deleted Previews do stop eventually, but at no predictable time (under 2 hours to several days). Decision 1 is unchanged: a 404 still proves nothing, and deleting the per-PR Hyperdrive config stays the boundary. The bug report draft was refreshed with this; the owner files it.
+- 3/3 `503 {"ok":false,"db":"down"}` from deleted Previews of PRs whose close-cleanup succeeded: #73 (closed 7.5 h earlier), #75, #77, #78, #79, #80 and #82. The deleted deployments' code still runs, and none reached a database: the per-PR revocation held.
+- 3/3 generic 404 with `x-preview-user-error: true`, the same as the never-existed name: #63–#72, #74, #76 and #81. Of these, #68–#72 and #76 had a successful preview run (#76 closed 1.6 h earlier); #63, #64 and #66 executed (503) when checked on 2026-10-05 at about 05:20Z; #67, #74 and #81 had no preview run.
+- So some deleted Previews answer 404 hours or days after deletion while others still execute; these probes don't show whether a 404 is permanent. Decision 1 is unchanged: a 404 still proves nothing, and deleting the per-PR Hyperdrive config stays the boundary. The Cloudflare bug report is still not filed.
 
 **Previews stay public on workers.dev; no Cloudflare Access.** Why that is acceptable today:
 
