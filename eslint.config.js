@@ -42,8 +42,27 @@ const noDbClientOrSchema = {
 
 const noServerDbInUi = {
   // Patterns match the import string, so this covers relative and aliased spellings.
-  regex: '(^|/)server/db$',
+  regex: '(^|/)server/db(\\.[cm]?[jt]sx?)?$',
   message: 'Routes and components reach data through modules/, not withDb (AGENTS.md invariant 2).',
+}
+
+// no-restricted-imports doesn't see import(), so the same limits for dynamic
+// imports. Selector regexes can't contain '/', hence \x2F.
+const noDynamicRawDb = [
+  {
+    selector: 'ImportExpression[source.value=/^drizzle-orm($|\\x2F)/]',
+    message: noDrizzleOrm.message,
+  },
+  {
+    selector: "ImportExpression[source.value='@saas-foundation/db']",
+    message:
+      'Import repository functions statically; import() exposes createDb and schema (AGENTS.md invariant 2).',
+  },
+]
+
+const noDynamicServerDbInUi = {
+  selector: 'ImportExpression[source.value=/(^|\\x2F)server\\x2Fdb(\\.[cm]?[jt]sx?)?$/]',
+  message: noServerDbInUi.message,
 }
 
 const noInternalPackages = {
@@ -83,6 +102,7 @@ export default defineConfig([
         'error',
         { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noDbClientOrSchema] },
       ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
   },
   {
@@ -92,6 +112,7 @@ export default defineConfig([
         'error',
         { patterns: [providerSdksOnlyInProviders, uiMustNotTouchDataOrAuth, noServerDbInUi] },
       ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb, noDynamicServerDbInUi],
     },
   },
   {
@@ -110,6 +131,7 @@ export default defineConfig([
           ],
         },
       ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
   },
   {
