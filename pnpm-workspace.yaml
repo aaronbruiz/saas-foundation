@@ -2,6 +2,11 @@ packages:
   - apps/*
   - packages/*
 
+overrides:
+  # pg-cloudflare 1.4.1: every client.end() emits an unhandled "This socket has been closed."
+  # error on Workers (brianc/node-postgres#3805, open). pg itself may update. Drop once fixed.
+  pg-cloudflare: 1.4.0
+
 allowBuilds:
   esbuild: true
   workerd: true
