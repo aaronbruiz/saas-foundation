@@ -2,13 +2,12 @@ import { createAuth } from '@saas-foundation/auth'
 import { billing, findOrganizationBySlug, listOwners } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getEntitlements } from '../src/modules/billing/entitlements'
 import type { WebhookParser } from '../src/modules/billing/provider'
 import { polarProvider, polarWebhookParser } from '../src/modules/billing/providers/polar'
 import { handleBillingWebhook, handlePolarWebhook } from '../src/modules/billing/webhook'
 import { withDb } from '../src/server/db'
 import { rawDb } from '@saas-foundation/db/internal'
-import { createOrg, randomIp, signUp, type TestUser } from './helpers'
+import { createOrg, entitlementsOf, randomIp, signUp, type TestUser } from './helpers'
 import { testBotProtection, withSiteverify } from './turnstile-fake'
 import {
   SECRET,
@@ -37,7 +36,7 @@ describe('polar webhook', () => {
   it('applies a subscription whose metadata and customer external_id name the organization', async () => {
     const { orgId } = await newOrg('pw-ok')
     expect(await deliver(subscriptionEvent({ orgId }))).toEqual({ status: 200, outcome: 'applied' })
-    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+    expect((await entitlementsOf(orgId)).planKey).toBe('pro')
     const sub = await withDb((db) => billing(db, { orgId }).subscription())
     expect(sub).toMatchObject({ provider: 'polar', providerCustomerId: 'polar-customer-test' })
   })
@@ -51,7 +50,7 @@ describe('polar webhook', () => {
     const noExternal = subscriptionEvent({ orgId: a.orgId, customerExternalId: null })
     expect(await deliver(noExternal)).toEqual({ status: 200, outcome: 'unlinked' })
     for (const orgId of [a.orgId, b.orgId]) {
-      expect((await getEntitlements(orgId)).planKey).toBe('free')
+      expect((await entitlementsOf(orgId)).planKey).toBe('free')
       expect(await withDb((db) => billing(db, { orgId }).subscription())).toBeNull()
     }
   })
@@ -68,7 +67,7 @@ describe('polar webhook', () => {
     expect((await deliver(event, { headers: stale })).status).toBe(400)
     expect((await deliver(event, { headers: {} })).status).toBe(400)
     expect((await deliver(event, { secret: undefined })).status).toBe(503)
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
   })
 
   it('deduplicates by webhook-id and records other or unknown event types without applying', async () => {
@@ -77,7 +76,7 @@ describe('polar webhook', () => {
     expect((await deliver(subscriptionEvent({ orgId }), { id })).outcome).toBe('applied')
     const canceled = subscriptionEvent({ orgId, status: 'canceled' })
     expect(await deliver(canceled, { id })).toEqual({ status: 200, outcome: 'duplicate' })
-    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+    expect((await entitlementsOf(orgId)).planKey).toBe('pro')
 
     const member = { type: 'member.created', timestamp: new Date().toISOString(), data: {} }
     expect(await deliver(member)).toEqual({ status: 200, outcome: 'ignored' })
@@ -111,7 +110,7 @@ describe('polar webhook', () => {
       SECRET,
     )
     expect(res.status).toBe(503)
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
   })
 
   it('maps revoked to canceled, ending the plan', async () => {
@@ -125,7 +124,7 @@ describe('polar webhook', () => {
       status: 'canceled',
     })
     expect((await deliver(revoked)).outcome).toBe('applied')
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
   })
 })
 
@@ -178,7 +177,7 @@ describe('polar webhook in Polar mode (subscription re-read)', () => {
     expect(calls).toEqual([`/v1/subscriptions/${subId}`])
     const sub = await withDb((db) => billing(db, { orgId }).subscription())
     expect(sub?.status).toBe('canceled')
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
   })
 
   it('answers 503 and records nothing when Polar cannot be read, so the retry applies', async () => {
@@ -188,13 +187,13 @@ describe('polar webhook in Polar mode (subscription re-read)', () => {
     stubPolar({ status: 500 })
     expect((await deliverWith(polarWebhookParser(config), event, id)).status).toBe(503)
     expect((await deliverWith(polarWebhookParser('unconfigured'), event, id)).status).toBe(503)
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
     stubPolar(event.data)
     expect(await deliverWith(polarWebhookParser(config), event, id)).toEqual({
       status: 200,
       outcome: 'applied',
     })
-    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+    expect((await entitlementsOf(orgId)).planKey).toBe('pro')
   })
 })
 

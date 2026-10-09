@@ -9,6 +9,7 @@ import {
   createOrganization,
   inviteMember,
 } from '../src/modules/organizations/service'
+import { entitlementsIn } from '../src/modules/billing/entitlements'
 import { captchaHeader } from './turnstile-fake'
 
 export type TestUser = { headers: Headers; userId: string; email: string }
@@ -132,3 +133,6 @@ export async function onPaidPlan(slug: string, planKey = 'pro') {
     )
   })
 }
+
+/** Entitlements as the app reads them (`entitlementsIn` on its own connection). */
+export const entitlementsOf = (orgId: string) => withDb((db) => entitlementsIn(db, orgId))

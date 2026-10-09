@@ -6,7 +6,7 @@ Status: Accepted · Date: 2026-09-27
 
 - The product model is ours and provider-neutral: **plans → entitlements → authorization**.
 - A provider (Stripe first) only **updates billing state** (`planKey`, internal `status`, `currentPeriodEnd`, `provider*` ids) via verified, idempotent webhooks.
-- Authorization and feature code call `getEntitlements(orgId)` only.
+- Authorization and feature code call `getEntitlements(orgId)` only. (2026-10-09: the entry point is now `entitlementsIn(db, ctx.orgId)` in `modules/billing/entitlements.ts`; `getEntitlements`, which took a bare orgId, was removed.)
 - Only `apps/web/src/modules/billing/providers/**` may import `stripe` (lint-enforced).
 - Moving to a Merchant of Record later must not change the product model.
 
