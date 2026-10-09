@@ -30,10 +30,6 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: '@types/node' # the runtime is Node 24
         update-types: [version-update:semver-major]
-      # pg 8.23.1 brings pg-cloudflare 1.4.1: every client.end() then emits an unhandled
-      # "This socket has been closed." error (brianc/node-postgres#3805, open). Drop once fixed.
-      - dependency-name: pg
-        versions: ['8.23.1']
 
   - package-ecosystem: github-actions # SHA-pinned in .github/workflows
     directory: /
