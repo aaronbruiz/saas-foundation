@@ -16,8 +16,11 @@ updates:
       prefix: chore
       include: scope
     groups:
-      # All minor and patch updates in one PR; better-auth and its pinned CLI (`auth`)
-      # move together this way. Majors stay separate PRs.
+      # better-auth and its exactly pinned CLI (`auth`) must stay on one version, majors
+      # included. Listed first: a dependency goes to the first group it matches.
+      better-auth:
+        patterns: [better-auth, auth, '@better-auth/*']
+      # Every other minor and patch update in one PR; majors stay separate PRs.
       minor-and-patch:
         update-types: [minor, patch]
     ignore:
