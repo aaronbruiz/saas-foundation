@@ -1,5 +1,6 @@
 // ESLint v9 flat config (ADR-0006). Style is Prettier's job; this file holds
 // correctness rules and the architecture boundaries from AGENTS.md.
+import { readdirSync } from 'node:fs'
 import js from '@eslint/js'
 import { defineConfig, globalIgnores } from 'eslint/config'
 import prettier from 'eslint-config-prettier'
@@ -72,6 +73,35 @@ const noDynamicServerDbInUi = {
   message: noServerDbInUi.message,
 }
 
+// AGENTS.md invariant 3: a module uses another module only through its public entry
+// points. Every directory under modules/ is a module; one not listed here has none.
+const publicEntryPoints = { billing: ['entitlements', 'policy'] }
+const moduleNames = readdirSync(new URL('./apps/web/src/modules', import.meta.url), {
+  withFileTypes: true,
+})
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name)
+
+function moduleBoundary(self) {
+  const others = moduleNames
+    .filter((m) => m !== self)
+    .map((m) => {
+      const open = publicEntryPoints[m] ?? []
+      return open.length ? `${m}/(?!(${open.join('|')})(\\.[cm]?[jt]sx?)?$)` : `${m}/`
+    })
+  // `../<module>/` (relative) or `modules/<module>/` (aliased or from deeper files).
+  const regex = `(^|/)(modules|\\.\\.)/(${others.join('|')})`
+  const message =
+    'Use another module only through its public entry points: modules/billing/{entitlements,policy} (AGENTS.md invariant 3).'
+  return {
+    pattern: { regex, message },
+    selector: {
+      selector: `ImportExpression[source.value=/${regex.replaceAll('/', '\\x2F')}/]`,
+      message,
+    },
+  }
+}
+
 const noInternalPackages = {
   group: ['@saas-foundation/*'],
   message: 'This package must not import other workspace packages (AGENTS.md module map).',
@@ -112,6 +142,24 @@ export default defineConfig([
       'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
   },
+  ...moduleNames.map((name) => ({
+    files: [`apps/web/src/modules/${name}/**/*.{ts,tsx}`],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            providerSdksOnlyInProviders,
+            noDrizzleOrm,
+            noDbClient,
+            noRawDb,
+            moduleBoundary(name).pattern,
+          ],
+        },
+      ],
+      'no-restricted-syntax': ['error', ...noDynamicRawDb, moduleBoundary(name).selector],
+    },
+  })),
   {
     files: ['apps/web/src/routes/**/*.{ts,tsx}', 'apps/web/src/components/**/*.{ts,tsx}'],
     rules: {
@@ -173,7 +221,10 @@ export default defineConfig([
     // Providers may import their SDK, but get no raw database access.
     files: ['apps/web/src/modules/billing/providers/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [noDrizzleOrm, noDbClient, noRawDb] }],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [noDrizzleOrm, noDbClient, noRawDb, moduleBoundary('billing').pattern] },
+      ],
     },
   },
   prettier,
