@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { projects } from '@saas-foundation/db'
 import { getTenantContext } from '../src/server/context'
 import { withDb } from '../src/server/db'
 import {
@@ -111,6 +112,30 @@ describe('cross-tenant matrix: Bob vs org A', () => {
       getProject(alice.headers, { tenant: orgA, id: projectA.id }),
     ).resolves.toMatchObject({
       name: 'Alpha',
+    })
+  })
+})
+
+// The services check a project exists in the tenant before writing (404), so the matrix above never
+// reaches the repository's own filter. Call it directly with Bob's verified scope: each statement
+// must stay scoped on its own (invariant 2, defense in depth).
+describe("repository scope: Bob's tenant vs A's project", () => {
+  it("cannot read, update or delete A's project", async () => {
+    await withDb(async (db) => {
+      const repo = projects(db, await getTenantContext(db, bob.headers, orgB))
+      expect(await repo.get(projectA.id)).toBeNull()
+      expect(await repo.update(projectA.id, { name: 'pwned' })).toBeNull()
+      expect(await repo.remove(projectA.id)).toBe(false)
+    })
+    await expect(
+      getProject(alice.headers, { tenant: orgA, id: projectA.id }),
+    ).resolves.toMatchObject({ name: 'Alpha' })
+  })
+
+  it('counts only its own projects', async () => {
+    await withDb(async (db) => {
+      const repo = projects(db, await getTenantContext(db, bob.headers, orgB))
+      expect(await repo.count()).toBe((await repo.list()).length)
     })
   })
 })
