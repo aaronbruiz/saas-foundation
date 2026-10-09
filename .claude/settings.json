@@ -19,16 +19,16 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git branch *)",
-      "Bash(git push *)",
       "Bash(gh pr view *)",
       "Bash(gh pr diff *)",
       "Bash(gh pr checks *)",
       "Bash(gh run view *)",
       "Bash(gh run list *)",
-      "Bash(gh workflow *)",
-      "Bash(gh pr review *)"
+      "Bash(gh workflow list *)",
+      "Bash(gh workflow view *)"
     ],
     "ask": [
+      "Bash(git push *)",
       "Bash(gh pr merge *)",
       "Bash(pnpm db:migrate *)",
       "Bash(pnpm deploy *)",
@@ -40,10 +40,13 @@
     "deny": [
       "Read(./.dev.vars)",
       "Read(./**/.dev.vars)",
-      "Read(./**/.dev.vars.*)",
       "Read(./.env)",
       "Read(./**/.env)",
-      "Read(./**/.env.*)",
+      "Read(./**/.env.local)",
+      "Read(./**/.env.*.local)",
+      "Read(./**/.env.production)",
+      "Read(./**/.env.development)",
+      "Read(./**/.env.test)",
       "Edit(./packages/db/src/schema/auth.ts)",
       "Edit(./**/routeTree.gen.ts)",
       "Edit(./**/worker-configuration.d.ts)"

@@ -3,7 +3,10 @@
 # Only the typed command is inspected; project scripts run from files are not.
 # Origin: a `pgrep -f` wait loop matched its own command line and never exited (~30 min lost, 2026-09-30).
 set -u
-cmd=$(jq -r '.tool_input.command // ""' | tr '\n' ';')
+# Fail closed: without jq (or with unparsable input) nothing could be checked.
+command -v jq >/dev/null || { echo "block-poll-loops: jq is required; install it (e.g. apt install jq)." >&2; exit 2; }
+raw=$(jq -r '.tool_input.command // ""') || { echo "block-poll-loops: could not parse the hook input." >&2; exit 2; }
+cmd=$(tr '\n' ';' <<<"$raw")
 has() { grep -Eq "$1" <<<"$cmd"; }
 
 W='(^|[^a-zA-Z0-9_-])' # word start
