@@ -11,4 +11,6 @@ export const auth = createAuth({
   allowSignUp: () => true,
   requireEmailVerification: true,
   sendEmail: async () => {},
+  // The captcha plugin adds no tables; the CLI needs no keys.
+  botProtection: 'unavailable',
 })
