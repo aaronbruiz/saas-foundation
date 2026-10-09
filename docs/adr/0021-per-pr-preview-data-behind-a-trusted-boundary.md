@@ -95,3 +95,20 @@ Investigated 2026-09-28/29 on the preview Worker, with evidence (test PR numbers
 - [x] Preview Neon key rotated: the new project-scoped key **`saas-foundation-preview-ci`** (preview project) is in both environments; a second real PR (#28, closed unmerged) ran the full lifecycle with it (deploy, migrations, E2E, cleanup; config and branch gone afterwards; zombie `db:down`). The old key `saas-foundation-preview` was then revoked.
 - [x] Correction to ADR-0019's rollout: the production-scoped Neon key `saas-foundation` is **not** unused. It is the key stored as `NEON_API_KEY` in `production` and is used by `db-backup.yml`; keep it. The personal key is no longer in the organization.
 - Deferred, optional: deleting and recreating the preview Worker to flush zombie deployments (not part of the security model). The Cloudflare bug report is drafted, not filed.
+
+## Notes (2026-10-09)
+
+**Zombie behaviour re-verified.** Read-only `GET /api/health`, 3 requests per closed PR's Preview URL, at 07:31Z:
+
+- Still executing, 3/3 `503 {"ok":false,"db":"down"}`: #73 (closed 7.5 h earlier), #75, #77, #78, #79, #80 and #82. The deleted Previews' code still runs, and the per-PR revocation holds: none reaches a database.
+- Stopped, generic 404 with `x-preview-user-error: true` (the same as a name that never existed): every PR closed on 2026-10-05 or earlier that had a preview (#63–#72; #63, #64 and #66 still executed on 2026-10-05 at 05:20Z), and #76 (closed 1.6 h earlier).
+- So deleted Previews do stop eventually, but at no predictable time (under 2 hours to several days). Decision 1 is unchanged: a 404 still proves nothing, and deleting the per-PR Hyperdrive config stays the boundary. The bug report draft was refreshed with this; the owner files it.
+
+**Previews stay public on workers.dev; no Cloudflare Access.** Why that is acceptable today:
+
+- Data: each preview's branch is reset from `preview-seed` (synthetic) in the separate preview Neon project and never holds production data (AGENTS.md invariant 15).
+- Credentials: a preview gets only a random `BETTER_AUTH_SECRET` generated for that deploy, Turnstile's public always-pass test keys (refused outside localhost and workers.dev, ADR-0025), no email binding (ADR-0024) and no billing provider. Sign-up is open and email verification is off, so the workers.dev URL is the only thing that admits a visitor.
+- Revocation: closing a PR deletes its Hyperdrive config, so a zombie reaches no database (above).
+- Cost of Access: a new Cloudflare product (its own ADR, invariant 14) plus a service token for the preview E2E job, a new secret in the `preview` environment.
+
+Revisit (Access ADR) before a preview gets anything non-synthetic or a real credential (production data, a live billing provider, real email delivery, a production secret), or if abuse of a preview URL shows up (cost, sign-up spam).
