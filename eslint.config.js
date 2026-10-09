@@ -54,6 +54,15 @@ const noServerDbInUi = {
   message: 'Routes and components reach data through modules/, not withDb (AGENTS.md invariant 2).',
 }
 
+// Path rules match the import string, so it must be normalized: no `//`, no `.`
+// segment after the start, no `..` after a named segment (`a/../b`).
+const unnormalized = '//|/\\.(/|$)|(^|/)(?!\\.\\.?/)[^/]+/\\.\\.(/|$)'
+const unnormalizedPaths = {
+  regex: unnormalized,
+  message:
+    'Write the import path normalized (no //, inner ./ or a/../), so lint can check it (AGENTS.md invariants 2-3).',
+}
+
 // no-restricted-imports doesn't see import(), so the same limits for dynamic
 // imports, which must take a string literal for lint to check them. Selector regexes
 // can't contain '/', hence \x2F.
@@ -62,6 +71,10 @@ const noDynamicRawDb = [
     selector: "ImportExpression[source.type!='Literal']",
     message:
       'import() takes a plain string literal, so lint can check it (AGENTS.md invariants 2-3).',
+  },
+  {
+    selector: `:matches(ImportExpression, TSImportType)[source.value=/${unnormalized.replaceAll('/', '\\x2F')}/]`,
+    message: unnormalizedPaths.message,
   },
   {
     selector: 'ImportExpression[source.value=/^drizzle-orm($|\\x2F)/]',
@@ -89,18 +102,15 @@ const moduleNames = readdirSync(new URL('./apps/web/src/modules', import.meta.ur
   .map((d) => d.name)
 
 function moduleBoundary(self) {
-  // A separator may carry `./` or extra slashes: `.././billing/x` is still billing's.
-  const sep = '(/\\.?)*/'
   const others = moduleNames
     .filter((m) => m !== self)
     .map((m) => {
       const open = publicEntryPoints[m] ?? []
-      return open.length
-        ? `${m}${sep}(?!(\\.?/)*(${open.join('|')})(\\.[cm]?[jt]sx?)?$)`
-        : `${m}${sep}`
+      return open.length ? `${m}/(?!(${open.join('|')})(\\.[cm]?[jt]sx?)?$)` : `${m}/`
     })
   // `../<module>/` (relative) or `modules/<module>/` (aliased or from deeper files).
-  const regex = `(^|/)(modules|\\.\\.)${sep}(${others.join('|')})`
+  // Paths are normalized (`unnormalizedPaths`), so no `./`, `//` or inner `..` here.
+  const regex = `(^|/)(modules|\\.\\.)/(${others.join('|')})`
   const message =
     'Use another module only through its public entry points: modules/billing/{entitlements,policy} (AGENTS.md invariant 3).'
   return {
@@ -148,7 +158,15 @@ export default defineConfig([
       'react-hooks/exhaustive-deps': 'warn',
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noDbClient, noRawDb] },
+        {
+          patterns: [
+            providerSdksOnlyInProviders,
+            noDrizzleOrm,
+            noDbClient,
+            noRawDb,
+            unnormalizedPaths,
+          ],
+        },
       ],
       'no-restricted-syntax': ['error', ...noDynamicRawDb],
     },
@@ -164,6 +182,7 @@ export default defineConfig([
             noDrizzleOrm,
             noDbClient,
             noRawDb,
+            unnormalizedPaths,
             moduleBoundary(name).pattern,
           ],
         },
@@ -176,7 +195,14 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, uiMustNotTouchDataOrAuth, noServerDbInUi] },
+        {
+          patterns: [
+            providerSdksOnlyInProviders,
+            uiMustNotTouchDataOrAuth,
+            noServerDbInUi,
+            unnormalizedPaths,
+          ],
+        },
       ],
       'no-restricted-syntax': ['error', ...noDynamicRawDb, noDynamicServerDbInUi],
     },
@@ -190,6 +216,7 @@ export default defineConfig([
         {
           patterns: [
             providerSdksOnlyInProviders,
+            unnormalizedPaths,
             {
               ...uiMustNotTouchDataOrAuth,
               group: uiMustNotTouchDataOrAuth.group.filter((g) => !g.includes('/auth')),
@@ -206,7 +233,7 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noRawDb] },
+        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noRawDb, unnormalizedPaths] },
       ],
     },
   },
@@ -234,7 +261,15 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [noDrizzleOrm, noDbClient, noRawDb, moduleBoundary('billing').pattern] },
+        {
+          patterns: [
+            noDrizzleOrm,
+            noDbClient,
+            noRawDb,
+            unnormalizedPaths,
+            moduleBoundary('billing').pattern,
+          ],
+        },
       ],
     },
   },

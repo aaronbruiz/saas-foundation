@@ -20,7 +20,7 @@ Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, 
 
 A `Db` is an opaque handle: only `packages/db` repositories can query through it. The raw Drizzle client (`rawDb(db)`) and `schema` come from `@saas-foundation/db/internal`, for `packages/auth` (Better Auth's adapter) and tests only.
 
-The import boundaries above are enforced by `eslint.config.js`, along with raw database access in `apps/web/src`: `drizzle-orm` and `@saas-foundation/db/internal` are never imported, `createDb` only in `server/db.ts` and `server/health.ts`, and routes and components (except `routes/api/auth/`) don't import `server/db` (static or `import()`). In `apps/web/src`, `import()` takes a string literal so these rules can check it. Tests in `apps/web/test` and `apps/web/e2e` may use `createDb`, `@saas-foundation/db/internal` and `drizzle-orm`.
+The import boundaries above are enforced by `eslint.config.js`, along with raw database access in `apps/web/src`: `drizzle-orm` and `@saas-foundation/db/internal` are never imported, `createDb` only in `server/db.ts` and `server/health.ts`, and routes and components (except `routes/api/auth/`) don't import `server/db` (static or `import()`). In `apps/web/src`, import paths are normalized (no `//`, inner `./` or `a/../`) and `import()` takes a string literal, so these rules can check them. Tests in `apps/web/test` and `apps/web/e2e` may use `createDb`, `@saas-foundation/db/internal` and `drizzle-orm`.
 
 ## Commands
 
