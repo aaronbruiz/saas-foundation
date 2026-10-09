@@ -69,7 +69,8 @@ export type ProjectFields = { name: string; description?: string | null }
 export function projects(db: Db, scope: TenantScope) {
   const inTenant = (id: string) => and(eq(project.id, id), eq(project.organizationId, scope.orgId))
   return {
-    list: (): Promise<Project[]> =>
+    // async: hand back rows, never the query builder (it carries the raw client).
+    list: async (): Promise<Project[]> =>
       rawDb(db)
         .select()
         .from(project)
