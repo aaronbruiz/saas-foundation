@@ -1,0 +1,47 @@
+# Dependabot version updates. Every Dependabot PR is a same-repo PR, so it also gets a
+# per-PR preview (ADR-0021): one Neon branch of the preview project's 10 each. Hence few,
+# grouped PRs. Pins that AGENTS.md "Toolchain" explains are kept by the ignore rules.
+version: 2
+updates:
+  - package-ecosystem: npm # pnpm workspace; one root lockfile
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # better-auth and its exactly pinned CLI (`auth`) must stay on one version, majors
+      # included. Listed first: a dependency goes to the first group it matches.
+      better-auth:
+        patterns: [better-auth, auth, '@better-auth/*']
+      # Every other minor and patch update in one PR; majors stay separate PRs.
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: typescript # ~6.0: typescript-eslint doesn't support TS 7
+        update-types: [version-update:semver-major]
+      - dependency-name: vitest # ^4.1: @cloudflare/vitest-plugin doesn't support Vitest 5
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/node' # the runtime is Node 24
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions # SHA-pinned in .github/workflows
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns: ['*']
