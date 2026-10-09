@@ -3,6 +3,7 @@ import { createEmailVerificationToken } from 'better-auth/api'
 import { authFor } from '../src/server/auth'
 import { findOrganizationBySlug } from '@saas-foundation/db'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import {
   acceptInvitation,
   createOrganization,
@@ -121,7 +122,7 @@ export async function onPaidPlan(slug: string, planKey = 'pro') {
     const org = await findOrganizationBySlug(db, slug)
     if (!org) throw new Error(`no organization ${slug}`)
     await (
-      db as unknown as { $client: { query: (q: string, p: unknown[]) => Promise<unknown> } }
+      rawDb(db) as unknown as { $client: { query: (q: string, p: unknown[]) => Promise<unknown> } }
     ).$client.query(
       `INSERT INTO billing_subscription (organization_id, provider, provider_customer_id,
            provider_subscription_id, plan_key, status, provider_event_at)

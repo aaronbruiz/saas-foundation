@@ -3,6 +3,7 @@ import { createAuth } from '@saas-foundation/auth'
 import { describe, expect, it } from 'vitest'
 import { signUpPolicy } from '../src/server/auth'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import { PASSWORD, randomIp } from './helpers'
 import { captchaHeader, testBotProtection } from './turnstile-fake'
 
@@ -58,7 +59,9 @@ describe('sign-up through the real handler with an allowlist', () => {
           body: JSON.stringify({ email, password: PASSWORD, name: 'x' }),
         }),
       )
-      const exists = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, email) })
+      const exists = await rawDb(db).query.user.findFirst({
+        where: (u, { eq }) => eq(u.email, email),
+      })
       return { status: res.status, exists: Boolean(exists) }
     })
 

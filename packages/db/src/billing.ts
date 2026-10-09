@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm'
-import type { Db } from './client.ts'
+import { rawDb, type Db } from './client.ts'
 import { organization } from './schema/auth.ts'
 import {
   billingSubscription,
@@ -45,7 +45,7 @@ const TERMINAL: SubscriptionStatus[] = ['canceled']
  * database error is final (the delivery is acknowledged), so no verified event can loop forever.
  */
 export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<BillingEventOutcome> {
-  return db.transaction(async (tx) => {
+  return rawDb(db).transaction(async (tx) => {
     const recorded = await tx
       .insert(billingWebhookEvent)
       .values({ provider: event.provider, eventId: event.eventId, type: event.type })
@@ -107,7 +107,7 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
 
 /** True once a provider's webhook event has been recorded (applied or not) by applyBillingEvent. */
 export async function isBillingEventRecorded(db: Db, provider: string, eventId: string) {
-  const [row] = await db
+  const [row] = await rawDb(db)
     .select({ eventId: billingWebhookEvent.eventId })
     .from(billingWebhookEvent)
     .where(
@@ -142,7 +142,7 @@ export function billing(db: Db, scope: TenantScope) {
   return {
     subscription: async (): Promise<BillingSubscription | null> =>
       (
-        await db
+        await rawDb(db)
           .select()
           .from(billingSubscription)
           .where(eq(billingSubscription.organizationId, scope.orgId))
