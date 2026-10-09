@@ -1,5 +1,7 @@
 # Runbooks
 
+Starting a new product from this foundation: [start-new-product.md](start-new-product.md).
+
 ## Previews (ADR-0021)
 
 **Invariant:** preview resources are created and removed by CI. Normal preview lifecycle operations (create, reset, deploy, revoke) require no human intervention. Manual operations are administrative or recovery procedures only.
