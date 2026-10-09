@@ -1,7 +1,6 @@
 import { billing, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { getEntitlements } from '../src/modules/billing/entitlements'
 import {
   CHECKOUT,
   DEFAULT_PLAN,
@@ -30,6 +29,7 @@ import { rawDb } from '@saas-foundation/db/internal'
 import {
   authPost,
   createOrg,
+  entitlementsOf,
   expectStatus,
   joinAs,
   randomIp,
@@ -300,9 +300,9 @@ describe('entitlements from webhook state (ADR-0020)', () => {
     const { orgId } = await freshOrg()
     const { orgId: other } = await freshOrg()
     await deliver(subscriptionEvent({ orgId, priceKey: 'pro_yearly' }))
-    expect(await getEntitlements(orgId)).toMatchObject({ planKey: 'pro' })
+    expect(await entitlementsOf(orgId)).toMatchObject({ planKey: 'pro' })
     // Cross-tenant: the other organization stays on the default plan.
-    expect(await getEntitlements(other)).toMatchObject({ planKey: 'free' })
+    expect(await entitlementsOf(other)).toMatchObject({ planKey: 'free' })
   })
 
   it('records a price the product does not sell, granting only the default plan', async () => {
@@ -311,7 +311,7 @@ describe('entitlements from webhook state (ADR-0020)', () => {
       'applied',
     )
     expect(await subscriptionOf(orgId)).toMatchObject({ planKey: null, status: 'active' })
-    expect(await getEntitlements(orgId)).toMatchObject({ planKey: 'free' })
+    expect(await entitlementsOf(orgId)).toMatchObject({ planKey: 'free' })
   })
 
   it('keeps a paid plan through past_due and drops it when unpaid', async () => {
@@ -319,9 +319,9 @@ describe('entitlements from webhook state (ADR-0020)', () => {
     const subId = `sub_${crypto.randomUUID()}`
     const t = now() - 100
     await deliver(subscriptionEvent({ orgId, subId, created: t, status: 'past_due' }))
-    expect((await getEntitlements(orgId)).planKey).toBe('pro')
+    expect((await entitlementsOf(orgId)).planKey).toBe('pro')
     await deliver(subscriptionEvent({ orgId, subId, created: t + 1, status: 'unpaid' }))
-    expect((await getEntitlements(orgId)).planKey).toBe('free')
+    expect((await entitlementsOf(orgId)).planKey).toBe('free')
   })
 })
 

@@ -43,7 +43,7 @@ The owner split Phase 3: build the billing platform now, which needs no product 
   - internal status: Stripe's `incomplete_expired` → `canceled`, and **unknown future statuses → `incomplete`** (non-entitled);
   - latest item period end, `cancel_at_period_end`, and the event time;
   - `plan_key`, which stays **null** until the catalog maps prices to plans.
-- **Entitlements:** `getEntitlements(orgId)` in `modules/billing/entitlements.ts`. `orgId` must come from `getTenantContext`.
+- **Entitlements:** `getEntitlements(orgId)` in `modules/billing/entitlements.ts`. `orgId` must come from `getTenantContext`. (2026-10-09: now `entitlementsIn(db, ctx.orgId)`; `getEntitlements` was removed.)
   - `PLAN_CATALOG` is empty, so every organization gets `DEFAULT_ENTITLEMENTS` (`planKey: null`, no features).
   - A plan's entitlements apply only when the status is `active` or `trialing` **and** its `plan_key` is in the catalog. Anything else falls back to the default.
 - **No new Cloudflare binding, product or Worker.** One new secret.

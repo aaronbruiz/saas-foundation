@@ -53,7 +53,7 @@ kill -9 $(lsof -t -i:3000)
 3. Modules don't touch other modules' tables; call the module's exports.
 4. Authorization is decided on the server. The UI may hide things, never decide them.
 5. Unknown tenant, non-member, or another tenant's resource returns **404**, never 403, and never leaks data. **403** is only for a member of the tenant whose role is insufficient (e.g. a `member` inviting), since the tenant's existence is already known to them.
-6. Authorization reads **entitlements** (`getEntitlements(orgId)`) only, never subscription status or Polar objects. Only `modules/billing/providers/**` may import a provider SDK (`@polar-sh/*`) or reference provider ids. Product billing rules (plans, limits, features, which statuses keep access) live only in `modules/billing/policy.ts`; enforcement points ask it and never name a plan (ADR-0020).
+6. Authorization reads **entitlements** (`entitlementsIn(db, ctx.orgId)`) only, never subscription status or Polar objects. Only `modules/billing/providers/**` may import a provider SDK (`@polar-sh/*`) or reference provider ids. Product billing rules (plans, limits, features, which statuses keep access) live only in `modules/billing/policy.ts`; enforcement points ask it and never name a plan (ADR-0020).
 7. The only DB binding is `DB` (Hyperdrive, **caching disabled**). Don't add a cached binding without an ADR.
 8. Secrets come only from Worker `env`. `.dev.vars` is git-ignored. Nothing secret goes in client code (CI scans the client bundle: `scripts/scan-client-bundle.sh`). Forms use `method="post"` and stay disabled until hydrated, so fields never reach a URL.
 9. Every server boundary validates input with Zod from `packages/contracts`. `organizationId` is never an input field.
