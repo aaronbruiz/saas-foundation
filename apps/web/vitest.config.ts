@@ -2,6 +2,7 @@ import { cloudflareTest } from '@cloudflare/vitest-plugin'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { defineConfig } from 'vitest/config'
+import { readBuildInfo } from './build-info'
 
 // Resolve pg-cloudflare the way pg does (pg → pg-cloudflare), without hardcoding pnpm's layout.
 const fromDb = createRequire(createRequire(import.meta.url).resolve('@saas-foundation/db'))
@@ -17,6 +18,8 @@ const pgCloudflareWorkerdBuild = join(
 // Tests run inside workerd with the Worker's real bindings (ADR-0006).
 // The DB binding is pointed at the separate `app_test` database so tests never touch dev data.
 export default defineConfig({
+  // Same build constant as vite.config.ts (ADR-0029), so server code under test sees it too.
+  define: { __BUILD_INFO__: JSON.stringify(readBuildInfo()) },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
