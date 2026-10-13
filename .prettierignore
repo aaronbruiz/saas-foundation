@@ -6,4 +6,4 @@ pnpm-lock.yaml
 **/.tanstack
 **/drizzle/meta
 **/src/schema/auth.ts
-CHANGELOG.md
+/CHANGELOG.md
