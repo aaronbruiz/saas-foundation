@@ -12,16 +12,24 @@ updates:
       default-days: 3
       semver-major-days: 7
     open-pull-requests-limit: 2
+    # ADR-0029: PR titles become release inputs. Production bumps are `fix(deps): …` (they cut a
+    # release), development bumps `chore(deps-dev): …` (they don't).
     commit-message:
-      prefix: chore
+      prefix: fix
+      prefix-development: chore
       include: scope
     groups:
       # better-auth and its exactly pinned CLI (`auth`) must stay on one version, majors
       # included. Listed first: a dependency goes to the first group it matches.
       better-auth:
         patterns: [better-auth, auth, '@better-auth/*']
-      # Every other minor and patch update in one PR; majors stay separate PRs.
-      minor-and-patch:
+      # Every other minor and patch update, one PR per dependency type so each title is either
+      # `fix(deps)` or `chore(deps-dev)`; majors stay separate PRs.
+      production-minor-and-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      development-minor-and-patch:
+        dependency-type: development
         update-types: [minor, patch]
     ignore:
       - dependency-name: typescript # ~6.0: typescript-eslint doesn't support TS 7

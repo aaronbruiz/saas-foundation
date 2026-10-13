@@ -2,7 +2,7 @@ name: PR title
 
 # ADR-0030: squash merges use the PR title as the commit title on `main`, and release-please reads it
 # (ADR-0029), so the title must be a Conventional Commit. Its own workflow so a title edit re-runs only
-# this check, not CI. No checkout, no install, no secrets; the title is passed as data, never as code.
+# these checks, not CI. No install, no secrets; the title is passed as data, never as code.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
@@ -29,5 +29,37 @@ jobs:
           fi
           if (( ${#TITLE} > 100 )); then
             echo "::error::PR title is ${#TITLE} characters; the limit is 100."
+            exit 1
+          fi
+
+  # ADR-0029 decision 7: a migration that drops, renames or retypes anything is a contract
+  # migration; its PR title needs `!` so the release lists it under BREAKING CHANGES.
+  contract-migration:
+    name: Contract migration marked breaking
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the PR merge commit and its base parent
+          persist-credentials: false
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')
+          contract=()
+          # -z reads the whole file as one record, so a statement may wrap across lines.
+          # Retype: `ALTER [COLUMN] <col> [SET DATA] TYPE` (COLUMN is optional in PostgreSQL).
+          for f in "${files[@]}"; do
+            if grep -qziE '\bDROP\b|\bRENAME\b|ALTER[[:space:]]+(COLUMN[[:space:]]+)?[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE\b' "$f"; then
+              contract+=("$f")
+            fi
+          done
+          if (( ${#contract[@]} == 0 )); then exit 0; fi
+          re='^[a-z]+(\([a-z0-9][a-z0-9-]*\))?!: '
+          if [[ ! "$TITLE" =~ $re ]]; then
+            echo "::error::Contract migration (DROP, RENAME or a column retype) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
             exit 1
           fi
