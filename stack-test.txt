@@ -1,0 +1,1 @@
+throwaway: ADR-0030 stack test (base)
