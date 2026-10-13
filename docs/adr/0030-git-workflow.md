@@ -80,3 +80,9 @@ Writes down the workflow the repo already follows and adds the settings and chec
 - **The environment fence is undocumented on Free.** If GitHub starts enforcing its documentation, environment secrets may stop reaching jobs (deploys and backups fail) or deployment-branch policies may stop applying (the fence opens). Either one is the Pro trigger above, and the owner rechecks `db-backup.yml` and the deploy workflows when it happens.
 - Up to 3 stacked PRs each hold a preview Neon branch. With Dependabot (up to 3) and the release PR (skipped by previews, ADR-0029), the preview project keeps headroom.
 - Follow-up PR (after acceptance), owner-approved because it changes repo settings: set squash-only, `PR_TITLE` / `BLANK`, the PR-title check (`pr-title.yml`), a PR template, the throwaway-stack test and then auto-delete, and a "Git workflow" section in AGENTS.md.
+
+## Notes (2026-10-13)
+
+**Repo settings applied** by the owner: squash merge only, `squash_merge_commit_title: PR_TITLE`, `squash_merge_commit_message: BLANK` (#92 landed as `64bef87` with its PR title and an empty body), then `delete_branch_on_merge: true`.
+
+**Stack test passed; auto-delete stays on.** Throwaway stack off `main`, never merged into it: `test/stack-root` ← #93 (`test/stack-base`) ← #94 (`test/stack-child`). With auto-delete on, squash-merging #93 deleted `test/stack-base`, and GitHub retargeted #94 to `test/stack-root` (timeline event `automatic_base_change_succeeded`, 18:42:31Z); #94 stayed open. #94 was then closed and the throwaway branches deleted. A child whose base is deleted any other way (manually, or before its PR merges) can still be closed, as #38 was. The `gh api … -f base=main` retarget stays the fallback.
