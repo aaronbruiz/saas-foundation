@@ -50,8 +50,10 @@ jobs:
         run: |
           mapfile -t files < <(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')
           contract=()
+          # -z reads the whole file as one record, so a statement may wrap across lines.
+          # Retype: `ALTER [COLUMN] <col> [SET DATA] TYPE` (COLUMN is optional in PostgreSQL).
           for f in "${files[@]}"; do
-            if grep -qiE '\bDROP\b|\bRENAME\b|ALTER[[:space:]]+COLUMN[[:space:]]+[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE\b' "$f"; then
+            if grep -qziE '\bDROP\b|\bRENAME\b|ALTER[[:space:]]+(COLUMN[[:space:]]+)?[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE\b' "$f"; then
               contract+=("$f")
             fi
           done
