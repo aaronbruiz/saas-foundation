@@ -43,7 +43,7 @@ Moves the production deploy of the app Worker from the owner's machine to CI, as
 
 ### 3. App deploy job: migrate, release candidate at 0%, smoke test, promote
 
-Runs on `main`'s code only, in environment `production`. **One lock per Worker:** the release, dispatch and rollback workflows all use `concurrency: deploy-<worker>` (never cancelled in progress), so a rollback can't interleave with a candidate being tested or promoted.
+Runs on `main`'s code only, in environment `production`. **One lock per Worker:** the release, dispatch and rollback workflows all use `concurrency: { group: deploy-<worker>, cancel-in-progress: false, queue: max }`, as the preview workflows do. Nothing is cancelled, neither a running deploy nor a queued one (GitHub's default would cancel a waiting rollback when a newer run queues), so a rollback can't interleave with a candidate being tested or promoted.
 
 1. **Build without secrets.** A first job checks out the release tag, installs with `--frozen-lockfile` and no dependency cache, builds, and uploads the artifact: the Worker build **and that tag's `packages/db/drizzle` (migration SQL and journal)**. pnpm's `allowBuilds` keeps dependency install scripts off. The build stamps a unique build id (`<run id>-<attempt>`) next to the version (decision 4).
 2. **Preflight**, in the `production` job: the existing `check-email-verification.mjs --deployed` and `check-turnstile.mjs --deployed` (they read secret names with the Worker token).
