@@ -49,14 +49,8 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           mapfile -t files < <(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')
-          contract=()
-          # -z reads the whole file as one record, so a statement may wrap across lines.
-          # Retype: `ALTER [COLUMN] <col> [SET DATA] TYPE` (COLUMN is optional in PostgreSQL).
-          for f in "${files[@]}"; do
-            if grep -qziE '\bDROP\b|\bRENAME\b|ALTER[[:space:]]+(COLUMN[[:space:]]+)?[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE\b' "$f"; then
-              contract+=("$f")
-            fi
-          done
+          if (( ${#files[@]} == 0 )); then exit 0; fi
+          mapfile -t contract < <(scripts/contract-migrations.sh "${files[@]}")
           if (( ${#contract[@]} == 0 )); then exit 0; fi
           re='^[a-z]+(\([a-z0-9][a-z0-9-]*\))?!: '
           if [[ ! "$TITLE" =~ $re ]]; then

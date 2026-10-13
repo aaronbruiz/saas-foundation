@@ -37,6 +37,7 @@ pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better A
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
 scripts/backup/snapshot.sh | dump.sh   # daily Neon snapshot branch + off-provider pg_dump to R2; run by CI (db-backup.yml; ADR-0003, ADR-0023)
+scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
