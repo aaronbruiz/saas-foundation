@@ -43,15 +43,16 @@ Moves the production deploy of the app Worker from the owner's machine to CI, as
 
 ### 3. App deploy job: migrate, release candidate at 0%, smoke test, promote
 
-Runs on `main`'s code only, in environment `production`, `concurrency: production-deploy` (never cancelled in progress).
+Runs on `main`'s code only, in environment `production`. **One lock per Worker:** the release, dispatch and rollback workflows all use `concurrency: deploy-<worker>` (never cancelled in progress), so a rollback can't interleave with a candidate being tested or promoted.
 
-1. **Build without secrets.** A first job checks out the release tag, installs with `--frozen-lockfile` and no dependency cache, builds, and uploads the artifact. pnpm's `allowBuilds` keeps dependency install scripts off.
+1. **Build without secrets.** A first job checks out the release tag, installs with `--frozen-lockfile` and no dependency cache, builds, and uploads the artifact: the Worker build **and that tag's `packages/db/drizzle` (migration SQL and journal)**. pnpm's `allowBuilds` keeps dependency install scripts off. The build stamps a unique build id (`<run id>-<attempt>`) next to the version (decision 4).
 2. **Preflight**, in the `production` job: the existing `check-email-verification.mjs --deployed` and `check-turnstile.mjs --deployed` (they read secret names with the Worker token).
 3. **Restore point:** `neon branches create --name pre-migrate-<tag>-<utc> --parent main --no-compute`, confirmed by listing it. Older `pre-migrate-*` branches beyond the newest one are deleted, so with `main` and 3 snapshots the project stays within Neon Free's 10.
-4. **Migrate** with `pnpm db:migrate` and a direct connection string read from `NEON_API_KEY`, never printed. Secrets are passed per step, never at job level and never to the install step.
+4. **Migrate the artifact's migrations, not `main`'s.** `main`'s trusted migrator applies the SQL and journal from the artifact (the pattern of ADR-0021's preview deploy), with a direct connection string read from `NEON_API_KEY`, never printed. A redeploy of an older tag therefore applies nothing new: its journal is a subset of what production already has. Secrets are passed per step, never at job level and never to the install step.
+   - **Contract precondition:** if the pending migrations include a contract migration (decision 7), the job first requires that production serves the **immediately preceding release tag at 100%** (from `/api/health`) with no candidate held at 0%. Otherwise it stops before migrating: the version still serving traffic may depend on the shape about to be removed.
 5. **Release candidate:** `wrangler versions upload --tag web-vX.Y.Z --message <sha>`, then `wrangler versions deploy <new>@0% <current>@100%`.
-6. **Smoke test through the override header:** `GET https://app.<zone>/api/health` with `Cloudflare-Workers-Version-Overrides` naming the new version must return `ok: true`, `db: "up"` **and** `version: "X.Y.Z"`. The version check proves the override was applied, since an ignored override falls through to the old version.
-7. **Promote:** `wrangler versions deploy <new>@100%`, then the same health check without the header. If the smoke test fails, the job stops with the new version at 0%: users never saw it, and the owner decides between `promote`, a fix, or deploying the old version alone.
+6. **Smoke test through the override header:** `GET https://app.<zone>/api/health` with `Cloudflare-Workers-Version-Overrides` naming the new version must return `ok: true`, `db: "up"`, `version: "X.Y.Z"` **and this build's `build` id**. Only the build id proves the override was applied: an ignored override falls through to the live version, which reports the same `version` and `commit` when the same tag is redeployed.
+7. **Promote:** first confirm the deployment is still exactly `<new>@0%` + `<expected live>@100%` (a rollback or another deploy since then makes the promotion stale, and it's refused); then `wrangler versions deploy <new>@100%` and the same health check without the header. If the smoke test fails, the job stops with the new version at 0%: users never saw it, and the owner decides between `promote`, a fix, or deploying the old version alone.
 8. Routes, custom domains and cron triggers aren't applied by `versions upload`. A release that changes them is flagged by the job (diff of `routes`/`triggers` in `wrangler.jsonc` against the previous tag) and stops before promotion, and the owner applies them by hand, as ADR-0028 does for the docs domain.
 
 **Dispatch inputs** (`workflow_dispatch` on `main`; a tag ref would be refused by the environment):
@@ -64,7 +65,7 @@ Runs on `main`'s code only, in environment `production`, `concurrency: productio
 
 ### 4. Version reporting
 
-- `/api/health` returns `{ ok, db, version, commit }`: the root `package.json` version and the 7-character commit SHA, injected at build time (Vite `define`) into a server-only module. It stays compatible with the preview scripts, which only check `.ok == true`. The repo is private, so the SHA reveals nothing useful.
+- `/api/health` returns `{ ok, db, version, commit, build }`: the root `package.json` version, the 7-character commit SHA and the CI build id (`<run id>-<attempt>`; `local` outside CI), injected at build time (Vite `define`) into a server-only module. The build id makes every upload distinguishable, which the override smoke test needs. It stays compatible with the preview scripts, which only check `.ok == true`. The repo is private, so the SHA reveals nothing useful.
 - Every upload is tagged (`--tag web-vX.Y.Z --message <sha>`), so the dashboard and `wrangler versions list` show releases, and `wrangler versions deploy --version-tag` can address them.
 - No `version_metadata` binding: it would be a new binding under Invariant 14, and the build constant already answers "what is live". Deferred below.
 
@@ -75,7 +76,7 @@ Continuous: every merge to `main` that can change the docs build deploys it at 1
 ### 6. Rollback
 
 - **`rollback.yml`** (`workflow_dispatch` on `main`, per Worker): `wrangler rollback [version-id]`, defaulting to the previous version, with a required `reason` passed as the message. It needs no build, so it takes seconds. Code only.
-- **Breaking-release guard:** if any release between the target and the current version contains a contract migration (decision 7), the workflow lists those releases and refuses unless the input `confirm_breaking: true` is set. That rollback would run old code against a contracted schema.
+- **Breaking-release guard, based on what production has applied:** the workflow reads production's applied migrations (`drizzle.__drizzle_migrations`) and compares them with the target version's migration journal (the target's tag, or its commit from the version's `--message`). If production has applied a contract migration (decision 7) that the target doesn't contain, it lists those migrations and refuses unless the input `confirm_breaking: true` is set. Comparing applied migrations, not deployed releases, also covers a release whose migration ran but whose candidate failed or was held.
 - **The database is never rolled back by a workflow.** Restoring loses writes since the restore point, so it stays a manual runbook procedure (runbook "Database") using the `pre-migrate-*` branch or a snapshot.
 - To verify before relying on it: `wrangler rollback` with the per-Worker token, and whether rolling back to a version created before a `wrangler secret put` restores old secret values (test on the preview Worker).
 
@@ -83,7 +84,7 @@ Continuous: every merge to `main` that can change the docs build deploys it at 1
 
 - A PR whose migration drops, renames or retypes anything (`DROP`, `RENAME`, `ALTER … TYPE` in `packages/db/drizzle/*.sql`) must have `!` in its title (`feat(db)!: drop legacy_status`). A CI check fails the PR if such a migration exists and the title has no `!`.
 - release-please then lists it under **BREAKING CHANGES** in the release PR, which is exactly when the owner needs to know that rolling back past this release is no longer code-only.
-- Expand → migrate → contract still applies (Invariant 10): the contract step ships in its own release, after the release that stopped using the old shape.
+- Expand → migrate → contract still applies (Invariant 10): the contract step ships in its own release, after the release that stopped using the old shape, and the deploy job enforces that this earlier release is live first (decision 3, step 4).
 
 ## Alternatives
 
