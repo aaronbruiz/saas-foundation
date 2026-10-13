@@ -197,11 +197,12 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
           LIVE_TAG: ${{ steps.preflight.outputs.live_tag }}
         run: |
-          # An automatic release older than the live one (a re-run after newer releases shipped) is
-          # refused; going back is a deliberate `redeploy`.
-          if [ "$MODE" = deploy ] && [ -n "$LIVE_TAG" ] && [ "$LIVE_TAG" != "$TAG" ] &&
-            [ "$(printf '%s\n%s\n' "${LIVE_TAG#web-v}" "${TAG#web-v}" | sort -V | tail -n1)" = "${LIVE_TAG#web-v}" ]; then
-            echo "::error::$TAG is older than the live $LIVE_TAG; use action: redeploy to go back"
+          # An automatic release deploys only the newest release tag: a re-run after newer releases
+          # were tagged is refused, whatever is live (the live identity can be unknown). Going back
+          # is a deliberate `redeploy`.
+          newest="$(git tag --list 'web-v*' --sort=-v:refname | head -n1)"
+          if [ "$MODE" = deploy ] && [ "$TAG" != "$newest" ]; then
+            echo "::error::$TAG isn't the newest release ($newest); use action: redeploy to deploy it"
             exit 1
           fi
           BASE_TAG="$LIVE_TAG" scripts/release/routes-changed.sh

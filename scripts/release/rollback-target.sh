@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Rollback, step 1 (ADR-0029 decision 6), with the Worker token only. Resolves:
-# - the target: VERSION_ID, or the newest earlier 100% version with different code (skipping
-#   versions made by `wrangler secret put`, and ones whose `commit=` equals the live one's, e.g. a
-#   redeploy of the live tag);
-# - its commit, tag and build (from its message `commit=… build=…` and tag, set by release.yml); a
-#   version without them (a manual deploy) leaves them empty, and the guard treats it as breaking;
-# - secrets_changed: whether a secret changed after the target was created (a version annotated
-#   `workers/triggered_by: secret`). `wrangler rollback` then reverts secret values too without
-#   asking in CI, so the workflow refuses unless confirmed. A target older than the 10 versions
-#   `wrangler versions list` returns counts as changed.
+# - the target: VERSION_ID, or the newest earlier 100% version whose code differs from the live
+#   code. Code is identified through code_version (a `wrangler secret put` version runs its
+#   predecessor's code), so a secret-put version of an older release is a valid target, and the one
+#   that keeps today's secrets. A candidate whose code can't be identified stops the search: pass
+#   version_id then.
+# - the target's commit, tag and build, from its code version (message `commit=… build=…` and tag,
+#   set by release.yml); unknown ones stay empty, and the guard treats them as breaking;
+# - secrets_changed: whether a secret changed at or after the target was created
+#   (secrets_changed_since). `wrangler rollback` then reverts secret values too without asking in
+#   CI, so the workflow refuses unless confirmed.
 # Outputs (GITHUB_OUTPUT): target, commit, tag, build, live, secrets_changed.
 # Usage: CLOUDFLARE_API_TOKEN=... [VERSION_ID=<id>] scripts/release/rollback-target.sh
 source "$(dirname "$0")/lib.sh"
@@ -20,24 +21,26 @@ live="$(jq -r '.versions[0].version_id' <<<"$dep")"
 versions="$(versions_list)"
 
 commit_of() { message_field "$(annotations "$1" | jq -r '.["workers/message"] // empty')" commit; }
-# The live code's commit: a `secret put` version runs its predecessor's code (code_version).
-live_code="$(code_version "$live" "$versions")"
-live_commit=
-[ -z "$live_code" ] || live_commit="$(commit_of "$live_code")"
+# Commit of the code version $1 runs; empty if unknown.
+code_commit() {
+  local cv
+  cv="$(code_version "$1" "$versions")"
+  [ -z "$cv" ] || commit_of "$cv"
+}
+live_commit="$(code_commit "$live")"
 
 target="${VERSION_ID:-}"
 if [ -z "$target" ]; then
   # Without the live code's commit, "different code" can't be told: an explicit target is needed.
-  [ -n "$live_commit" ] || die "the live version's commit is unknown (not deployed by release.yml): pass version_id"
+  [ -n "$live_commit" ] || die "the live code's commit is unknown (not deployed by release.yml, or outside the 10 newest versions): pass version_id"
   out="$(wrangler deployments list --name "$WORKER" --json | json_tail | jq -r --arg l "$live" '
     [.[] | select((.versions | length) == 1 and .versions[0].percentage == 100) | .versions[0].version_id]
     | map(select(. != $l)) | reverse | .[]')"
   earlier=()
   lines_to "$out" earlier
   for v in "${earlier[@]}"; do
-    trig="$(jq -r --arg v "$v" '.[] | select(.id == $v) | .annotations["workers/triggered_by"] // empty' <<<"$versions")"
-    [ "$trig" != secret ] || continue
-    c="$(commit_of "$v")"
+    c="$(code_commit "$v")"
+    [ -n "$c" ] || die "can't identify the code of earlier version $v: pass version_id"
     [ "$c" != "$live_commit" ] || continue
     target="$v"
     break
@@ -46,23 +49,22 @@ fi
 [[ "$target" =~ ^[0-9a-f-]{36}$ ]] || die "no rollback target (pass version_id)"
 [ "$target" != "$live" ] || die "$target is already live"
 
-ann="$(annotations "$target")"
-tag="$(jq -r '.["workers/tag"] // empty' <<<"$ann")"
+code="$(code_version "$target" "$versions")"
+tag=''
+message=''
+if [ -n "$code" ]; then
+  ann="$(annotations "$code")"
+  tag="$(jq -r '.["workers/tag"] // empty' <<<"$ann")"
+  message="$(jq -r '.["workers/message"] // empty' <<<"$ann")"
+fi
 [[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || tag=
-message="$(jq -r '.["workers/message"] // empty' <<<"$ann")"
 commit="$(message_field "$message" commit)"
 build="$(message_field "$message" build)"
-[[ -z "$commit" || "$commit" =~ ^[0-9a-f]{40}$ ]] || die "unexpected commit in $target's message"
-[[ -z "$build" || "$build" =~ ^[0-9]+-[0-9]+$ ]] || die "unexpected build id in $target's message"
+[[ -z "$commit" || "$commit" =~ ^[0-9a-f]{40}$ ]] || die "unexpected commit in $code's message"
+[[ -z "$build" || "$build" =~ ^[0-9]+-[0-9]+$ ]] || die "unexpected build id in $code's message"
 
-created="$(jq -r --arg t "$target" '.[] | select(.id == $t) | .metadata.created_on // empty' <<<"$versions")"
-if [ -z "$created" ]; then
-  secrets_changed=true # older than the listed versions: can't tell
-else
-  secrets_changed="$(jq -r --arg c "$created" '[.[] | select(.metadata.created_on > $c
-    and .annotations["workers/triggered_by"] == "secret")] | length > 0' <<<"$versions")"
-fi
-log "rollback target $target (${tag:-untagged}, commit ${commit:-unknown}); live is $live; secrets changed since: $secrets_changed"
+secrets_changed="$(secrets_changed_since "$target" "$versions")"
+log "rollback target $target (code of ${code:-unknown}: ${tag:-untagged}, commit ${commit:-unknown}); live is $live; secrets changed since: $secrets_changed"
 {
   echo "target=$target"; echo "commit=$commit"; echo "tag=$tag"; echo "build=$build"
   echo "live=$live"; echo "secrets_changed=$secrets_changed"

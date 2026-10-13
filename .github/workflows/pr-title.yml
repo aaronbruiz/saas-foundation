@@ -57,6 +57,6 @@ jobs:
           mapfile -t contract <<<"$found"
           re='^[a-z]+(\([a-z0-9][a-z0-9-]*\))?!: '
           if [[ ! "$TITLE" =~ $re ]]; then
-            echo "::error::Contract migration (DROP, RENAME or a column retype) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
+            echo "::error::Contract migration (DROP, RENAME, SET SCHEMA, a column retype, or an SQL comment, which counts as one) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
             exit 1
           fi

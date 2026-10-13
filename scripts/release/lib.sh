@@ -40,18 +40,37 @@ versions_list() {
   printf '%s' "$v"
 }
 
-# The version whose code version $1 runs: itself, or for a `wrangler secret put` version (annotated
-# `workers/triggered_by: secret`, which carries no tag or message), the newest non-secret version
-# created before it. Empty if that's outside the listed versions ($2 = versions_list).
+# jq: a version's created_on as a number (the API trims trailing zeros from the fraction, so the
+# strings don't sort), and whether it's a `wrangler secret put` version.
+JQ_DEFS='def ts: .metadata.created_on | (.[0:19] + "Z" | fromdate)
+    + (([capture("\\.(?<f>[0-9]+)Z$").f] | first // "0") | ("0." + .) | tonumber);
+  def secret: (.annotations["workers/triggered_by"] // "") == "secret";'
+
+# The version whose code version $1 runs: itself, or for a `wrangler secret put` version (no tag or
+# message of its own), the newest non-secret version created before it. Empty (unknown) if that's
+# outside the listed versions ($2 = versions_list) or a timestamp tie makes "newest" ambiguous.
 code_version() {
-  jq -r --arg v "$1" '
+  jq -r --arg v "$1" "$JQ_DEFS"'
     (map(select(.id == $v)) | first) as $me
     | if $me == null then empty
-      elif ($me.annotations["workers/triggered_by"] // "") != "secret" then $me.id
-      else [.[] | select(.metadata.created_on < $me.metadata.created_on
-              and (.annotations["workers/triggered_by"] // "") != "secret")]
-           | sort_by(.metadata.created_on) | last | .id // empty
+      elif ($me | secret | not) then $me.id
+      else ($me | ts) as $t
+        | [.[] | select(.id != $v and (secret | not) and ts <= $t)] as $c
+        | if ($c | length) == 0 then empty
+          else ($c | map(ts) | max) as $m
+            | if $m == $t or ([$c[] | select(ts == $m)] | length) > 1 then empty
+              else $c[] | select(ts == $m) | .id end
+          end
       end' <<<"$2"
+}
+
+# Whether a secret changed at or after version $1 was created ("true"/"false"), from versions_list
+# ($2). A version outside the list counts as "true": it can't be told.
+secrets_changed_since() {
+  jq -r --arg v "$1" "$JQ_DEFS"'
+    (map(select(.id == $v)) | first) as $me
+    | if $me == null then true
+      else ($me | ts) as $t | [.[] | select(.id != $v and secret and ts >= $t)] | length > 0 end' <<<"$2"
 }
 
 # `build=<id>` from a version message `commit=<sha> build=<id>` (ADR-0029 decision 4).
