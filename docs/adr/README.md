@@ -29,4 +29,5 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0025](0025-turnstile-bot-protection-on-auth.md): Bot protection on sign-up, sign-in and auth email: Cloudflare Turnstile through Better Auth's captcha plugin
 - [ADR-0026](0026-neon-plan-capacity-and-upgrade-trigger.md): Neon plan for launch: Free's capacity limits and the upgrade trigger
 - [ADR-0027](0027-polyglot-service-and-repository-boundaries.md): Polyglot services and repository boundaries
+- [ADR-0029](0029-releases-deploys-and-rollback.md): Releases, deploys and rollback: release PRs, a 0% release candidate, dispatch and rollback workflows
 - [ADR-0030](0030-git-workflow.md): Git workflow: trunk-based, squash-merged Conventional PRs, specs in the PR
