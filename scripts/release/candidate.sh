@@ -15,14 +15,8 @@ source "$(dirname "$0")/lib.sh"
 
 artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
 config="$artifact/apps/web/dist/server/wrangler.json"
-# Plain files only, no env files (wrangler would read vars/secrets next to the config), and the
-# config must name this Worker, account and production Hyperdrive config.
-[ -z "$(find "$artifact" -type l -print -quit)" ] || die "artifact contains symlinks"
-[ -z "$(find "$artifact" \( -name '.dev.vars*' -o -name '.env*' \) -print -quit)" ] || die "artifact contains .dev.vars/.env files"
-[ -f "$config" ] || die "artifact has no apps/web/dist/server/wrangler.json"
-jq -e --arg w "$WORKER" --arg a "$ACCOUNT" --arg h "$PROD_HYPERDRIVE_ID" \
-  '.name == $w and .account_id == $a and ([.hyperdrive[]?.id] == [$h])' "$config" >/dev/null ||
-  die "artifact config doesn't match the production Worker, account and Hyperdrive config"
+# Validated before any production change (check-artifact.sh); again here, right before the upload.
+"$(dirname "$0")/check-artifact.sh"
 
 dep="$(deployment)"
 [ "$(jq '.versions | length' <<<"$dep")" = 1 ] || die "the deployment already holds a candidate"
@@ -39,4 +33,4 @@ echo "live_version=$live" >>"${GITHUB_OUTPUT:-/dev/null}"
 
 wrangler versions deploy "$new@0%" "$live@100%" --name "$WORKER" --message "candidate $TAG" -y >&2
 expect_health "${TAG#web-v}" "$BUILD_ID" "$new" ||
-  die "smoke test failed: $new stays at 0% (promote, fix forward, or redeploy the live version alone)"
+  die "smoke test failed: $new stays at 0% (release.yml action discard drops it; then fix forward)"

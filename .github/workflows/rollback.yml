@@ -19,6 +19,10 @@ on:
         description: Allow a target that lacks an applied contract migration
         type: boolean
         default: false
+      confirm_secret_revert:
+        description: Allow a target older than a secret change (the rollback restores the old secret values)
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -48,6 +52,14 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
+      - name: Check the inputs
+        env:
+          REASON: ${{ inputs.reason }}
+          VERSION_ID: ${{ inputs.version_id }}
+        run: |
+          # wrangler caps the rollback message at 120 characters ("rollback by <actor>: <reason>").
+          if [ -z "$REASON" ] || [ "${#REASON}" -gt 80 ]; then echo "::error::reason must be 1-80 characters"; exit 1; fi
+          if [ -n "$VERSION_ID" ] && ! [[ "$VERSION_ID" =~ ^[0-9a-f-]{36}$ ]]; then echo "::error::invalid version_id"; exit 1; fi
       # Secrets are passed per step, never at job level and never to the install step.
       - name: Resolve the target
         id: target
@@ -55,6 +67,13 @@ jobs:
           VERSION_ID: ${{ inputs.version_id }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: scripts/release/rollback-target.sh
+      - name: Secret-change guard
+        if: steps.target.outputs.secrets_changed != 'false'
+        env:
+          CONFIRMED: ${{ inputs.confirm_secret_revert }}
+        run: |
+          # wrangler answers the API's "secrets have changed" refusal with a default "yes" in CI.
+          [ "$CONFIRMED" = true ] || { echo "::error::a secret changed after the target was created (or that can't be told); rolling back would restore the old secret values. Rerun with confirm_secret_revert: true if that's intended"; exit 1; }
       - name: Breaking-release guard
         env:
           COMMIT: ${{ steps.target.outputs.commit }}
@@ -69,20 +88,24 @@ jobs:
           TARGET: ${{ steps.target.outputs.target }}
           LIVE: ${{ steps.target.outputs.live }}
           TAG: ${{ steps.target.outputs.tag }}
+          BUILD: ${{ steps.target.outputs.build }}
           REASON: ${{ inputs.reason }}
           ACTOR: ${{ github.actor }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           source scripts/release/lib.sh
+          only() { [ "$(deployment | jq -c '[.versions[] | [.version_id, .percentage]]')" = "[[\"$1\",100]]" ]; }
           # Stale check: the target was resolved against this live version.
-          [ "$(deployment | jq -r '.versions | map(.version_id) | join(",")')" = "$LIVE" ] ||
-            die "the deployment changed since the target was resolved; rerun"
+          only "$LIVE" || die "the deployment changed since the target was resolved; rerun"
           wrangler rollback "$TARGET" --name "$WORKER" -m "rollback by $ACTOR: $REASON" -y >&2
-          for _ in $(seq 1 24); do
-            [ "$(deployment | jq -r '.versions[0].version_id')" = "$TARGET" ] && break
-            sleep 5
-          done
-          body="$(curl -sS -m 15 "https://$APP_HOST/api/health" || true)"
-          echo "health after rollback: ${body:-no response}"
+          for _ in $(seq 1 24); do only "$TARGET" && break; sleep 5; done
+          only "$TARGET" || die "the deployment isn't $TARGET alone at 100% after the rollback"
           echo "### Rolled back to $TARGET (${TAG:-untagged})" >>"$GITHUB_STEP_SUMMARY"
-          jq -e '.ok == true' <<<"$body" >/dev/null || die "health isn't ok after the rollback"
+          # A release version reports its own version and build; an older manual one only `ok`.
+          if [ -n "$TAG" ] && [ -n "$BUILD" ]; then
+            expect_health "${TAG#web-v}" "$BUILD"
+          else
+            body="$(curl -sS -m 15 "https://$APP_HOST/api/health" || true)"
+            echo "health after rollback: ${body:-no response}"
+            jq -e '.ok == true' <<<"$body" >/dev/null || die "health isn't ok after the rollback"
+          fi

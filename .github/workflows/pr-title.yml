@@ -48,10 +48,13 @@ jobs:
       - env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          mapfile -t files < <(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')
-          if (( ${#files[@]} == 0 )); then exit 0; fi
-          mapfile -t contract < <(scripts/contract-migrations.sh "${files[@]}")
-          if (( ${#contract[@]} == 0 )); then exit 0; fi
+          # Checked assignments, not `< <(…)`: a failing producer must fail this check.
+          changed="$(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')"
+          [ -n "$changed" ] || exit 0
+          mapfile -t files <<<"$changed"
+          found="$(scripts/contract-migrations.sh "${files[@]}")"
+          [ -n "$found" ] || exit 0
+          mapfile -t contract <<<"$found"
           re='^[a-z]+(\([a-z0-9][a-z0-9-]*\))?!: '
           if [[ ! "$TITLE" =~ $re ]]; then
             echo "::error::Contract migration (DROP, RENAME or a column retype) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
