@@ -1,0 +1,277 @@
+name: Release
+
+# ADR-0029: releases and production deploys of the `saas-foundation` Worker.
+# - push to main: release-please updates the release PR. Merging the release PR creates the
+#   release (tag web-vX.Y.Z) and this same run deploys it: build (no secrets) → production job:
+#   verify tag and artifact → preflight → guard, restore point (if pending) and the tag's migrations → candidate
+#   at 0% + smoke test through the override header → promote to 100%. The repository variable
+#   RELEASE_HOLD=true stops a release at 0% (decision 3, `hold`), as does a routes/triggers change
+#   against the live release (step 8).
+# - workflow_dispatch: `promote` a held candidate, `discard` it (the live version alone at 100%),
+#   or `redeploy` an existing tag (same steps), optionally with `hold`.
+# Every deploy runs decision 6's breaking-release guard. The production job runs `main`'s scripts
+# and migrator; the tag's build and migrations are data.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: promote = finish a held release; discard = drop a held candidate; redeploy = build and deploy an existing tag
+        type: choice
+        options: [promote, discard, redeploy]
+        required: true
+      tag:
+        description: redeploy only, e.g. web-v0.2.0
+        type: string
+      hold:
+        description: redeploy only, stop at 0% after the smoke test
+        type: boolean
+        default: false
+      confirm_breaking:
+        description: redeploy only, allow a tag that lacks an applied contract migration
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # GITHUB_TOKEN: the release PR's CI then waits for the owner's "Approve workflows to run"
+    # (decision 2); no PAT or App.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write # release-please's labels
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+
+  resolve:
+    needs: release-please
+    # Runs for dispatch too (release-please skipped).
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      mode: ${{ steps.r.outputs.mode }}
+      tag: ${{ steps.r.outputs.tag }}
+      hold: ${{ steps.r.outputs.hold }}
+    steps:
+      - id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          CREATED: ${{ needs.release-please.outputs.release_created }}
+          RP_TAG: ${{ needs.release-please.outputs.tag }}
+          ACTION: ${{ inputs.action }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_HOLD: ${{ inputs.hold }}
+          VAR_HOLD: ${{ vars.RELEASE_HOLD }}
+        run: |
+          mode=; tag=; hold=false
+          if [ "$EVENT" = push ]; then
+            [ "$CREATED" = true ] || { echo "no release created"; exit 0; }
+            mode=deploy; tag="$RP_TAG"; [ "$VAR_HOLD" = true ] && hold=true
+          elif [ "$ACTION" = promote ] || [ "$ACTION" = discard ]; then
+            mode="$ACTION"
+          else
+            mode=redeploy; tag="$INPUT_TAG"; hold="$INPUT_HOLD"
+          fi
+          if [ "$mode" = deploy ] || [ "$mode" = redeploy ]; then
+            [[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid tag '$tag'"; exit 1; }
+          fi
+          { echo "mode=$mode"; echo "tag=$tag"; echo "hold=$hold"; } >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    # Status functions: on dispatch, release-please (an ancestor) is skipped, and the implicit
+    # success() would skip every job after it.
+    if: ${{ !cancelled() && !failure() && (needs.resolve.outputs.mode == 'deploy' || needs.resolve.outputs.mode == 'redeploy') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No secrets, no cache: the tag's code is built, never run next to a credential.
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.id.outputs.sha }}
+      build_id: ${{ steps.id.outputs.build_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+          persist-credentials: false
+      # The build id vite.config.ts stamps (decision 4) is this job's attempt; a "re-run failed
+      # jobs" reuses this build, so the deploy job takes the id from here, not from its own attempt.
+      - id: id
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          echo "build_id=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >>"$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build && scripts/scan-client-bundle.sh
+      - name: Assemble the artifact (Worker build + the tag's migrations)
+        run: |
+          out="$RUNNER_TEMP/release-artifact"
+          mkdir -p "$out/apps/web" "$out/packages/db"
+          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/web/dist "$out/apps/web/"
+          rsync -a packages/db/drizzle "$out/packages/db/"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifact
+          path: ${{ runner.temp }}/release-artifact
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+
+  deploy:
+    needs: [resolve, build]
+    if: ${{ !cancelled() && !failure() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    # One lock per Worker, shared with rollback.yml, `promote` and `discard`: nothing is cancelled,
+    # running or queued, so a rollback can't interleave with a candidate being tested or promoted.
+    concurrency:
+      group: deploy-saas-foundation
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0 # tags, main's history, the routes comparison
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-artifact
+          path: ${{ runner.temp }}/release-artifact
+      # Before anything in production changes, and without credentials: the tag is on main's
+      # history and is what the build job built; the artifact is data that passes ADR-0021's rules.
+      - name: Verify the tag and the artifact
+        id: verify
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          BUILT: ${{ needs.build.outputs.sha }}
+          ARTIFACT_DIR: ${{ runner.temp }}/release-artifact
+        run: |
+          sha="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
+          [ "$sha" = "$BUILT" ] || { echo "::error::$TAG is $sha but the build job built $BUILT"; exit 1; }
+          git merge-base --is-ancestor "$sha" HEAD || { echo "::error::$TAG ($sha) is not on main's history"; exit 1; }
+          prev="$(git tag --list 'web-v*' --sort=-v:refname | awk -v t="$TAG" 'f {print; exit} $0 == t {f=1}')"
+          echo "prev_tag=$prev" >>"$GITHUB_OUTPUT"
+          echo "preceding release: ${prev:-none}"
+          scripts/release/check-artifact.sh
+      # Secrets are passed per step, never at job level and never to the install step.
+      - name: Preflight (deployed secrets; no held candidate)
+        id: preflight
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: scripts/release/preflight.sh
+      - name: Release order and routes/triggers against the live release
+        id: live
+        env:
+          MODE: ${{ needs.resolve.outputs.mode }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          LIVE_TAG: ${{ steps.preflight.outputs.live_tag }}
+        run: |
+          # An automatic release deploys only the newest release tag: a re-run after newer releases
+          # were tagged is refused, whatever is live (the live identity can be unknown). Going back
+          # is a deliberate `redeploy`.
+          newest="$(git tag --list 'web-v*' --sort=-v:refname | head -n1)"
+          if [ "$MODE" = deploy ] && [ "$TAG" != "$newest" ]; then
+            echo "::error::$TAG isn't the newest release ($newest); use action: redeploy to deploy it"
+            exit 1
+          fi
+          BASE_TAG="$LIVE_TAG" scripts/release/routes-changed.sh
+      - name: Migrate (guard; restore point if anything is pending; the tag's migrations, main's migrator)
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          PREV_TAG: ${{ steps.verify.outputs.prev_tag }}
+          LIVE_TAG: ${{ steps.preflight.outputs.live_tag }}
+          ARTIFACT_DIR: ${{ runner.temp }}/release-artifact
+          CONFIRM_BREAKING: ${{ inputs.confirm_breaking }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_DATABASE: ${{ vars.NEON_DATABASE }}
+          NEON_ROLE: ${{ vars.NEON_ROLE }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: scripts/release/migrate.sh
+      - name: Release candidate at 0% + smoke test
+        id: candidate
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          SHA: ${{ needs.build.outputs.sha }}
+          BUILD_ID: ${{ needs.build.outputs.build_id }}
+          ARTIFACT_DIR: ${{ runner.temp }}/release-artifact
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: scripts/release/candidate.sh
+      - name: Held at 0%
+        if: needs.resolve.outputs.hold == 'true' || steps.live.outputs.routes_changed == 'true'
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          CANDIDATE: ${{ steps.candidate.outputs.candidate_version }}
+          ROUTES: ${{ steps.live.outputs.routes_changed }}
+        run: |
+          why="hold requested"; [ "$ROUTES" = true ] && why="routes/triggers differ from the live release (or it's untagged): apply them by hand first"
+          echo "::notice title=Held at 0%::$TAG ($CANDIDATE): $why. Test with the header Cloudflare-Workers-Version-Overrides: saas-foundation=\"$CANDIDATE\", then run this workflow with action: promote (or discard)."
+      - name: Promote to 100%
+        if: needs.resolve.outputs.hold != 'true' && steps.live.outputs.routes_changed != 'true'
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate_version }}
+          LIVE: ${{ steps.candidate.outputs.live_version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: scripts/release/promote.sh
+
+  held:
+    needs: resolve
+    if: ${{ !cancelled() && !failure() && (needs.resolve.outputs.mode == 'promote' || needs.resolve.outputs.mode == 'discard') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    concurrency:
+      group: deploy-saas-foundation
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - name: Promote or discard the held candidate
+        env:
+          MODE: ${{ needs.resolve.outputs.mode }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ "$MODE" = promote ]; then scripts/release/promote.sh; else scripts/release/discard.sh; fi

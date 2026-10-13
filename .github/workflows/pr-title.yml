@@ -48,18 +48,15 @@ jobs:
       - env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          mapfile -t files < <(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')
-          contract=()
-          # -z reads the whole file as one record, so a statement may wrap across lines.
-          # Retype: `ALTER [COLUMN] <col> [SET DATA] TYPE` (COLUMN is optional in PostgreSQL).
-          for f in "${files[@]}"; do
-            if grep -qziE '\bDROP\b|\bRENAME\b|ALTER[[:space:]]+(COLUMN[[:space:]]+)?[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE\b' "$f"; then
-              contract+=("$f")
-            fi
-          done
-          if (( ${#contract[@]} == 0 )); then exit 0; fi
+          # Checked assignments, not `< <(…)`: a failing producer must fail this check.
+          changed="$(git diff --name-only --diff-filter=AMR HEAD^1 HEAD -- 'packages/db/drizzle/*.sql')"
+          [ -n "$changed" ] || exit 0
+          mapfile -t files <<<"$changed"
+          found="$(scripts/contract-migrations.sh "${files[@]}")"
+          [ -n "$found" ] || exit 0
+          mapfile -t contract <<<"$found"
           re='^[a-z]+(\([a-z0-9][a-z0-9-]*\))?!: '
           if [[ ! "$TITLE" =~ $re ]]; then
-            echo "::error::Contract migration (DROP, RENAME or a column retype) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
+            echo "::error::Contract migration (DROP, RENAME, SET SCHEMA, a column retype, or an SQL comment, which counts as one) in ${contract[*]}: mark the PR title breaking with '!' (e.g. 'feat(db)!: …'; ADR-0029 decision 7)."
             exit 1
           fi

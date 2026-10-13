@@ -37,6 +37,7 @@ pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better A
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
 scripts/backup/snapshot.sh | dump.sh   # daily Neon snapshot branch + off-provider pg_dump to R2; run by CI (db-backup.yml; ADR-0003, ADR-0023)
+scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
 Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
@@ -80,7 +81,7 @@ kill -9 $(lsof -t -i:3000)
 ## Git workflow (ADR-0030)
 
 - Trunk-based: short-lived branches named `<type>/<scope>-<description>` off `main`, merged within about two days. No release branches; fix forward (in an emergency, roll back first, ADR-0029).
-- **The PR title is a Conventional Commit**: `<type>(<scope>)!: <description>`, types `feat fix perf refactor revert docs test chore ci build`, scope optional and lowercase, at most 100 characters, `!` = breaking (mainly a contract migration). `pr-title.yml` checks it, and fails a PR whose migration drops, renames or retypes anything unless its title has `!` (ADR-0029 decision 7). Squash merge only: the PR title becomes the commit on `main` (body blank), and release-please reads it (ADR-0029).
+- **The PR title is a Conventional Commit**: `<type>(<scope>)!: <description>`, types `feat fix perf refactor revert docs test chore ci build`, scope optional and lowercase, at most 100 characters, `!` = breaking (mainly a contract migration). `pr-title.yml` checks it, and fails a PR whose migration drops, renames, moves or retypes anything, or contains an SQL comment other than drizzle-kit's `--> statement-breakpoint` (fail-closed), unless its title has `!` (ADR-0029 decision 7). Squash merge only: the PR title becomes the commit on `main` (body blank), and release-please reads it (ADR-0029).
 - **The PR description is the spec** (`.github/pull_request_template.md`): Goal, Behaviour (including failure cases), Out of scope, Checks. For non-trivial work, write it before the code.
 - Stacks at most 3 deep. Update a child by merging its base into it (no rebase and force-push). Merged branches are deleted automatically, and GitHub then retargets a stacked child to the merged PR's base (tested 2026-10-13, ADR-0030 Notes). Never delete a base branch by hand; if a child needs retargeting, use `gh api -X PATCH repos/<owner>/<repo>/pulls/N -f base=main`.
 - Tests are named for the behaviour they prove ("a non-member gets 404 on another tenant's overview"); no Gherkin.
