@@ -2,7 +2,7 @@ import { cloudflareTest } from '@cloudflare/vitest-plugin'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { defineConfig } from 'vitest/config'
-import { readBuildInfo } from './build-info'
+import { readBuildInfo } from './build-info.ts'
 
 // Resolve pg-cloudflare the way pg does (pg → pg-cloudflare), without hardcoding pnpm's layout.
 const fromDb = createRequire(createRequire(import.meta.url).resolve('@saas-foundation/db'))

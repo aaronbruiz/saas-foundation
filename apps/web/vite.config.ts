@@ -6,7 +6,7 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
-import { readBuildInfo } from './build-info'
+import { readBuildInfo } from './build-info.ts'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
