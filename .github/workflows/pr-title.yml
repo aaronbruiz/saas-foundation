@@ -1,0 +1,33 @@
+name: PR title
+
+# ADR-0030: squash merges use the PR title as the commit title on `main`, and release-please reads it
+# (ADR-0029), so the title must be a Conventional Commit. Its own workflow so a title edit re-runs only
+# this check, not CI. No checkout, no install, no secrets; the title is passed as data, never as code.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  title:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(feat|fix|perf|refactor|revert|docs|test|chore|ci|build)(\([a-z0-9][a-z0-9-]*\))?!?: [^ ].*$'
+          if [[ ! "$TITLE" =~ $re ]]; then
+            echo "::error::PR title must be '<type>(<scope>)!: <description>' (scope and ! optional; types: feat fix perf refactor revert docs test chore ci build; scope lowercase)."
+            exit 1
+          fi
+          if (( ${#TITLE} > 100 )); then
+            echo "::error::PR title is ${#TITLE} characters; the limit is 100."
+            exit 1
+          fi

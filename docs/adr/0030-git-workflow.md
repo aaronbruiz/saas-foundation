@@ -1,6 +1,6 @@
 # ADR-0030: Git workflow: trunk-based, squash-merged Conventional PRs, specs in the PR
 
-Status: Proposed · Date: 2026-10-13
+Status: Accepted (owner 2026-10-13) · Date: 2026-10-13
 
 Writes down the workflow the repo already follows and adds the settings and checks that make it reliable enough for release automation ([ADR-0029](0029-releases-deploys-and-rollback.md) reads commit titles to decide releases). Extends [ADR-0012](0012-claude-implements-codex-reviews.md). Research and sources: `.local/research/releases-and-git-workflow.md` (2026-10-13; git-ignored, kept by the owner).
 
@@ -30,7 +30,7 @@ Writes down the workflow the repo already follows and adds the settings and chec
   - types: `feat`, `fix`, `perf`, `refactor`, `revert`, `docs`, `test`, `chore`, `ci`, `build`;
   - scope optional, lowercase; header at most 100 characters;
   - `!` after the type or scope marks a breaking change. For this product that is mainly a **contract migration** (ADR-0029 decision 7).
-  - The check is an inline shell regex in `ci.yml`; no third-party action. Intermediate commits on a branch aren't linted: only the title reaches `main`.
+  - The check is an inline shell regex in its own workflow, `pr-title.yml`, which also runs when the PR is `edited`, so a corrected title is re-checked without re-running CI. No third-party action. Intermediate commits on a branch aren't linted: only the title reaches `main`.
 - **Branches are deleted after merge** (`delete_branch_on_merge: true`). Because #38 showed that a deleted base branch can close a child PR, auto-delete is turned on only after a throwaway 2-deep stack confirms that merging the base retargets the child instead of closing it. If it doesn't, auto-delete stays off and stacks keep the manual retarget.
 
 ### 3. Specs in the PR (spec-driven development)
@@ -49,7 +49,7 @@ Writes down the workflow the repo already follows and adds the settings and chec
 | Rule                                     | Enforced by                                                               |
 | ---------------------------------------- | ------------------------------------------------------------------------- |
 | Squash only; PR title as commit title    | repo settings                                                             |
-| Conventional PR title                    | CI check (`ci.yml`)                                                       |
+| Conventional PR title                    | CI check (`pr-title.yml`)                                                 |
 | CI green before merge; PR-only to `main` | **the owner**, at merge time (no branch protection on Free; see Deferred) |
 | Branch names, stack depth, specs, naming | review (Codex and owner)                                                  |
 | Release tags can't be moved or deleted   | immutable releases (available on Free; ADR-0029)                          |
@@ -61,7 +61,7 @@ Writes down the workflow the repo already follows and adds the settings and chec
 | GitFlow, or release branches (Neon's storage repo model) | Built for maintaining several shipped versions at once. A SaaS runs one version, and release branches add merges and cherry-picks for nothing. trunkbaseddevelopment.com: high-cadence teams release from trunk and fix forward |
 | Merge commits or rebase merges                           | Non-linear history, or one commit per agent step on `main`. Release tooling then reads every intermediate commit                                                                                                                |
 | commitlint on every commit                               | With a `PR_TITLE` squash title only the title reaches `main`. Linting work-in-progress commits slows agents down and checks nothing that ships                                                                                  |
-| `amannn/action-semantic-pull-request`                    | Works, but it's one more third-party action with repo access. Its recommended `pull_request_target` trigger doesn't fire on release PRs opened with `GITHUB_TOKEN`. A regex in `ci.yml` does the same job                       |
+| `amannn/action-semantic-pull-request`                    | Works, but it's one more third-party action with repo access. Its recommended `pull_request_target` trigger doesn't fire on release PRs opened with `GITHUB_TOKEN`. An inline regex does the same job                           |
 | Specs as committed files (`docs/specs/`)                 | They pile up and drift from the code. The PR description stays attached to the change it produced, and Codex and GitHub can both read it. A spec under `.local/` would be invisible to Codex, which reviews in a separate tree  |
 | Full BDD (Gherkin)                                       | A translation layer between the spec and the test, with step definitions to maintain. Playwright and Vitest names already read as behaviour                                                                                     |
 | Required scope in PR titles                              | Most titles have one; requiring it adds friction to small changes                                                                                                                                                               |
@@ -79,4 +79,4 @@ Writes down the workflow the repo already follows and adds the settings and chec
 - Without branch protection, the owner's merge is the only gate for "CI is green". The release PR (ADR-0029) is where that matters most, and CI must run there before merging.
 - **The environment fence is undocumented on Free.** If GitHub starts enforcing its documentation, environment secrets may stop reaching jobs (deploys and backups fail) or deployment-branch policies may stop applying (the fence opens). Either one is the Pro trigger above, and the owner rechecks `db-backup.yml` and the deploy workflows when it happens.
 - Up to 3 stacked PRs each hold a preview Neon branch. With Dependabot (up to 3) and the release PR (skipped by previews, ADR-0029), the preview project keeps headroom.
-- Follow-up PR (after acceptance), owner-approved because it changes repo settings: set squash-only, `PR_TITLE` / `BLANK`, the PR-title check in `ci.yml`, a PR template, the throwaway-stack test and then auto-delete, and a "Git workflow" section in AGENTS.md.
+- Follow-up PR (after acceptance), owner-approved because it changes repo settings: set squash-only, `PR_TITLE` / `BLANK`, the PR-title check (`pr-title.yml`), a PR template, the throwaway-stack test and then auto-delete, and a "Git workflow" section in AGENTS.md.

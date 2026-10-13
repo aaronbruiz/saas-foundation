@@ -1,6 +1,6 @@
 # ADR-0029: Releases, deploys and rollback: release PRs, a 0% release candidate, dispatch and rollback workflows
 
-Status: Proposed · Date: 2026-10-13
+Status: Accepted (owner 2026-10-13) · Date: 2026-10-13
 
 Moves the production deploy of the app Worker from the owner's machine to CI, as the runbook requires ("wiring it into a deploy workflow needs its own ADR first"). Builds on [ADR-0030](0030-git-workflow.md) (squash-merged Conventional PR titles), [ADR-0013](0013-ci-credential-tiers.md) and [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md) (credential tiers, `main`-only environments, trusted jobs), [ADR-0014](0014-first-production-launch-gates.md) (launch gates) and Invariant 10 (forward-safe migrations). The docs Worker's deploys are in [ADR-0028](0028-public-docs-site.md) and follow decisions 5 and 6 here. Research and sources: `.local/research/releases-and-git-workflow.md` (2026-10-13; git-ignored, kept by the owner).
 

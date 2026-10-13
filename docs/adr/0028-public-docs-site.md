@@ -1,6 +1,6 @@
 # ADR-0028: Public product docs: a static Starlight site on its own assets-only Worker
 
-Status: Proposed · Date: 2026-10-13
+Status: Accepted (owner 2026-10-13) · Date: 2026-10-13
 
 Adds a second Worker under [ADR-0002](0002-single-tanstack-start-worker.md) and [ADR-0007](0007-defer-cloudflare-products.md) ("second Worker: … isolation need"), following [ADR-0027](0027-polyglot-service-and-repository-boundaries.md)'s criteria and checklist. Extends [ADR-0006](0006-toolchain.md)'s toolchain. Research, sources and measurements: `.local/research/docs-hosting.md` (2026-10-13; git-ignored, kept by the owner).
 
