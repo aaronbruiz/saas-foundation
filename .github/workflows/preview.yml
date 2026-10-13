@@ -29,11 +29,13 @@ permissions: {}
 
 jobs:
   resolve:
-    # Same-repo PRs only, and only once check + test passed.
+    # Same-repo PRs only, and only once check + test passed. Not the release PR (ADR-0029): it's
+    # open most of the time and would hold a preview Neon branch for a version-bump diff.
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      !startsWith(github.event.workflow_run.head_branch, 'release-please--')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
