@@ -1,0 +1,82 @@
+# ADR-0030: Git workflow: trunk-based, squash-merged Conventional PRs, specs in the PR
+
+Status: Proposed · Date: 2026-10-13
+
+Writes down the workflow the repo already follows and adds the settings and checks that make it reliable enough for release automation ([ADR-0029](0029-releases-deploys-and-rollback.md) reads commit titles to decide releases). Extends [ADR-0012](0012-claude-implements-codex-reviews.md). Research and sources: `.local/research/releases-and-git-workflow.md` (2026-10-13; git-ignored, kept by the owner).
+
+## Context
+
+- One owner and two coding agents (Claude implements, Codex reviews; ADR-0012). The owner merges every PR.
+- History on 2026-10-13: 81 linear, squash-merged commits. 80 of them have Conventional Commit titles (`fix(auth): …`), many with a scope. There are no tags, no release branches and no branch protection.
+- Repo settings today: squash, merge-commit **and** rebase merges allowed; `squash_merge_commit_title: COMMIT_OR_PR_TITLE` (a single-commit PR lands with its commit's title, not the PR title); `squash_merge_commit_message: COMMIT_MESSAGES`; branches aren't deleted after merge.
+- **The repo is private on GitHub Free.** Rulesets and branch protection are refused (API: 403 "Upgrade to GitHub Pro or make this repository public"). Environment required reviewers need Enterprise on private repos, so Pro wouldn't add them either. Environments with deployment-branch policies, which GitHub documents as Pro and up for private repos, work on this repo (ADR-0013's check; `db-backup.yml` reads `production` secrets).
+- Every same-repo PR gets a preview with its own Neon branch, and the preview project has 10 (ADR-0021). Dependabot already holds up to 3 open PRs.
+- A stacked child PR was **closed** when its base branch was deleted (#38); retargeting through the API works.
+- "Spec-driven development" and "behaviour-driven development" were raised. They're ways of working, not branching models, and are decided separately below.
+
+## Decision
+
+### 1. Trunk-based development
+
+- `main` is the only long-lived branch. Work happens on short-lived branches named `<type>/<scope>-<description>` (`feat/billing-annual-plans`, `docs/adr-0030-git-workflow`), merged within about two days.
+- **No release branches.** Fix forward on `main`. In an emergency, roll back first (ADR-0029), then fix forward. If a hotfix ever must skip unreleased work on `main`, branch from the release tag at that moment; nothing is branched in advance.
+- **Stacked PRs** are allowed, at most 3 deep, each a reviewable step. A stack is kept up to date by merging the base into the child (no rebase and force-push), and a child is retargeted with `gh api -X PATCH …/pulls/N -f base=main`, never by deleting its base branch.
+
+### 2. Squash merges with Conventional PR titles
+
+- **Squash merge only.** Merge-commit and rebase merges are turned off.
+- **Squash commit title = the PR title** (`squash_merge_commit_title: PR_TITLE`), **message blank** (`squash_merge_commit_message: BLANK`). The `(#N)` suffix links each commit on `main` to its PR, where the spec and review live. A blank body also keeps release tooling from reading an agent's intermediate commit lines as extra changes.
+- **The PR title is a Conventional Commit**, checked in CI on `pull_request` (so it also runs on release PRs, ADR-0029):
+  - types: `feat`, `fix`, `perf`, `refactor`, `revert`, `docs`, `test`, `chore`, `ci`, `build`;
+  - scope optional, lowercase; header at most 100 characters;
+  - `!` after the type or scope marks a breaking change. For this product that is mainly a **contract migration** (ADR-0029 decision 7).
+  - The check is an inline shell regex in `ci.yml`; no third-party action. Intermediate commits on a branch aren't linted: only the title reaches `main`.
+- **Branches are deleted after merge** (`delete_branch_on_merge: true`). Because #38 showed that a deleted base branch can close a child PR, auto-delete is turned on only after a throwaway 2-deep stack confirms that merging the base retargets the child instead of closing it. If it doesn't, auto-delete stays off and stacks keep the manual retarget.
+
+### 3. Specs in the PR (spec-driven development)
+
+- Non-trivial work starts from a written spec before code. The spec is the PR description, in four parts: **Goal**, **Behaviour** (what a user or caller observes, including the failure cases), **Out of scope**, **Checks** (commands run and their results). A PR template provides the headings.
+- Work that makes an architectural choice also gets an ADR in the same PR (AGENTS.md).
+- Exploration and grilling notes stay outside the repo (`.local/`); what matters lands in the PR description or the ADR.
+
+### 4. Tests named as behaviour (behaviour-driven development, lightly)
+
+- Tests are named for the behaviour they prove, in the user's or caller's terms: "a non-member gets 404 on another tenant's overview" (#82), not "test getTenantContext".
+- No Gherkin, no Cucumber and no `.feature` files: the reader of tests is the owner and the agents, and a translation layer adds nothing for them.
+
+### 5. What is enforced, and where
+
+| Rule                                     | Enforced by                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------------- |
+| Squash only; PR title as commit title    | repo settings                                                             |
+| Conventional PR title                    | CI check (`ci.yml`)                                                       |
+| CI green before merge; PR-only to `main` | **the owner**, at merge time (no branch protection on Free; see Deferred) |
+| Branch names, stack depth, specs, naming | review (Codex and owner)                                                  |
+| Release tags can't be moved or deleted   | immutable releases (available on Free; ADR-0029)                          |
+
+## Alternatives
+
+| Option                                                   | Why not                                                                                                                                                                                                                         |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitFlow, or release branches (Neon's storage repo model) | Built for maintaining several shipped versions at once. A SaaS runs one version, and release branches add merges and cherry-picks for nothing. trunkbaseddevelopment.com: high-cadence teams release from trunk and fix forward |
+| Merge commits or rebase merges                           | Non-linear history, or one commit per agent step on `main`. Release tooling then reads every intermediate commit                                                                                                                |
+| commitlint on every commit                               | With a `PR_TITLE` squash title only the title reaches `main`. Linting work-in-progress commits slows agents down and checks nothing that ships                                                                                  |
+| `amannn/action-semantic-pull-request`                    | Works, but it's one more third-party action with repo access. Its recommended `pull_request_target` trigger doesn't fire on release PRs opened with `GITHUB_TOKEN`. A regex in `ci.yml` does the same job                       |
+| Specs as committed files (`docs/specs/`)                 | They pile up and drift from the code. The PR description stays attached to the change it produced, and Codex and GitHub can both read it. A spec under `.local/` would be invisible to Codex, which reviews in a separate tree  |
+| Full BDD (Gherkin)                                       | A translation layer between the spec and the test, with step definitions to maintain. Playwright and Vitest names already read as behaviour                                                                                     |
+| Required scope in PR titles                              | Most titles have one; requiring it adds friction to small changes                                                                                                                                                               |
+
+## Deferred
+
+| Decision                                          | Options                                                                                                                                                                                               | Trigger                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GitHub Pro** (owner: not now, 2026-10-13)       | Pro enables a ruleset on `main`: PR-only, required checks (`ci`, PR title), linear history, no force-push or deletion, owner bypass. It also puts environments on private repos on documented footing | any of: a second person or bot with write access; a merge that skipped red or missing CI; GitHub changing how environments or deployment-branch policies behave on Free private repos (the `main`-only fence that ADR-0013, ADR-0021 and ADR-0029 rely on); making the repo public |
+| Native stacked-PR tooling (`gh stack`, git-spice) | adopt if stacks become routine                                                                                                                                                                        | a third stack in a month, or a retarget mistake                                                                                                                                                                                                                                    |
+
+## Consequences
+
+- `main`'s history becomes a reliable release input: one Conventional commit per PR, titled by a checked PR title.
+- Without branch protection, the owner's merge is the only gate for "CI is green". The release PR (ADR-0029) is where that matters most, and CI must run there before merging.
+- **The environment fence is undocumented on Free.** If GitHub starts enforcing its documentation, environment secrets may stop reaching jobs (deploys and backups fail) or deployment-branch policies may stop applying (the fence opens). Either one is the Pro trigger above, and the owner rechecks `db-backup.yml` and the deploy workflows when it happens.
+- Up to 3 stacked PRs each hold a preview Neon branch. With Dependabot (up to 3) and the release PR (skipped by previews, ADR-0029), the preview project keeps headroom.
+- Follow-up PR (after acceptance), owner-approved because it changes repo settings: set squash-only, `PR_TITLE` / `BLANK`, the PR-title check in `ci.yml`, a PR template, the throwaway-stack test and then auto-delete, and a "Git workflow" section in AGENTS.md.
