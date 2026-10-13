@@ -15,11 +15,10 @@
 // Without a Hyperdrive id it only validates. The production id is refused as a target (ADR-0021).
 // Production releases (ADR-0029): `prepare-config.mjs <wrangler.json> <account-id> --production
 // <production-hyperdrive-id>` applies the same rules to a release artifact, requires the DB binding
-// to be the production config, keeps the committed email binding and source map upload (every
-// `sourceMappingURL` in dist/server must stay inside dist/server), and drops only the build-machine
-// bookkeeping keys.
-import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+// to be the production config, keeps the committed email binding, turns source map upload off (as
+// for previews; the build emits no source maps today) and drops the build-machine bookkeeping keys.
+import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
 const WORKER_NAME = 'saas-foundation' // `name` in the committed apps/web/wrangler.jsonc
 const PREVIEWS_SENTINEL = '0'.repeat(32)
@@ -139,21 +138,6 @@ if (production) {
     sameJson(cfg.send_email, COMMITTED_SEND_EMAIL),
     'the email binding differs from the committed one',
   )
-  // Wrangler follows each bundle's sourceMappingURL when uploading source maps: keep them inside.
-  const walk = (dir) =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
-    )
-  for (const js of walk(serverDir).filter((f) => /\.(m?js|cjs)$/.test(f))) {
-    for (const [, url] of readFileSync(js, 'utf8').matchAll(/[#@]\s*sourceMappingURL=(\S+)/g)) {
-      if (url.startsWith('data:')) continue
-      const target = resolve(dirname(js), decodeURIComponent(url.split(/[?#]/)[0]))
-      check(
-        !/^[a-z][a-z0-9+.-]*:/i.test(url) && inside(serverDir, target),
-        `${relative(serverDir, js)}: sourceMappingURL points outside dist/server`,
-      )
-    }
-  }
 }
 
 if (errors.length) {
@@ -164,6 +148,8 @@ if (errors.length) {
 if (production) {
   for (const key of ['configPath', 'userConfigPath', 'topLevelName', 'definedEnvironments'])
     delete cfg[key]
+  // As for previews: wrangler would follow a bundle's sourceMappingURL to files outside the artifact.
+  cfg.upload_source_maps = false
   writeFileSync(file, JSON.stringify(cfg, null, 2))
   console.error('release artifact config OK (production)')
   process.exit(0)

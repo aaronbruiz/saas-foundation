@@ -17,14 +17,18 @@ source "$(dirname "$0")/lib.sh"
 dep="$(deployment)"
 [ "$(jq '.versions | length' <<<"$dep")" = 1 ] || die "a candidate is held: run release.yml with action discard (or promote) before rolling back"
 live="$(jq -r '.versions[0].version_id' <<<"$dep")"
-versions="$(wrangler versions list --name "$WORKER" --json | json_tail)"
-jq -e 'type == "array" and length > 0' <<<"$versions" >/dev/null || die "couldn't list versions"
+versions="$(versions_list)"
 
 commit_of() { message_field "$(annotations "$1" | jq -r '.["workers/message"] // empty')" commit; }
-live_commit="$(commit_of "$live")"
+# The live code's commit: a `secret put` version runs its predecessor's code (code_version).
+live_code="$(code_version "$live" "$versions")"
+live_commit=
+[ -z "$live_code" ] || live_commit="$(commit_of "$live_code")"
 
 target="${VERSION_ID:-}"
 if [ -z "$target" ]; then
+  # Without the live code's commit, "different code" can't be told: an explicit target is needed.
+  [ -n "$live_commit" ] || die "the live version's commit is unknown (not deployed by release.yml): pass version_id"
   out="$(wrangler deployments list --name "$WORKER" --json | json_tail | jq -r --arg l "$live" '
     [.[] | select((.versions | length) == 1 and .versions[0].percentage == 100) | .versions[0].version_id]
     | map(select(. != $l)) | reverse | .[]')"
@@ -34,7 +38,7 @@ if [ -z "$target" ]; then
     trig="$(jq -r --arg v "$v" '.[] | select(.id == $v) | .annotations["workers/triggered_by"] // empty' <<<"$versions")"
     [ "$trig" != secret ] || continue
     c="$(commit_of "$v")"
-    [ -n "$live_commit" ] && [ "$c" = "$live_commit" ] && continue
+    [ "$c" != "$live_commit" ] || continue
     target="$v"
     break
   done

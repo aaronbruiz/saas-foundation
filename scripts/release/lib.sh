@@ -32,6 +32,28 @@ deployment() { wrangler deployments status --name "$WORKER" --json | json_tail; 
 # Version annotations (`workers/tag`, `workers/message`) of version id $1.
 annotations() { wrangler versions view "$1" --name "$WORKER" --json | json_tail | jq -c '.annotations // {}'; }
 
+# The newest 10 versions with metadata and annotations (JSON array).
+versions_list() {
+  local v
+  v="$(wrangler versions list --name "$WORKER" --json | json_tail)"
+  jq -e 'type == "array" and length > 0' <<<"$v" >/dev/null || die "couldn't list versions"
+  printf '%s' "$v"
+}
+
+# The version whose code version $1 runs: itself, or for a `wrangler secret put` version (annotated
+# `workers/triggered_by: secret`, which carries no tag or message), the newest non-secret version
+# created before it. Empty if that's outside the listed versions ($2 = versions_list).
+code_version() {
+  jq -r --arg v "$1" '
+    (map(select(.id == $v)) | first) as $me
+    | if $me == null then empty
+      elif ($me.annotations["workers/triggered_by"] // "") != "secret" then $me.id
+      else [.[] | select(.metadata.created_on < $me.metadata.created_on
+              and (.annotations["workers/triggered_by"] // "") != "secret")]
+           | sort_by(.metadata.created_on) | last | .id // empty
+      end' <<<"$2"
+}
+
 # `build=<id>` from a version message `commit=<sha> build=<id>` (ADR-0029 decision 4).
 message_field() { # $1 = message, $2 = field
   sed -nE "s/(^|.* )$2=([^ ]+).*/\2/p" <<<"$1"

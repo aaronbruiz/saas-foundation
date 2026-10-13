@@ -55,10 +55,14 @@ jobs:
       - name: Check the inputs
         env:
           REASON: ${{ inputs.reason }}
+          ACTOR: ${{ github.actor }}
           VERSION_ID: ${{ inputs.version_id }}
         run: |
-          # wrangler caps the rollback message at 120 characters ("rollback by <actor>: <reason>").
-          if [ -z "$REASON" ] || [ "${#REASON}" -gt 80 ]; then echo "::error::reason must be 1-80 characters"; exit 1; fi
+          # wrangler caps the rollback message at 120 characters; check the whole message it gets.
+          msg="rollback by $ACTOR: $REASON"
+          if [ -z "$REASON" ] || [ "${#msg}" -gt 120 ]; then
+            echo "::error::reason must be non-empty and keep '$(printf 'rollback by %s: ' "$ACTOR")<reason>' within 120 characters (now ${#msg})"; exit 1
+          fi
           if [ -n "$VERSION_ID" ] && ! [[ "$VERSION_ID" =~ ^[0-9a-f-]{36}$ ]]; then echo "::error::invalid version_id"; exit 1; fi
       # Secrets are passed per step, never at job level and never to the install step.
       - name: Resolve the target
