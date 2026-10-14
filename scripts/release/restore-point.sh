@@ -13,7 +13,7 @@ source "$(dirname "$0")/lib.sh"
 KEEP=2
 
 name="pre-migrate-$TAG-$(date -u +%Y%m%dT%H%M%SZ)"
-main="$(neon_main_id)"
+main="$(neon_branch_id main)"
 [ -n "$main" ] || die "no Neon branch named main"
 # No `endpoints` in the request: the branch gets no compute.
 neon_api /branches -X POST -d "$(jq -nc --arg n "$name" --arg p "$main" '{branch: {name: $n, parent_id: $p}}')" >/dev/null
@@ -21,7 +21,6 @@ branches="$(neon_api /branches)"
 jq -e --arg n "$name" 'any(.branches[]; .name == $n)' <<<"$branches" >/dev/null ||
   die "restore point $name not found after creating it"
 log "restore point $name created"
-echo "restore_point=$name" >>"${GITHUB_OUTPUT:-/dev/null}"
 
 prune=()
 old="$(jq -r --argjson k "$KEEP" '[.branches[] | select(.name | test("^pre-migrate-web-v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{8}T[0-9]{6}Z$"))]

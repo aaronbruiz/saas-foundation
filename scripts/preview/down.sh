@@ -14,5 +14,4 @@ if [ -z "${FORCE:-}" ] && ! pr_is_closed "$PR_NUMBER"; then
   log "PR #$PR_NUMBER isn't closed (or its state is unknown); nothing to do"
   exit 0
 fi
-cf_worker_preflight
 delete_preview "$PREVIEW_NAME"

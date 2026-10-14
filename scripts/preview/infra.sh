@@ -163,9 +163,8 @@ case "${1:-}" in
       log "PR #$PR_NUMBER isn't closed (or its state is unknown); nothing to do"
       exit 0
     fi
-    cf_token_preflight
     "infra_$1"
     ;;
-  janitor) : "${GH_TOKEN:?}"; cf_token_preflight; infra_janitor ;;
+  janitor) : "${GH_TOKEN:?}"; infra_janitor ;;
   *) log "usage: PR_NUMBER=<n> $0 up|down  |  $0 janitor"; exit 1 ;;
 esac

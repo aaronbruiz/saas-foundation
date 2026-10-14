@@ -7,8 +7,5 @@
 source "$(dirname "$0")/lib.sh"
 : "${ARTIFACT_DIR:?}"
 artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
-[ -z "$(find "$artifact" -type l -print -quit)" ] || die "artifact contains symlinks"
-[ -z "$(find "$artifact" \( -name '.dev.vars*' -o -name '.env*' \) -print -quit)" ] || die "artifact contains .dev.vars/.env files"
-[ -f "$artifact/apps/web/dist/server/wrangler.json" ] || die "artifact has no apps/web/dist/server/wrangler.json"
-[ -f "$artifact/packages/db/drizzle/meta/_journal.json" ] || die "artifact has no packages/db/drizzle journal"
+check_artifact_files "$artifact" || exit 1
 node "$ROOT/scripts/preview/prepare-config.mjs" "$artifact/apps/web/dist/server/wrangler.json" "$ACCOUNT" --production "$PROD_HYPERDRIVE_ID"

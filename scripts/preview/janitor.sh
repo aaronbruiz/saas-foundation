@@ -4,7 +4,6 @@
 # `infra.sh janitor` does the same for Hyperdrive configs and Neon branches. Needs GH_TOKEN.
 source "$(dirname "$0")/lib.sh"
 : "${GH_TOKEN:?}"
-cf_worker_preflight
 
 list="$(cf_api "/workers/workers/$PREVIEW_WORKER/previews?per_page=100")"
 rc=0
