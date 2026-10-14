@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.3.1...app-v0.3.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **app:** answer unknown server-function ids with 404 ([#130](https://github.com/aaronbruiz/saas-foundation/issues/130)) ([1f74f80](https://github.com/aaronbruiz/saas-foundation/commit/1f74f80c40745b36dff4f0a3cd6eafaeb0693cf3))
+
 ## [0.3.1](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.3.0...app-v0.3.1) (2026-10-14)
 
 
