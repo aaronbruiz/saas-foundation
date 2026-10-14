@@ -1,6 +1,16 @@
 // Legal documents' metadata and the subprocessor registry. The documents' text lives in their
-// routes (`routes/privacy.tsx`, `routes/terms.tsx`) and is the owner's (or their lawyer's) to write.
+// routes (`routes/privacy.tsx`, `routes/terms.tsx`): a template describing what this codebase
+// processes, not legal advice. A product built on it replaces `legalEntity` and reviews the text.
 // Earlier versions are in git history; this is not a record of what any user accepted.
+
+/** Who provides the service. Template values: a product replaces them with its own. */
+export const legalEntity = {
+  name: 'Example Labs LLC',
+  product: 'SaaS Foundation',
+  contactEmail: 'privacy@aaronlabr.dev',
+  governingLaw: 'the State of Delaware, United States',
+  courts: 'the state and federal courts located in Delaware',
+}
 
 export type LegalDocument = {
   title: string
@@ -11,8 +21,8 @@ export type LegalDocument = {
 }
 
 export const legalDocuments = {
-  privacy: { title: 'Privacy Policy', version: '0', effectiveDate: null },
-  terms: { title: 'Terms of Service', version: '0', effectiveDate: null },
+  privacy: { title: 'Privacy Policy', version: '1', effectiveDate: '2026-10-14' },
+  terms: { title: 'Terms of Service', version: '1', effectiveDate: '2026-10-14' },
   subprocessors: { title: 'Subprocessors', version: '0', effectiveDate: null },
 } satisfies Record<string, LegalDocument>
 
