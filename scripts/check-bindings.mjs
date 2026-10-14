@@ -7,11 +7,25 @@
 //     the base mentions its name, or
 //   - a storage binding (STORAGE) has no `previews` entry with the same binding name. Other data
 //     bindings get no automatic check: their ADR must state how previews stay isolated.
+// The docs Worker's config (ADR-0028) is the one other config allowed, and only as assets-only:
+// the keys in DOCS_KEYS and nothing else (no `main`, binding, `vars`, `env` or `previews`), named
+// `<web Worker>-docs`, never on workers.dev or Preview URLs, a custom domain as its only route.
 // Usage: node scripts/check-bindings.mjs [base-ref]   (default origin/main)
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const CONFIG = 'apps/web/wrangler.jsonc'
+const DOCS_CONFIG = 'apps/docs/wrangler.jsonc'
+const DOCS_KEYS = [
+  '$schema',
+  'name',
+  'compatibility_date',
+  'workers_dev',
+  'preview_urls',
+  'routes',
+  'assets',
+]
+const DOCS_ASSETS_KEYS = ['directory', 'not_found_handling', 'html_handling']
 const STORAGE = ['kv_namespaces', 'r2_buckets', 'd1_databases', 'hyperdrive', 'vectorize']
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' })
 
@@ -68,10 +82,34 @@ const configs = git('ls-files', '-co', '--exclude-standard')
   .split('\n')
   .filter((f) => /(^|\/)wrangler\.(jsonc?|toml)$/.test(f))
 for (const f of configs)
-  if (f !== CONFIG)
+  if (f !== CONFIG && f !== DOCS_CONFIG)
     errors.push(
       `${f}: a second Worker config needs an ADR and support in scripts/check-bindings.mjs`,
     )
+if (existsSync(DOCS_CONFIG)) {
+  const docs = parseJsonc(readFileSync(DOCS_CONFIG, 'utf8'))
+  const bad = (msg) => errors.push(`${DOCS_CONFIG}: ${msg} (ADR-0028: assets only)`)
+  for (const key of Object.keys(docs)) if (!DOCS_KEYS.includes(key)) bad(`"${key}" isn't allowed`)
+  if (docs.name !== `${head.name}-docs`) bad(`"name" must be "${head.name}-docs"`)
+  if (docs.workers_dev !== false || docs.preview_urls !== false)
+    bad('"workers_dev" and "preview_urls" must be false')
+  const assets = docs.assets
+  if (!assets || typeof assets !== 'object' || Array.isArray(assets)) bad('"assets" is required')
+  else {
+    for (const key of Object.keys(assets))
+      if (!DOCS_ASSETS_KEYS.includes(key)) bad(`"assets.${key}" isn't allowed`)
+    if (assets.directory !== './dist') bad('"assets.directory" must be "./dist"')
+  }
+  for (const r of docs.routes ?? [])
+    if (
+      !r ||
+      typeof r !== 'object' ||
+      typeof r.pattern !== 'string' ||
+      r.custom_domain !== true ||
+      Object.keys(r).length !== 2
+    )
+      bad(`every route must be { "pattern": "<hostname>", "custom_domain": true }`)
+}
 if ('env' in head)
   errors.push(
     `${CONFIG}: named environments (\`env\`) aren't checked yet; extend this script first`,

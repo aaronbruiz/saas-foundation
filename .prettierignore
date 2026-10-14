@@ -4,6 +4,7 @@ pnpm-lock.yaml
 **/dist
 **/.wrangler
 **/.tanstack
+**/.astro
 **/drizzle/meta
 **/src/schema/auth.ts
 /CHANGELOG.md
