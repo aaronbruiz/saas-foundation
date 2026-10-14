@@ -57,12 +57,14 @@ write_config() { # $1 = site dir, $2 = output file, $3 = --preview (optional)
 # if $2 is set, `/version.json` reporting commit $2. Retries for ~2 min: a new deployment takes a
 # moment to reach every location.
 expect_site() { # $1 = base URL, $2 = commit (optional)
-  local ok body
+  local ok body type
   for _ in $(seq 1 24); do
     ok=1
     curl -fsS -m 15 -o /dev/null "$1/" || ok=0
-    curl -fsS -m 15 "$1/llms.txt" 2>/dev/null | grep -q '^# ' || ok=0
-    [[ "$(curl -fsS -m 15 -o /dev/null -w '%{content_type}' "$1/index.md" 2>/dev/null)" == text/markdown* ]] || ok=0
+    # Responses go into variables, not pipes: a reader that stops early would fail curl (pipefail).
+    body="$(curl -fsS -m 15 "$1/llms.txt" 2>/dev/null)" && [[ "$body" == "# "* ]] || ok=0
+    type="$(curl -fsS -m 15 -o /dev/null -w '%{content_type}' "$1/index.md" 2>/dev/null)" &&
+      [[ "$type" == text/markdown* ]] || ok=0
     if [ -n "${2:-}" ]; then
       body="$(curl -fsS -m 15 "$1/version.json" 2>/dev/null || true)"
       jq -e --arg c "$2" '.commit == $c' <<<"$body" >/dev/null 2>&1 || ok=0
