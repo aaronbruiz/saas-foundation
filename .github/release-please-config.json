@@ -20,7 +20,7 @@
       "release-type": "node",
       "include-component-in-tag": true,
       "exclude-paths": ["apps/docs"],
-      "changelog-path": "docs/CHANGELOG.md"
+      "changelog-path": "apps/web/CHANGELOG.md"
     }
   }
 }
