@@ -29,6 +29,7 @@ jobs:
       contents: read
     with:
       site: docs
-      token_secret: CLOUDFLARE_DOCS_TOKEN
       reason: ${{ inputs.reason }}
       version_id: ${{ inputs.version_id }}
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_DOCS_TOKEN }}

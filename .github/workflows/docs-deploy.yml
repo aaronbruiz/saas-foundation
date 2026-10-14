@@ -42,5 +42,6 @@ jobs:
       contents: read
     with:
       site: docs
-      token_secret: CLOUDFLARE_DOCS_TOKEN
       commit: ${{ inputs.commit }}
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_DOCS_TOKEN }}

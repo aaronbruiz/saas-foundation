@@ -49,4 +49,5 @@ jobs:
     with:
       site: docs
       label: Docs
-      token_secret: CLOUDFLARE_DOCS_PREVIEW_TOKEN
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_DOCS_PREVIEW_TOKEN }}

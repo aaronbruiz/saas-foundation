@@ -11,15 +11,17 @@ on:
         description: The site's app directory under apps/ (docs), also its environment's name
         type: string
         required: true
-      token_secret:
-        description: Name of the environment secret holding the site's per-Worker token
-        type: string
-        required: true
       reason:
         type: string
         required: true
       version_id:
         type: string
+        required: true
+    # The caller passes the environment secret by name; the called job's `environment` selects its
+    # value (a secret not passed resolves to an empty string, so it's required).
+    secrets:
+      token:
+        description: The site's per-Worker Cloudflare token (an environment secret)
         required: true
 
 permissions: {}
@@ -51,5 +53,5 @@ jobs:
           REASON: ${{ inputs.reason }}
           ACTOR: ${{ github.actor }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets[inputs.token_secret] }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.token }}
         run: scripts/sites/rollback.sh

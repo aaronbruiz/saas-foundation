@@ -20,9 +20,11 @@ on:
         description: The site's name in the PR comment (Docs)
         type: string
         required: true
-      token_secret:
-        description: Name of the environment secret holding the preview Worker's token
-        type: string
+    # The caller passes the environment secret by name; the called job's `environment` selects its
+    # value (a secret not passed resolves to an empty string, so it's required).
+    secrets:
+      token:
+        description: The site's per-Worker Cloudflare token (an environment secret)
         required: true
 
 permissions: {}
@@ -111,7 +113,7 @@ jobs:
           CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
           GH_TOKEN: ${{ github.token }}
           # Workers Editor on the site's preview Worker only (an environment secret).
-          CLOUDFLARE_API_TOKEN: ${{ secrets[inputs.token_secret] }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.token }}
         run: scripts/sites/preview.sh
 
   comment:
@@ -169,5 +171,5 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           GH_TOKEN: ${{ github.token }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets[inputs.token_secret] }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.token }}
         run: scripts/sites/preview-down.sh
