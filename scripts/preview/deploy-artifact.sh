@@ -4,7 +4,7 @@
 # and lockfile, with the narrow per-Worker token as CLOUDFLARE_API_TOKEN. It never holds the
 # Hyperdrive token: `infra.sh up` (a separate job) created the PR's branch and Hyperdrive config
 # and passed the id in HD_ID. The artifact is untrusted data:
-#   $ARTIFACT_DIR/apps/web/dist        the PR's `pnpm build` output
+#   $ARTIFACT_DIR/apps/app/dist        the PR's `pnpm build` output
 #   $ARTIFACT_DIR/packages/db/drizzle  the PR's migrations (SQL + drizzle-kit journal)
 # Never imports the build's `.wrangler/deploy/config.json` redirect: the artifact's
 # dist/server/wrangler.json is validated and patched (prepare-config.mjs), then passed explicitly.
@@ -19,7 +19,7 @@ names_for "$PR_NUMBER"
 [ "$HD_ID" != "$PROD_HYPERDRIVE_ID" ] || { log "ERROR: refusing to bind the production Hyperdrive config"; exit 1; }
 
 artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
-config="$artifact/apps/web/dist/server/wrangler.json"
+config="$artifact/apps/app/dist/server/wrangler.json"
 migrations="$artifact/packages/db/drizzle"
 check_artifact_files "$artifact" || exit 1
 # Validate before touching any cloud resource; the real Hyperdrive id is patched in below.

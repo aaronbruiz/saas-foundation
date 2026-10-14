@@ -50,6 +50,6 @@ check_artifact_files() {
   [ -z "$(find "$1" -type l -print -quit)" ] || { log "ERROR: artifact contains symlinks"; return 1; }
   [ -z "$(find "$1" \( -name '.dev.vars*' -o -name '.env*' \) -print -quit)" ] ||
     { log "ERROR: artifact contains .dev.vars/.env files"; return 1; }
-  [ -f "$1/apps/web/dist/server/wrangler.json" ] || { log "ERROR: artifact has no apps/web/dist/server/wrangler.json"; return 1; }
+  [ -f "$1/apps/app/dist/server/wrangler.json" ] || { log "ERROR: artifact has no apps/app/dist/server/wrangler.json"; return 1; }
   [ -f "$1/packages/db/drizzle/meta/_journal.json" ] || { log "ERROR: artifact has no packages/db/drizzle journal"; return 1; }
 }

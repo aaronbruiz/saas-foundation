@@ -8,4 +8,4 @@ source "$(dirname "$0")/lib.sh"
 : "${ARTIFACT_DIR:?}"
 artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
 check_artifact_files "$artifact" || exit 1
-node "$ROOT/scripts/preview/prepare-config.mjs" "$artifact/apps/web/dist/server/wrangler.json" "$ACCOUNT" --production "$PROD_HYPERDRIVE_ID"
+node "$ROOT/scripts/preview/prepare-config.mjs" "$artifact/apps/app/dist/server/wrangler.json" "$ACCOUNT" --production "$PROD_HYPERDRIVE_ID"

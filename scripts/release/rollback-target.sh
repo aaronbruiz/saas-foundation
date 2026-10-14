@@ -22,7 +22,7 @@ live="$(jq -r '.versions[0].version_id' <<<"$dep")"
 ann="$(annotations "$target")"
 tag="$(jq -r '.["workers/tag"] // empty' <<<"$ann")"
 message="$(jq -r '.["workers/message"] // empty' <<<"$ann")"
-[[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || tag=
+[[ "$tag" =~ ^app-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || tag=
 commit="$(message_field "$message" commit)"
 build="$(message_field "$message" build)"
 [[ -z "$commit" || "$commit" =~ ^[0-9a-f]{40}$ ]] || die "unexpected commit in $target's message"

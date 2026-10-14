@@ -108,7 +108,7 @@ jobs:
           echo "### Rolled back to $TARGET (${TAG:-untagged})" >>"$GITHUB_STEP_SUMMARY"
           # A release version reports its own version and build; an older manual one only `ok`.
           if [ -n "$TAG" ] && [ -n "$BUILD" ]; then
-            expect_health "${TAG#web-v}" "$BUILD"
+            expect_health "${TAG#app-v}" "$BUILD"
           else
             body="$(curl -sS -m 15 "https://$APP_HOST/api/health" || true)"
             echo "health after rollback: ${body:-no response}"

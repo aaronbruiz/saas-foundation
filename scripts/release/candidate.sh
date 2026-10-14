@@ -5,13 +5,13 @@
 # the override reached the candidate (an ignored override falls through to the live version).
 # If the smoke test fails the candidate stays at 0%: users never see it.
 # Outputs (GITHUB_OUTPUT): candidate_version, live_version.
-# Usage: CLOUDFLARE_API_TOKEN=... ARTIFACT_DIR=... TAG=web-vX.Y.Z SHA=<commit> BUILD_ID=<run>-<attempt>
+# Usage: CLOUDFLARE_API_TOKEN=... ARTIFACT_DIR=... TAG=app-vX.Y.Z SHA=<commit> BUILD_ID=<run>-<attempt>
 #        scripts/release/candidate.sh
 # Inputs come from release.yml, which validated the tag (resolve) and the artifact
 # (check-artifact.sh) before any production change.
 source "$(dirname "$0")/lib.sh"
 : "${CLOUDFLARE_API_TOKEN:?}" "${ARTIFACT_DIR:?}" "${TAG:?}" "${SHA:?}" "${BUILD_ID:?}"
-config="$(cd "$ARTIFACT_DIR" && pwd -P)/apps/web/dist/server/wrangler.json"
+config="$(cd "$ARTIFACT_DIR" && pwd -P)/apps/app/dist/server/wrangler.json"
 
 dep="$(deployment)"
 [ "$(jq '.versions | length' <<<"$dep")" = 1 ] || die "the deployment already holds a candidate"
@@ -27,5 +27,5 @@ echo "candidate_version=$new" >>"${GITHUB_OUTPUT:-/dev/null}"
 echo "live_version=$live" >>"${GITHUB_OUTPUT:-/dev/null}"
 
 wrangler versions deploy "$new@0%" "$live@100%" --name "$WORKER" --message "candidate $TAG" -y >&2
-expect_health "${TAG#web-v}" "$BUILD_ID" "$new" ||
+expect_health "${TAG#app-v}" "$BUILD_ID" "$new" ||
   die "smoke test failed: $new stays at 0% (release.yml action discard drops it; then fix forward)"

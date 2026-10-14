@@ -23,7 +23,7 @@ function authSecret(): string {
     ?.slice('BETTER_AUTH_SECRET='.length)
     .trim()
     .replace(/^"(.*)"$/, '$1')
-  if (!secret) throw new Error('BETTER_AUTH_SECRET missing from apps/web/.dev.vars')
+  if (!secret) throw new Error('BETTER_AUTH_SECRET missing from apps/app/.dev.vars')
   return secret
 }
 

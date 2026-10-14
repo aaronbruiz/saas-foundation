@@ -9,7 +9,7 @@ set -euo pipefail
 shopt -s inherit_errexit
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONFIG="$ROOT/apps/web/wrangler.jsonc"
+CONFIG="$ROOT/apps/app/wrangler.jsonc"
 log() { echo "[release] $*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
 NEON_API_PROJECT="${NEON_PROJECT_ID:-}"
@@ -21,9 +21,9 @@ ACCOUNT="$(grep -m1 -oE '"account_id": *"[0-9a-f]{32}"' "$CONFIG" | grep -oE '[0
 APP_HOST="$(grep -m1 -oE '"pattern": *"[a-z0-9.-]+"' "$CONFIG" | grep -oE '"[a-z0-9.-]+"$' | tr -d '"' || true)"
 PROD_HYPERDRIVE_ID="$(grep -m1 -oE '"id": *"[0-9a-f]{32}"' "$CONFIG" | grep -oE '[0-9a-f]{32}' || true)"
 [ -n "$WORKER" ] && [ -n "$ACCOUNT" ] && [ -n "$APP_HOST" ] && [ -n "$PROD_HYPERDRIVE_ID" ] ||
-  die "can't read the Worker name, account, hostname or Hyperdrive id from apps/web/wrangler.jsonc"
+  die "can't read the Worker name, account, hostname or Hyperdrive id from apps/app/wrangler.jsonc"
 
-wrangler() { CLOUDFLARE_ACCOUNT_ID="$ACCOUNT" pnpm --dir "$ROOT/apps/web" exec wrangler "$@"; }
+wrangler() { CLOUDFLARE_ACCOUNT_ID="$ACCOUNT" pnpm --dir "$ROOT/apps/app" exec wrangler "$@"; }
 
 # `wrangler … --json` may print notices before the JSON; keep from the first `{` or `[` line.
 json_tail() { sed -n '/^[[{]/,$p'; }

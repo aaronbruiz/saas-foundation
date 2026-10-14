@@ -13,7 +13,7 @@
       "Bash(pnpm build)",
       "Bash(pnpm db:up)",
       "Bash(pnpm db:generate)",
-      "Bash(pnpm --filter web cf-typegen)",
+      "Bash(pnpm --filter app cf-typegen)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",

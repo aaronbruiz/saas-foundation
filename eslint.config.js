@@ -11,7 +11,7 @@ import tseslint from 'typescript-eslint'
 const providerSdksOnlyInProviders = {
   regex: '^@polar-sh/[^/]+(/.*)?$',
   message:
-    'Only apps/web/src/modules/billing/providers/** may import a billing provider SDK (AGENTS.md invariant 6).',
+    'Only apps/app/src/modules/billing/providers/** may import a billing provider SDK (AGENTS.md invariant 6).',
 }
 
 const uiMustNotTouchDataOrAuth = {
@@ -95,7 +95,7 @@ const noDynamicServerDbInUi = {
 // AGENTS.md invariant 3: a module uses another module only through its public entry
 // points. Every directory under modules/ is a module; one not listed here has none.
 const publicEntryPoints = { billing: ['entitlements', 'policy'] }
-const moduleNames = readdirSync(new URL('./apps/web/src/modules', import.meta.url), {
+const moduleNames = readdirSync(new URL('./apps/app/src/modules', import.meta.url), {
   withFileTypes: true,
 })
   .filter((d) => d.isDirectory())
@@ -152,7 +152,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/app/src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
@@ -173,7 +173,7 @@ export default defineConfig([
     },
   },
   ...moduleNames.map((name) => ({
-    files: [`apps/web/src/modules/${name}/**/*.{ts,tsx}`],
+    files: [`apps/app/src/modules/${name}/**/*.{ts,tsx}`],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -192,7 +192,7 @@ export default defineConfig([
     },
   })),
   {
-    files: ['apps/web/src/routes/**/*.{ts,tsx}', 'apps/web/src/components/**/*.{ts,tsx}'],
+    files: ['apps/app/src/routes/**/*.{ts,tsx}', 'apps/app/src/components/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -210,7 +210,7 @@ export default defineConfig([
   },
   {
     // The Better Auth handler is the one route allowed to mount packages/auth.
-    files: ['apps/web/src/routes/api/auth/**/*.ts'],
+    files: ['apps/app/src/routes/api/auth/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -230,7 +230,7 @@ export default defineConfig([
   },
   {
     // The only two places that create a database client.
-    files: ['apps/web/src/server/db.ts', 'apps/web/src/server/health.ts'],
+    files: ['apps/app/src/server/db.ts', 'apps/app/src/server/health.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -258,7 +258,7 @@ export default defineConfig([
   },
   {
     // Providers may import their SDK, but get no raw database access.
-    files: ['apps/web/src/modules/billing/providers/**/*.ts'],
+    files: ['apps/app/src/modules/billing/providers/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

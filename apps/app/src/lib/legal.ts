@@ -36,7 +36,7 @@ export type Subprocessor = {
   source: string
 }
 
-// Only facts recorded in the ADRs and `apps/web/wrangler.jsonc`; update with the ADR that changes them.
+// Only facts recorded in the ADRs and `apps/app/wrangler.jsonc`; update with the ADR that changes them.
 export const subprocessors: Subprocessor[] = [
   {
     name: 'Cloudflare',

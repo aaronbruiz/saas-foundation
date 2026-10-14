@@ -54,7 +54,7 @@ if ((${#contracts[@]})); then
   [ "${LIVE_TAG:-}" = "$PREV_TAG" ] ||
     die "contract precondition: the deployment serves ${LIVE_TAG:-an untagged version}, not $PREV_TAG; release $PREV_TAG first"
   body="$(curl -sS -m 15 "https://$APP_HOST/api/health" || true)"
-  jq -e --arg v "${PREV_TAG#web-v}" '.version == $v' <<<"$body" >/dev/null 2>&1 ||
+  jq -e --arg v "${PREV_TAG#app-v}" '.version == $v' <<<"$body" >/dev/null 2>&1 ||
     die "contract precondition: /api/health doesn't report $PREV_TAG (${body:-no response})"
   log "contract precondition met: production serves $PREV_TAG"
 fi
