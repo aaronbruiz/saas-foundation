@@ -1,0 +1,64 @@
+name: Docs
+
+# ADR-0028: builds the public docs site (apps/docs) when its build can change. T0: no secrets, no
+# environment. Scans the output like the app's client bundle (invariant 8) and asserts what the
+# site promises: search, the 404 page, llms.txt and a Markdown twin per page.
+on:
+  pull_request:
+    paths:
+      - apps/docs/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/docs*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+  push:
+    branches: [main]
+    paths:
+      - apps/docs/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/docs*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+
+concurrency:
+  group: docs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (version from packageManager)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter docs build
+      - name: Scan the site for secrets
+        run: scripts/scan-client-bundle.sh apps/docs/dist
+      - name: Assert the site's files
+        working-directory: apps/docs/dist
+        run: |
+          for f in index.html 404.html llms.txt index.md guides/getting-started.md pagefind/pagefind.js _headers; do
+            [ -s "$f" ] || { echo "::error::missing or empty: $f"; exit 1; }
+          done
+          # Every page has a Markdown twin, and llms.txt lists each one.
+          pages="$(find . -name index.html -not -path './pagefind/*' | wc -l)"
+          twins="$(find . -name '*.md' | wc -l)"
+          listed="$(grep -c '^- \[' llms.txt)"
+          echo "pages=$pages twins=$twins listed=$listed"
+          [ "$pages" = "$twins" ] && [ "$twins" = "$listed" ] || { echo "::error::pages, .md twins and llms.txt entries differ"; exit 1; }
+          if find . -type l | grep -q .; then echo "::error::symlink in the build"; exit 1; fi

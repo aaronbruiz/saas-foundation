@@ -4,6 +4,7 @@ dist-ssr
 .output
 .wrangler
 .tanstack
+.astro
 .nitro
 .vinxi
 *.local

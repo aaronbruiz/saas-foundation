@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, TanStack Start + Workers Static Assets, placed near the DB in `aws:us-east-1`) talks to **Neon PostgreSQL through Hyperdrive** (caching off). Better Auth handles identity and organizations; authorization is our own code. Tenants are addressed by path: `/t/<slug>/…`. Architecture: `docs/architecture/`. Decisions: `docs/adr/`. Read the relevant ADR before changing anything it covers. Accepted ADRs are binding until a later ADR supersedes them; a significant new architectural choice (a runtime, deployable, data store, trust boundary or repo-wide convention) gets an ADR in the same PR.
+Multi-tenant SaaS on Cloudflare Workers. **One app Worker** (`apps/web`, TanStack Start + Workers Static Assets, placed near the DB in `aws:us-east-1`; the public docs site `apps/docs` is a separate assets-only Worker, ADR-0028) talks to **Neon PostgreSQL through Hyperdrive** (caching off). Better Auth handles identity and organizations; authorization is our own code. Tenants are addressed by path: `/t/<slug>/…`. Architecture: `docs/architecture/`. Decisions: `docs/adr/`. Read the relevant ADR before changing anything it covers. Accepted ADRs are binding until a later ADR supersedes them; a significant new architectural choice (a runtime, deployable, data store, trust boundary or repo-wide convention) gets an ADR in the same PR.
 
 ## Module map
 
@@ -17,6 +17,7 @@ Multi-tenant SaaS on Cloudflare Workers. **One deployable Worker** (`apps/web`, 
 | `packages/auth`                      | Better Auth config (server only)                                                                                                                                                                                                                        | `@saas-foundation/db`                                                             |
 | `packages/contracts`                 | Zod schemas shared by UI and server                                                                                                                                                                                                                     | nothing internal                                                                  |
 | `packages/testkit`                   | fixtures, seeded tenants, login helpers                                                                                                                                                                                                                 | anything (tests only)                                                             |
+| `apps/docs`                          | public product docs (Astro + Starlight, static; ADR-0028): pages in `src/content/docs/`, `llms.txt` and `.md` twins in `src/pages/`; no bindings, secrets or tenant data                                                                                | nothing internal                                                                  |
 
 A `Db` is an opaque handle: only `packages/db` repositories can query through it. The raw Drizzle client (`rawDb(db)`) and `schema` come from `@saas-foundation/db/internal`, for `packages/auth` (Better Auth's adapter) and tests only.
 
@@ -35,12 +36,13 @@ pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
 pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
+pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
 scripts/backup/snapshot.sh | dump.sh   # daily Neon snapshot branch + off-provider pg_dump to R2; run by CI (db-backup.yml; ADR-0003, ADR-0023)
 scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
-Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
+Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group); `astro check` is `apps/docs`'s typecheck. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
 
 **Port 3000 busy:** `pnpm dev` uses `--strictPort` and fails if port 3000 is taken (auth origins depend on it). Don't switch ports and don't kill processes yourself. Stop and tell the user that port 3000 is in use, and recommend they free it with:
 
@@ -63,7 +65,7 @@ kill -9 $(lsof -t -i:3000)
 11. Webhooks are verified on the raw body (`await request.text()`) before any processing, and deduplicated by event id.
 12. Async side effects are idempotent with dedupe keys (once queues exist).
 13. Infra config (`wrangler.jsonc`) changes only via PR.
-14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override. CI (`scripts/check-bindings.mjs`) enforces the ADR for any new binding, product or Worker name in `apps/web/wrangler.jsonc` (including `previews`), refuses a second Wrangler config or named environments, and requires the override for KV, R2, D1, Hyperdrive and Vectorize; any other data binding's ADR must state how previews stay isolated.
+14. **No new Cloudflare binding, product or Worker without a new ADR naming its trigger.** Every storage binding also needs a `previews` override. CI (`scripts/check-bindings.mjs`) enforces the ADR for any new binding, product or Worker name in `apps/web/wrangler.jsonc` (including `previews`), refuses any other Wrangler config except the assets-only `apps/docs/wrangler.jsonc` (no `main`, binding, `vars`, `env` or `previews`; ADR-0028), refuses named environments, and requires the override for KV, R2, D1, Hyperdrive and Vectorize; any other data binding's ADR must state how previews stay isolated.
 15. Previews never bind production data. Each PR gets its **own** Neon branch `preview/pr-N` in the **separate preview project** (reset from `preview-seed` on every deploy) and its **own** Hyperdrive config `saas-pr-N`, never reused between PRs; deleting that config on close is what revokes database access (ADR-0021). Only default-branch jobs in `main`-only environments create or delete them, and no job runs PR code next to a preview credential or holds both the Worker and the Hyperdrive token.
 
 ## Recipes

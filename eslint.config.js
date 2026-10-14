@@ -139,6 +139,7 @@ export default defineConfig([
     '**/dist',
     '**/.wrangler',
     '**/.tanstack',
+    '**/.astro',
     '**/routeTree.gen.ts',
     '**/worker-configuration.d.ts',
   ]),

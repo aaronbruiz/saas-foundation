@@ -65,6 +65,13 @@ jobs:
             echo "::notice title=Preview skipped::this run isn't locked for PR #$pr (lock: '${LOCK_PR}')"
             exit 0
           fi
+          # ADR-0028: a PR that changes only apps/docs/** gets no app preview (it would hold one of
+          # the preview project's 10 Neon branches for nothing).
+          files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" --jq '.[].filename')"
+          if [ -n "$files" ] && ! grep -qv '^apps/docs/' <<<"$files"; then
+            echo "::notice title=Preview skipped::PR #$pr changes only apps/docs"
+            exit 0
+          fi
           echo "pr=$pr" >>"$GITHUB_OUTPUT"
 
   infra:
