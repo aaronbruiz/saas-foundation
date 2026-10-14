@@ -19,7 +19,8 @@
       "component": "web",
       "release-type": "node",
       "include-component-in-tag": true,
-      "exclude-paths": ["apps/docs"]
+      "exclude-paths": ["apps/docs"],
+      "changelog-path": "apps/web/CHANGELOG.md"
     }
   }
 }
