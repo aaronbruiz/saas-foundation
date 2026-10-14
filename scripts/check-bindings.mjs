@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // AGENTS.md invariant 14: a new Cloudflare binding, product or Worker needs a new ADR, and every
 // storage binding needs a `previews` override. Compares apps/app/wrangler.jsonc in the working tree
-// with the merge base of <base-ref> (CI: the PR merge commit's base parent), where it may have had
-// another path (a rename since the base is followed), and fails when
+// with the app config of the merge base of <base-ref> (CI: the PR merge commit's base parent),
+// whatever its path there, and fails when
 //   - any other Wrangler config exists (a second Worker), or the config uses named environments;
 //   - a binding/product/Worker-name id is new (including under `previews`) and no ADR added since
 //     the base mentions its name, or
@@ -71,23 +71,22 @@ function bindingIds(config, prefix = '') {
 const baseRef = process.argv[2] ?? 'origin/main'
 const base = git('merge-base', baseRef, 'HEAD').trim()
 const head = parseJsonc(readFileSync(CONFIG, 'utf8'))
-// The config's path at the base: its own, or the one a rename since the base moved it from.
-const renamed = git('diff', '-M', '--name-status', '--diff-filter=R', base)
-  .split('\n')
-  .map((line) => line.split('\t'))
-  .find(([, , to]) => to === CONFIG)
-const baseConfig = renamed?.[1] ?? CONFIG
-let before
-try {
-  before = bindingIds(parseJsonc(git('show', `${base}:${baseConfig}`)))
-} catch {
-  before = new Set()
-}
+const isWranglerConfig = (f) => /(^|\/)wrangler\.(jsonc?|toml)$/.test(f)
 
 const errors = []
-const configs = git('ls-files', '-co', '--exclude-standard')
+// The baseline is the base's app config, found by what this script allows rather than by path (the
+// app may have moved since, ADR-0033): the base's only Wrangler config besides the docs'. None: every
+// binding counts as new. More than one: the base broke this check, so refuse.
+const baseConfigs = git('ls-tree', '-r', '--name-only', base)
   .split('\n')
-  .filter((f) => /(^|\/)wrangler\.(jsonc?|toml)$/.test(f))
+  .filter((f) => isWranglerConfig(f) && f !== DOCS_CONFIG)
+let before = new Set()
+if (baseConfigs.length > 1)
+  errors.push(`the base has more than one app Wrangler config (${baseConfigs.join(', ')})`)
+else if (baseConfigs.length === 1)
+  before = bindingIds(parseJsonc(git('show', `${base}:${baseConfigs[0]}`)))
+
+const configs = git('ls-files', '-co', '--exclude-standard').split('\n').filter(isWranglerConfig)
 for (const f of configs)
   if (f !== CONFIG && f !== DOCS_CONFIG)
     errors.push(
