@@ -116,16 +116,16 @@ As ADR-0028: **a site preview binds nothing.** `check-bindings.mjs` keeps `apps/
 
 ## Deferred
 
-| Decision                                | Options                                                                                          | Trigger                                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `noindex` on the app                    | `X-Robots-Tag` or a robots meta on every app route except the legal pages                        | the app appears in search results, or with the site's first deploy, whichever comes first |
-| Cloudflare Web Analytics                | its cookieless beacon (CSP allowance, privacy text and subprocessor registry updated)            | a page-level metric the zone's analytics can't answer                                     |
-| Waitlist                                | a tenant-less table behind Turnstile and the rate limiter, with consent text; or a form provider | more requests than a mailbox handles, or public launch                                    |
-| `?plan=` through sign-up into checkout  | carry the price key from `/signup` through organization creation to checkout                     | milestone D (public sign-up)                                                              |
-| Legal pages on the site                 | move the routes and `lib/legal.ts` to `apps/site`, redirects from the app                        | the legal text has to be reachable while the app is down, or the app and site diverge     |
-| Status page, public changelog           | a hosted status page; the release changelog rendered on the site at build time                   | paying customers; the first release customers should read about                           |
-| `www`                                   | a zone Redirect Rule (dashboard) to the apex                                                     | the owner wants `www` to resolve                                                          |
-| A third static site, or i18n/versioning | another caller of the shared pipeline; Astro's i18n                                              | its own ADR                                                                               |
+| Decision                                | Options                                                                                          | Trigger                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `noindex` on the app                    | `X-Robots-Tag` or a robots meta on every app route except the legal pages                        | app pages (other than the legal ones) appear in search results                        |
+| Cloudflare Web Analytics                | its cookieless beacon (CSP allowance, privacy text and subprocessor registry updated)            | a page-level metric the zone's analytics can't answer                                 |
+| Waitlist                                | a tenant-less table behind Turnstile and the rate limiter, with consent text; or a form provider | more requests than a mailbox handles, or public launch                                |
+| `?plan=` through sign-up into checkout  | carry the price key from `/signup` through organization creation to checkout                     | milestone D (public sign-up)                                                          |
+| Legal pages on the site                 | move the routes and `lib/legal.ts` to `apps/site`, redirects from the app                        | the legal text has to be reachable while the app is down, or the app and site diverge |
+| Status page, public changelog           | a hosted status page; the release changelog rendered on the site at build time                   | paying customers; the first release customers should read about                       |
+| `www`                                   | a zone Redirect Rule (dashboard) to the apex                                                     | the owner wants `www` to resolve                                                      |
+| A third static site, or i18n/versioning | another caller of the shared pipeline; Astro's i18n                                              | its own ADR                                                                           |
 
 ## Consequences
 
