@@ -33,3 +33,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0029](0029-releases-deploys-and-rollback.md): Releases, deploys and rollback: release PRs, a 0% release candidate, dispatch and rollback workflows
 - [ADR-0030](0030-git-workflow.md): Git workflow: trunk-based, squash-merged Conventional PRs, specs in the PR
 - [ADR-0031](0031-production-alerting-issues-to-slack.md): Production alerting: Workers Issues automations to a private Slack channel
+- [ADR-0032](0032-lift-the-data-gate-allowlisted-pilot.md): Lift the data gate: an allowlisted pilot with real customer data on Polar's sandbox
