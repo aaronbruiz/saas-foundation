@@ -2,8 +2,8 @@
 // `drizzle.__drizzle_migrations`: a JSON array of `{ hash, created_at }`, `created_at` being the
 // journal's `when` (ms). Read-only. Used by the release and rollback workflows (ADR-0029) to tell
 // which journal entries are pending and which applied ones a rollback target lacks. Production
-// always has the table, so a missing one means the wrong database: it's an error, never "nothing
-// applied" (which would let every guard pass).
+// always has the table, so a missing (the query throws) or empty one means the wrong database: it's
+// an error, never "nothing applied" (which would let every guard pass).
 // Usage: DATABASE_URL=... node packages/db/scripts/applied.mjs
 import pg from 'pg'
 
@@ -14,22 +14,16 @@ if (!process.env.DATABASE_URL) {
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await client.connect()
 try {
-  const exists = await client.query(`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`)
-  if (!exists.rows[0].t) {
-    console.error('[applied] ERROR: no drizzle.__drizzle_migrations table (wrong database?)')
+  const { rows } = await client.query(
+    'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at',
+  )
+  if (rows.length === 0) {
+    console.error('[applied] ERROR: drizzle.__drizzle_migrations is empty (wrong database?)')
     process.exitCode = 1
   } else {
-    const { rows } = await client.query(
-      'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at',
+    console.log(
+      JSON.stringify(rows.map((r) => ({ hash: r.hash, created_at: Number(r.created_at) }))),
     )
-    if (rows.length === 0) {
-      console.error('[applied] ERROR: drizzle.__drizzle_migrations is empty (wrong database?)')
-      process.exitCode = 1
-    } else {
-      console.log(
-        JSON.stringify(rows.map((r) => ({ hash: r.hash, created_at: Number(r.created_at) }))),
-      )
-    }
   }
 } finally {
   await client.end()

@@ -1,8 +1,8 @@
 name: Rollback
 
 # ADR-0029 decision 6: roll the production Worker back to an earlier version, code only (the
-# database is never rolled back by a workflow; runbook "Database"). Defaults to the version that
-# served 100% before the live one. The breaking-release guard compares the migrations production
+# database is never rolled back by a workflow; runbook "Database"). The target version id is
+# required (ADR-0029 Notes 2026-10-14). The breaking-release guard compares the migrations production
 # has applied with the target's journal and refuses past a contract migration unless
 # confirm_breaking is set. Needs no build: it takes seconds.
 on:
@@ -13,8 +13,9 @@ on:
         type: string
         required: true
       version_id:
-        description: Target Worker version id (empty = the previous version)
+        description: Target Worker version id (from `wrangler deployments list`)
         type: string
+        required: true
       confirm_breaking:
         description: Allow a target that lacks an applied contract migration
         type: boolean
@@ -63,7 +64,7 @@ jobs:
           if [ -z "$REASON" ] || [ "${#msg}" -gt 120 ]; then
             echo "::error::reason must be non-empty and keep '$(printf 'rollback by %s: ' "$ACTOR")<reason>' within 120 characters (now ${#msg})"; exit 1
           fi
-          if [ -n "$VERSION_ID" ] && ! [[ "$VERSION_ID" =~ ^[0-9a-f-]{36}$ ]]; then echo "::error::invalid version_id"; exit 1; fi
+          [[ "$VERSION_ID" =~ ^[0-9a-f-]{36}$ ]] || { echo "::error::invalid version_id"; exit 1; }
       # Secrets are passed per step, never at job level and never to the install step.
       - name: Resolve the target
         id: target
