@@ -1,0 +1,45 @@
+name: Site
+
+# ADR-0033: builds the marketing site (apps/site) when its build can change, with the shared
+# static-site build (decision 9). T0: no secrets, no environment. For a same-repo PR it uploads the
+# site, which site-preview.yml deploys as data.
+on:
+  pull_request:
+    paths:
+      - apps/site/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/site*.yml
+      - .github/workflows/static-*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+      - scripts/sites/**
+  push:
+    branches: [main]
+    paths:
+      - apps/site/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/site*.yml
+      - .github/workflows/static-*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+      - scripts/sites/**
+
+concurrency:
+  group: site-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/static-build.yml
+    permissions:
+      contents: read
+    with:
+      site: site

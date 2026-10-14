@@ -1,0 +1,5 @@
+{
+  "$comment": "Display amounts for the provider's prices, by price key (ADR-0033 decision 6): minor units and ISO 4217 currency. Keep equal to the Polar dashboard (runbook \"Site\"); the build fails if a purchasable price in plans.json has no amount here, or an amount names a price that isn't purchasable. Template values: Polar sandbox, 2026-09-30.",
+  "pro_monthly": { "amount": 2900, "currency": "USD" },
+  "pro_yearly": { "amount": 29000, "currency": "USD" }
+}

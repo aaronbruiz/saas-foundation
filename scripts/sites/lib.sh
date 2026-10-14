@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for the static sites' deploys (ADR-0028, ADR-0033 decision 9; ADR-0029 decisions
-# 5–6). SITE names the site's app directory (`docs`); its Worker config is apps/$SITE/wrangler.jsonc,
+# 5–6). SITE names the site's app directory (`docs` or `site`); its Worker config is
+# apps/$SITE/wrangler.jsonc,
 # kept assets-only by check-bindings.mjs. Sourced by the scripts next to it; the static-site
 # workflows run them from `main`'s checkout with one per-Worker token as CLOUDFLARE_API_TOKEN. A
 # static site has no bindings, secrets or data: the build output (`dist`) is the whole deploy, and
@@ -18,7 +19,8 @@ die() { log "ERROR: $*"; exit 1; }
 # and what its smoke test fetches (site_pages_ok).
 case "${SITE:-}" in
   docs) REQUIRED_FILES=(index.html 404.html llms.txt index.md _headers) ;;
-  *) die "SITE must be a static site's app directory (docs), not '${SITE:-}'" ;;
+  site) REQUIRED_FILES=(index.html pricing/index.html 404.html robots.txt sitemap-index.xml _headers) ;;
+  *) die "SITE must be a static site's app directory (docs or site), not '${SITE:-}'" ;;
 esac
 
 # The site Worker's name and hostname, from `main`'s apps/$SITE/wrangler.jsonc.
@@ -75,6 +77,10 @@ site_pages_ok() {
       body="$(curl -fsS -m 15 "$1/llms.txt" 2>/dev/null)" && [[ "$body" == "# "* ]] || return 1
       type="$(curl -fsS -m 15 -o /dev/null -w '%{content_type}' "$1/index.md" 2>/dev/null)" &&
         [[ "$type" == text/markdown* ]] || return 1
+      ;;
+    site)
+      curl -fsS -m 15 -o /dev/null "$1/pricing/" || return 1
+      body="$(curl -fsS -m 15 "$1/robots.txt" 2>/dev/null)" && [[ "$body" == *"Sitemap: "* ]] || return 1
       ;;
   esac
 }

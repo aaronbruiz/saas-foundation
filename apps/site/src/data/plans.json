@@ -1,0 +1,24 @@
+{
+  "$comment": "Generated from apps/app/src/modules/billing/policy.ts by `pnpm plans:export` (ADR-0033). Do not edit.",
+  "defaultPlan": "free",
+  "trialDays": 14,
+  "plans": [
+    {
+      "key": "free",
+      "name": "Free",
+      "limits": { "projects": 3, "members": 3 },
+      "features": [],
+      "prices": []
+    },
+    {
+      "key": "pro",
+      "name": "Pro",
+      "limits": { "projects": null, "members": 50 },
+      "features": [],
+      "prices": [
+        { "key": "pro_monthly", "interval": "month" },
+        { "key": "pro_yearly", "interval": "year" }
+      ]
+    }
+  ]
+}

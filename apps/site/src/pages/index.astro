@@ -1,0 +1,48 @@
+---
+import Base from '../layouts/Base.astro'
+import { primaryAction, signIn, site } from '../config'
+import { trialDays } from '../lib/pricing'
+
+const features = [
+  {
+    title: 'A workspace per organization',
+    body: 'Each organization gets its own address and its own projects. Nothing is shared between organizations, and nobody sees a workspace they aren’t a member of.',
+  },
+  {
+    title: 'Roles and invitations',
+    body: 'Owners, admins and members, each with clear permissions. Invite teammates by email; they join with one link.',
+  },
+  {
+    title: 'Plans that grow with you',
+    body: `Start free. Upgrade when the team grows, with a ${trialDays}-day trial, and manage billing yourself.`,
+  },
+]
+---
+
+<Base>
+  <section class="hero container">
+    <h1>{site.tagline}</h1>
+    <p class="lead">{site.description}</p>
+    <div class="actions">
+      <a class="button" href={primaryAction.href}>
+        {primaryAction.label}
+      </a>
+      <a class="button button-secondary" href="/pricing/">
+        See pricing
+      </a>
+    </div>
+    {site.signupMode === 'allowlist' && (
+      <p class="note">
+        We’re admitting teams gradually. Already invited? <a href={signIn.href}>Sign in</a>.
+      </p>
+    )}
+  </section>
+  <section class="container grid features" aria-label="Features">
+    {features.map((f) => (
+      <article class="card">
+        <h2>{f.title}</h2>
+        <p>{f.body}</p>
+      </article>
+    ))}
+  </section>
+</Base>

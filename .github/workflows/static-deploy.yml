@@ -1,15 +1,16 @@
 name: Static site deploy
 
 # ADR-0028 decision 6, ADR-0033 decision 9, ADR-0029 decision 5: continuous production deploy of a
-# static site at 100% (no release PR, tags or 0% stage); the caller (docs-deploy.yml) owns the
-# triggers and the lock. A dispatch redeploys a given commit of `main`'s history. The build job
-# holds no secret; the deploy job (the site's environment, main only) runs `main`'s scripts with the
-# token that is Workers Editor on the site's Worker only, and takes the built site as data.
+# static site at 100% (no release PR, tags or 0% stage); the callers (docs-deploy.yml,
+# site-deploy.yml) own the triggers and the lock. A dispatch redeploys a given commit of `main`'s
+# history. The build job holds no secret; the deploy job (the site's environment, main only) runs
+# `main`'s scripts with the token that is Workers Editor on the site's Worker only, and takes the
+# built site as data.
 on:
   workflow_call:
     inputs:
       site:
-        description: The site's app directory under apps/ (docs), also its environment's name
+        description: The site's app directory under apps/ (docs or site), also its environment's name
         type: string
         required: true
       commit:

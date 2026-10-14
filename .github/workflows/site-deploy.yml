@@ -1,0 +1,46 @@
+name: Site deploy
+
+# ADR-0033, ADR-0029 decision 5: continuous production deploys of the marketing site, with the
+# shared static-site deploy (decision 9). Every push to `main` that can change its build deploys it
+# at 100%; a dispatch redeploys a given commit of `main`'s history. The deploy job runs in
+# environment `site` (main only) with the token that is Workers Editor on the site Worker only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/site/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/site*.yml
+      - .github/workflows/static-*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+      - scripts/sites/**
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit on main's history to build and deploy (full 40-character SHA)
+        type: string
+        required: true
+
+# One lock for every change to the site Worker (deploys and site-rollback.yml). Nothing is
+# cancelled, so a queued rollback isn't dropped when a newer deploy queues (ADR-0029 decision 3).
+concurrency:
+  group: deploy-saas-foundation-site
+  cancel-in-progress: false
+  queue: max
+
+permissions: {}
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/static-deploy.yml
+    permissions:
+      contents: read
+    with:
+      site: site
+      commit: ${{ inputs.commit }}
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_SITE_TOKEN }}

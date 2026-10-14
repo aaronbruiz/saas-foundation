@@ -1,0 +1,53 @@
+name: Site preview
+
+# ADR-0033: a PR's marketing site as Worker Preview `pr-N` of the site preview Worker, and its
+# deletion when the PR closes, with the shared static-site preview (decision 9; as the docs,
+# ADR-0028 decision 5). `workflow_run` and `pull_request_target` run this file, and the workflow it
+# calls, from the default branch; the token lives in environment `site-preview` (main only) and is
+# Workers Editor on the site preview Worker only. No job runs PR code: the PR's built site
+# (site.yml's artifact) is deployed as data.
+run-name: >-
+  ${{ github.event_name == 'pull_request_target' && format('Site preview cleanup PR #{0}', github.event.pull_request.number)
+  || (github.event.workflow_run.pull_requests[0] && format('Site preview PR #{0}', github.event.workflow_run.pull_requests[0].number) || 'Site preview (no PR)') }}
+on:
+  workflow_run:
+    workflows: [Site]
+    types: [completed]
+  pull_request_target:
+    types: [closed]
+    # site.yml's paths: only PRs that could have had a site preview.
+    paths:
+      - apps/site/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .node-version
+      - .github/workflows/site*.yml
+      - .github/workflows/static-*.yml
+      - scripts/check-bindings.mjs
+      - scripts/scan-client-bundle.sh
+      - scripts/sites/**
+
+# One lock per PR, shared by deploy and cleanup (as preview.yml). No PR in the event → a unique
+# group, and `resolve` skips.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request_target' && format('site-preview-pr-{0}', github.event.pull_request.number)
+    || (github.event.workflow_run.pull_requests[0] && format('site-preview-pr-{0}', github.event.workflow_run.pull_requests[0].number) || format('site-preview-unlocked-{0}', github.run_id)) }}
+  cancel-in-progress: false
+  queue: max
+
+permissions: {}
+
+jobs:
+  preview:
+    uses: ./.github/workflows/static-preview.yml
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    with:
+      site: site
+      label: Site
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_SITE_PREVIEW_TOKEN }}

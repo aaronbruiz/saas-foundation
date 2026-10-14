@@ -1,15 +1,15 @@
 name: Static site build
 
 # ADR-0028, ADR-0033 decision 9: builds a static site (apps/<site>) when its build can change; the
-# caller (docs.yml) owns the triggers. T0: no secrets, no environment. Scans the output like the
-# app's client bundle (invariant 8) and asserts what the site promises (scripts/sites/assert-build.sh).
-# For a same-repo PR it uploads the site as `<site>-site`, which the site's preview workflow deploys
-# as data.
+# callers (docs.yml, site.yml) own the triggers. T0: no secrets, no environment. Scans the output
+# like the app's client bundle (invariant 8) and asserts what the site promises
+# (scripts/sites/assert-build.sh). For a same-repo PR it uploads the site as `<site>-site`, which
+# the site's preview workflow deploys as data.
 on:
   workflow_call:
     inputs:
       site:
-        description: The site's app directory under apps/ (docs)
+        description: The site's app directory under apps/ (docs or site)
         type: string
         required: true
 

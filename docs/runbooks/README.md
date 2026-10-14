@@ -62,6 +62,8 @@ No preview secret lives at repo level: a `pull_request` workflow runs the PR's o
 | `CLOUDFLARE_API_TOKEN`                                                         | environment `preview` (`main` only)        | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only                                                                                             | `preview.yml` deploy, `preview-cleanup.yml` cleanup-preview |
 | `CLOUDFLARE_DOCS_TOKEN`                                                        | environment `docs` (`main` only)           | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-docs`** only                                                                                                | `docs-deploy.yml`, `docs-rollback.yml`                      |
 | `CLOUDFLARE_DOCS_PREVIEW_TOKEN`                                                | environment `docs-preview` (`main` only)   | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-docs-preview`** only                                                                                        | `docs-preview.yml` deploy and cleanup                       |
+| `CLOUDFLARE_SITE_TOKEN`                                                        | environment `site` (`main` only)           | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-site`** only                                                                                                | `site-deploy.yml`, `site-rollback.yml`                      |
+| `CLOUDFLARE_SITE_PREVIEW_TOKEN`                                                | environment `site-preview` (`main` only)   | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-site-preview`** only                                                                                        | `site-preview.yml` deploy and cleanup                       |
 
 Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids; in `production`, `R2_BACKUP_BUCKET` (`saas-foundation-prod-db-dumps`).
 
@@ -206,6 +208,26 @@ Its workflows (`docs.yml`, `docs-preview.yml`, `docs-deploy.yml`, `docs-rollback
 - **Rollback:** Actions → Docs rollback → Run workflow with a `reason` and the target `version_id` (`pnpm --filter docs exec wrangler deployments list`). Seconds, no build, nothing else to guard. Locally, with your own login, from `apps/docs`: `pnpm exec wrangler rollback <version-id>`.
 - **Routes and domain:** CI never changes them (per-Worker tokens can't manage custom domains). If `routes` in `apps/docs/wrangler.jsonc` changes, apply it once by hand from a clean `main`: `pnpm --filter docs build && pnpm --filter docs exec wrangler deploy`.
 - **Setup (owner, done 2026-10-14):** Workers `saas-foundation-docs` (created by the manual `wrangler deploy` that attached `docs.aaronlabr.dev`, version `80debee2`) and `saas-foundation-docs-preview` (dashboard, Hello World until the first preview, with **Settings → Domains & Routes → Preview URLs enabled**: a Worker-level setting that `wrangler preview` doesn't change; without it a Preview deploys with no URL); tokens and environments in "CI credentials". **Rotate** a token: roll it in the dashboard, `gh secret set CLOUDFLARE_DOCS_TOKEN --env docs` (or `CLOUDFLARE_DOCS_PREVIEW_TOKEN --env docs-preview`), then run a redeploy or a docs PR preview.
+
+## Site (ADR-0033)
+
+The marketing site `apps/site` is its own assets-only Worker, `saas-foundation-site`, on the apex `https://aaronlabr.dev`. Same pipeline as the docs (`site.yml`, `site-preview.yml`, `site-deploy.yml`, `site-rollback.yml`, calling `static-*.yml` with `SITE=site`): PR previews on `saas-foundation-site-preview`, continuous deploys at 100% tagged `site-<sha7>`, smoke test of `/`, `/pricing/`, `/robots.txt` and `/version.json`, and rollback by version id. It links to the app and never shares its session.
+
+- **Prices:** plans, limits and the trial come from `billing/policy.ts` through `apps/site/src/data/plans.json` (`pnpm plans:export`; `pnpm check` fails while it's stale). Amounts are in `apps/site/src/data/prices.json`, by price key, in minor units. **Keep them equal to the Polar dashboard:** when you change a product's price in Polar, change `prices.json` in the same session. The build refuses a purchasable price without an amount and an amount for a price that isn't purchasable; it can't check the values against Polar. Template values: the sandbox's $29/month and $290/year (2026-09-30).
+- **Calls to action:** `signupMode` in `apps/site/src/config.ts`. `allowlist` (now): "Request access" (mail to the contact address) and "Sign in". Switch it to `open` in the same release that opens sign-up (milestone D).
+- **Setup (owner).** Before merging the PR that adds the site:
+  1. Route the contact address (`hello@aaronlabr.dev` in `apps/site/src/config.ts`) with Email Routing, or change it to a routed one.
+  2. Check `prices.json` against Polar.
+  3. Create the environments `site` and `site-preview`, both restricted to `main` (a workflow that names a missing environment creates it unrestricted).
+  4. Create the Worker `saas-foundation-site-preview` in the dashboard (Hello World), with **Settings → Domains & Routes → Preview URLs enabled**, as for the docs preview Worker; then an account-owned token with Workers **Editor** on **Specified Workers → `saas-foundation-site-preview`**, stored as `CLOUDFLARE_SITE_PREVIEW_TOKEN` in `site-preview` (`gh secret set CLOUDFLARE_SITE_PREVIEW_TOKEN --env site-preview`).
+
+  After merging (the merge's `Site deploy` run fails until step 6: no token yet):
+
+  5. From a clean `main`, with your own login: `pnpm --filter site build && pnpm --filter site exec wrangler deploy`. This creates `saas-foundation-site` and attaches the apex Custom Domain (the apex must have no other DNS record).
+  6. An account-owned token with Workers **Editor** on **Specified Workers → `saas-foundation-site`**, stored as `CLOUDFLARE_SITE_TOKEN` in `site`; then re-run the failed `Site deploy` run (or dispatch it with the commit). It smoke-tests the apex.
+
+- **Routes and domain:** as for the docs, CI never changes them; apply a `routes` change by hand with step 5's command. `www` isn't served; add a zone Redirect Rule to the apex if you want it to resolve.
+- **Rotate** a token: roll it in the dashboard, `gh secret set CLOUDFLARE_SITE_TOKEN --env site` (or `CLOUDFLARE_SITE_PREVIEW_TOKEN --env site-preview`), then run a redeploy or a site PR preview.
 
 ## First production deploy (owner sequence, 2026-09-28)
 
