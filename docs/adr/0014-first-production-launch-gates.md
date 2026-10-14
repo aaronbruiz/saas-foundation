@@ -2,6 +2,8 @@
 
 Status: Accepted (owner decisions 2026-09-28) · Date: 2026-09-28
 
+Superseded in part by [ADR-0032](0032-lift-the-data-gate-allowlisted-pilot.md): decision 1, the data gate (lifted for an allowlisted pilot once its rollout is recorded).
+
 Supersedes in part [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md) (trigger for backup option B) and [ADR-0005](0005-better-auth-identity-app-owned-authorization.md) (the edge-layer WAF rule).
 
 ## Context
