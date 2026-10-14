@@ -165,7 +165,7 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
 - Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute), the 0.5 GB storage ceiling and the 5 GB monthly egress. Accepted in ADR-0026 (2026-10-13), until the plan is upgraded:
   - **When:** every Monday and before each production deploy.
   - **What:** Neon console → production project → usage for the current period: CU-hours, storage, egress. Read-only CLI aid: `pnpm exec neon branches list --project-id flat-cherry-23373668 -o json` (`main`'s `logical_size`; `compute_time_seconds` ÷ 3600 = CU-hours; `data_transfer_bytes`).
-  - **Upgrade** (ADR-0026 option 3: production alone in its own organization on Launch, rotating `NEON_API_KEY` in the order given there) at the first of: CU-hours ≥ 50 before the 15th or ≥ 70 at any point; project storage or `main`'s logical size ≥ 256 MiB; egress ≥ 2.5 GB; any suspension or failed write (at once); before Polar production mode or `SIGNUP_MODE=open`.
+  - **Upgrade** (ADR-0026 option 3: production alone in its own organization on Launch, rotating `NEON_API_KEY` in the order given there) at the first of: CU-hours ≥ 50 before the 15th or ≥ 70 at any point; project storage or `main`'s logical size ≥ 256 MiB; egress ≥ 2.5 GB; any compute suspension or storage-cap write failure (at once); before Polar production mode or `SIGNUP_MODE=open`.
   - **Baseline:** ADR-0026 "First reading" (CLI, 2026-10-13: ≈ 30 MiB, ≈ 0.63 CU-hours, ≈ 7.7 MB). Pending: console check of those figures, and confirmation that the counters reset each billing period.
   - Free has no consumption API (403) and no usage notifications.
 

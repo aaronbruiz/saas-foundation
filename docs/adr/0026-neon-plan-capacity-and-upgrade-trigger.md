@@ -67,7 +67,7 @@ Once on Launch (options 2–3), decide separately: restore window 1 day → 7 da
 
 ## First reading (baseline, 2026-10-13)
 
-Taken at acceptance with the read-only Neon CLI 8.3.5 (owner-approved; 2026-10-14 ~03:25Z, the owner's 2026-10-13): `neon branches list` and `neon projects get` for `flat-cherry-23373668`. No trigger is met, so no upgrade.
+Taken at acceptance with the read-only Neon CLI 8.3.5 (owner-approved; 2026-10-14 ~03:25Z, the owner's 2026-10-13): `neon branches list` and `neon projects get` for `flat-cherry-23373668`. The CLI values below are under every trigger, so no upgrade now; that no trigger is met is confirmed only by the pending console check (project storage and the counters' period are unverified, see below).
 
 | Measure                                  | Value                                                                        | Trigger                                 |
 | ---------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------- |
@@ -76,7 +76,7 @@ Taken at acceptance with the read-only Neon CLI 8.3.5 (owner-approved; 2026-10-1
 | Egress: `main`'s `data_transfer_bytes`   | 7,665,732 bytes (≈ 7.7 MB)                                                   | ≥ 2.5 GB                                |
 | `backup-20261011` … `backup-20261013`    | same logical size as `main`; 0 compute, transfer and writes                  | count toward project storage            |
 
-- The project's `synthetic_storage_size` reads 0 (≈ 30 MiB on 2026-10-01), so `main`'s `logical_size` is the storage figure.
+- The project's `synthetic_storage_size` reads 0 (≈ 30 MiB on 2026-10-01), so project storage is unverified until the console check; `main`'s `logical_size` stands in for it meanwhile.
 - Compute 0.25–0.25 CU, last active 2026-10-14 02:09:53Z; history 21,600 s (6 h), unchanged.
 - **Not yet confirmed:** that these per-branch counters reset each billing period and so cover 2026-10-01 → now (they read 0 on 2026-10-01, which fits a reset but doesn't prove it).
 - **Console check pending:** the owner compares these figures with the console's usage page for October (and September, if shown) and records the result here. Until then, the CLI figures are the baseline.
