@@ -162,7 +162,12 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
   - read-only compute on the snapshot: pre-change state, writes refused;
   - branch restored from the snapshot: same state, writable;
   - cleaned up afterwards. Repeat it (with a `drill-*` name, so the `backup-*` rotation isn't touched) after changing this procedure.
-- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute), the 0.5 GB storage ceiling and the 5 GB monthly egress. Proposed in ADR-0026 until the plan is upgraded: the owner checks the Neon console (production project → usage for the current period) every Monday and before each production deploy, and upgrades at CU-hours ≥ 50 before the 15th or ≥ 70 at any point, project storage or `main`'s logical size ≥ 256 MiB, egress ≥ 2.5 GB, or any suspension or failed write. Free has no consumption API (403) and no usage notifications. If accepted, take a first reading of CU-hours and egress at acceptance.
+- Watch: monthly CU-hours (compute is suspended when exceeded; the daily dump wakes it for about a minute), the 0.5 GB storage ceiling and the 5 GB monthly egress. Accepted in ADR-0026 (2026-10-13), until the plan is upgraded:
+  - **When:** every Monday and before each production deploy.
+  - **What:** Neon console → production project → usage for the current period: CU-hours, storage, egress. Read-only CLI aid: `pnpm exec neon branches list --project-id flat-cherry-23373668 -o json` (`main`'s `logical_size`; `compute_time_seconds` ÷ 3600 = CU-hours; `data_transfer_bytes`).
+  - **Upgrade** (ADR-0026 option 3: production alone in its own organization on Launch, rotating `NEON_API_KEY` in the order given there) at the first of: CU-hours ≥ 50 before the 15th or ≥ 70 at any point; project storage or `main`'s logical size ≥ 256 MiB; egress ≥ 2.5 GB; any suspension or failed write (at once); before Polar production mode or `SIGNUP_MODE=open`.
+  - **Baseline:** ADR-0026 "First reading" (CLI, 2026-10-13: ≈ 30 MiB, ≈ 0.63 CU-hours, ≈ 7.7 MB). Pending: console check of those figures, and confirmation that the counters reset each billing period.
+  - Free has no consumption API (403) and no usage notifications.
 
 ## Releases (ADR-0029)
 
@@ -209,7 +214,7 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
 - **A. Technically deployed:** production DB migrated, Worker deployed (steps 0–7). Sign-up allowlisted to smoke-test addresses; no real customer data, no Polar production mode, no public sign-up.
 - **B. Internal production smoke complete:** smoke test passed (step 8), WAF rule applied and tested (steps 9–10), the previous broad Cloudflare user token confirmed revoked (step 11). Still no real customer data.
 - **C. Real customer data, sign-up still allowlisted:** backup option B implemented and a restore from it tested (ADR-0014), alerting operational (ADR-0015), email delivery live and email verification enforced (ADR-0016), smoke-test accounts removed, and a new ADR lifting the data gate. Then, after deleting the smoke-test accounts, `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with only the admitted customers' addresses (no smoke-test address left in it), and keep `SIGNUP_MODE` unset.
-- **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded.
+- **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded (accepted 2026-10-13 with an upgrade trigger, ADR-0026).
 - Polar production mode (section "Polar") needs C first, since paying customers are real data, and its sandbox checks passed.
 
 0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.

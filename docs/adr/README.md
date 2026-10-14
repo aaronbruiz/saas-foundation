@@ -4,7 +4,7 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 
 - [ADR-0001](0001-build-own-starter.md): Build our own starter instead of adopting or forking a template
 - [ADR-0002](0002-single-tanstack-start-worker.md): One TanStack Start Worker on Workers Static Assets
-- [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md): Neon PostgreSQL via Hyperdrive, with Drizzle (backup option B: superseded by ADR-0023)
+- [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md): Neon PostgreSQL via Hyperdrive, with Drizzle (backup option B: superseded by ADR-0023; Neon plan: ADR-0026)
 - [ADR-0004](0004-uncached-hyperdrive-binding.md): Read auth and permission data through an uncached Hyperdrive binding
 - [ADR-0005](0005-better-auth-identity-app-owned-authorization.md): Better Auth for identity; authorization is application code
 - [ADR-0006](0006-toolchain.md): Toolchain: pnpm, TypeScript 6, ESLint 9 + Prettier, Zod, Vitest 4, Playwright

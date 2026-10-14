@@ -8,6 +8,8 @@ Superseded in part by [ADR-0017](0017-production-account-and-custom-domain.md): 
 
 Superseded in part by [ADR-0023](0023-off-provider-database-dumps-to-r2.md): backup option B is adopted (daily `pg_dump` to R2).
 
+Superseded in part by [ADR-0026](0026-neon-plan-capacity-and-upgrade-trigger.md): the amendment's "the plan will not be upgraded"; ADR-0026's trigger decides when it is.
+
 ## Context
 
 We need a relational, transactional store for a multi-tenant model. D1 (SQLite) was rejected as the primary store; "D1 in dev, Postgres in prod" was rejected because Drizzle schemas are dialect-specific.
