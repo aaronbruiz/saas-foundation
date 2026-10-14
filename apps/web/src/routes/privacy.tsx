@@ -92,8 +92,9 @@ function Privacy() {
           <li>Request logs: 7 days.</li>
           <li>
             Backups: daily copies of the database kept for up to 30 days, and a few recent database
-            snapshots that are replaced as new ones are taken. Deleted data leaves the backups as
-            they expire or are replaced.
+            snapshots that are replaced as new ones are taken. Deleted data leaves these copies as
+            they expire or are replaced. If we ever restore the database, we keep a copy of it from
+            before the restore until we delete it; deleted data stays in that copy until then.
           </li>
         </ul>
       </Section>
