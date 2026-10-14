@@ -59,7 +59,7 @@ Environments `production`, `preview-infra`, `preview`, `docs` and `docs-preview`
 
 Check the names against `grep -ohE '(secrets|vars)\.[A-Z0-9_]+' .github/workflows/*.yml | sort -u` and each workflow's `environment:`; the workflows are the source of truth. Repository-level (no environment), optional: `RELEASE_HOLD=true` holds a push-triggered release at 0% (runbook "Releases" step 3).
 
-Repository settings (ADR-0029, ADR-0030): squash merge only, with the PR title as the commit message and a blank body; delete head branches on merge; immutable releases; Actions → Workflow permissions → **Allow GitHub Actions to create and approve pull requests** (default token read-only), which release-please needs to open the release PR. Before the first release, tag the commit production runs as `web-v0.1.0` and set it as `bootstrap-sha` in `release-please-config.json` (ADR-0029 decision 1).
+Repository settings (ADR-0029, ADR-0030): squash merge only, with the PR title as the commit message and a blank body; delete head branches on merge; immutable releases; Actions → Workflow permissions → **Allow GitHub Actions to create and approve pull requests** (default token read-only), which release-please needs to open the release PR. Before the first release, tag the commit production runs as `web-v0.1.0` and set it as `bootstrap-sha` in `.github/release-please-config.json` (ADR-0029 decision 1).
 
 ## 5. Verify, including tenant isolation
 
