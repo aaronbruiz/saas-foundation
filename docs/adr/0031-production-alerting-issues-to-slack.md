@@ -1,6 +1,6 @@
 # ADR-0031: Production alerting: Workers Issues automations to a private Slack channel
 
-Status: Accepted (owner 2026-10-13: destination Slack). Set up by the owner and tested end to end 2026-10-14 (section "Rollout", "Result"): ADR-0015's alerting requirement, as restated in decision 3, is met. · Date: 2026-10-13
+Status: Accepted (owner 2026-10-13: destination Slack). Set up by the owner and tested end to end 2026-10-14 (section "Rollout", "Result"): the new-issue alert is verified and the rest of the setup owner-confirmed, so ADR-0015's alerting requirement, as restated in decision 3, is met. · Date: 2026-10-13
 
 Meets [ADR-0015](0015-observability-baseline.md)'s alerting requirement, which milestone C (real customer data, [ADR-0014](0014-first-production-launch-gates.md)'s data gate) waits on. Sends issue data (error messages, stack traces) to a third party, Slack, so it's a new trust boundary.
 
@@ -70,7 +70,8 @@ Owner, in the Cloudflare dashboard and Slack; then Claude records the result her
 
 ### Result (2026-10-14)
 
-- **Setup (owner, 2026-10-14):** a Slack app with an incoming webhook (scope `incoming-webhook` only, no bot token) posting to the owner's private channel; Cloudflare Notifications webhook destination `slack-saas-foundation-alerts` (secret parsed from the URL); on `saas-foundation` → Issues → Automations, occurrence threshold 1 and recurrence after 1 hour, both to that destination. The webhook was checked with a test message first.
+- **Setup, owner-reported (2026-10-14, "steps 1–3 done"):** the Slack incoming webhook checked with a test message; a Cloudflare Notifications webhook destination; on `saas-foundation` → Issues → Automations, occurrence threshold 1 and recurrence after 1 hour, both to that destination. The destination's name, `slack-saas-foundation-alerts`, is shown in the alert.
+- **Owner-confirmed (2026-10-14, after the test):** the channel is private with only the owner as a member; the Slack app holds only the `incoming-webhook` scope and no bot token; the recurrence automation (1 hour) is enabled and points at `slack-saas-foundation-alerts`. The test exercised only the threshold automation; recurrence is configured, not yet exercised.
 - **Test (Claude, owner-requested):** the request above at **04:38:11Z** returned **`500`** (`{"status":500,"unhandled":true,"message":"HTTPError"}`, ray `a4a3e4a72904e105`). The production build behaves like `pnpm dev`; its message differs ("Server function info not found" instead of "Invalid server function ID").
 - **Alert:** Slack message at **04:38Z** (Slack shows minutes; 23:38 in the owner's time zone), so **under 1–2 minutes** against the 15-minute target. Alert type `workers_observability_real_time_issue`.
 - **Fields in the message:** the issue title (error message, truncated, including the requested id from the path, and the top stack frame: `HTTPError · Server function info not found for ale… · at getServerFnById (assets/…server-fn-resolver<hash>.js)`), the Worker name, issue ID, type (`Log`), status (`Active`), occurrence count and alert type. **No headers, cookies, tokens, emails or bodies** (decision 4): pass. Request paths can appear in the title; ADR-0015 already keeps tokens out of paths.
@@ -78,7 +79,7 @@ Owner, in the Cloudflare dashboard and Slack; then Claude records the result her
 
 ## Consequences
 
-- The test passed (2026-10-14), so ADR-0015's alerting requirement is met, as restated in decision 3. Milestone C still needs smoke-account removal and the ADR that lifts the data gate.
+- The test passed (2026-10-14). ADR-0015's alerting requirement, as restated in decision 3, is met (setup owner-confirmed; recurrence configured, not yet exercised). Milestone C still needs smoke-account removal and the ADR that lifts the data gate.
 - A failure the Worker turns into a non-5xx response without an error log (for example an expected 4xx) doesn't alert. That's intended.
 - Anyone can cause such a `500` from outside (unknown server-function ids are answered with `500`, not `404`). Grouping limits the noise to one alert per new issue, plus one per hour of recurrence. If it becomes noise, follow-up: answer unknown ids with `404`.
 - ADR-0015 gets a "Superseded in part by ADR-0031" line for its alerting requirement (both clauses, restated in decision 3) and the "not configured here" note. Its log contract and Sentry triggers stand.
