@@ -2,9 +2,10 @@
 // for agents. Built as static files; `public/_headers` serves them as text/markdown.
 import type { APIRoute, GetStaticPaths } from 'astro'
 import { getCollection, type CollectionEntry } from 'astro:content'
+import { published } from '../published'
 
 export const getStaticPaths = (async () => {
-  const pages = await getCollection('docs')
+  const pages = await getCollection('docs', published)
   return pages.map((page) => ({ params: { slug: page.id }, props: { page } }))
 }) satisfies GetStaticPaths
 

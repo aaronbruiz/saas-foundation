@@ -66,9 +66,13 @@ jobs:
             exit 0
           fi
           # ADR-0028: a PR that changes only apps/docs/** gets no app preview (it would hold one of
-          # the preview project's 10 Neon branches for nothing).
-          files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" --jq '.[].filename')"
-          if [ -n "$files" ] && ! grep -qv '^apps/docs/' <<<"$files"; then
+          # the preview project's 10 Neon branches for nothing). A rename counts at both paths, and a
+          # list that isn't complete (the files API stops at 3,000) keeps the preview.
+          changed="$(gh api "repos/$REPO/pulls/$pr" --jq '.changed_files')"
+          files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" \
+            --jq '.[] | [.filename, .previous_filename // empty] | join("\t")')"
+          if [ -n "$files" ] && [ "$(grep -c '' <<<"$files")" = "$changed" ] \
+            && ! tr '\t' '\n' <<<"$files" | grep -qv '^apps/docs/'; then
             echo "::notice title=Preview skipped::PR #$pr changes only apps/docs"
             exit 0
           fi

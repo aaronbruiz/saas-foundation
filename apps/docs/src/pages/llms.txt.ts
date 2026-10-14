@@ -1,10 +1,11 @@
 // ADR-0028 decision 3: an llmstxt.org index of the Markdown twins (`[...slug].md.ts`).
 import type { APIRoute } from 'astro'
 import { getCollection } from 'astro:content'
+import { published } from '../published'
 
 export const GET: APIRoute = async ({ site }) => {
   // The home page first, then the rest by path.
-  const pages = (await getCollection('docs')).sort(
+  const pages = (await getCollection('docs', published)).sort(
     (a, b) => Number(b.id === 'index') - Number(a.id === 'index') || a.id.localeCompare(b.id),
   )
   const home = pages.find((p) => p.id === 'index')
