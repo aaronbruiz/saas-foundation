@@ -24,6 +24,7 @@ migrations="$artifact/packages/db/drizzle"
 check_artifact_files "$artifact" || exit 1
 # Validate before touching any cloud resource; the real Hyperdrive id is patched in below.
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID"
+require_preview_worker || exit 1
 
 # A close event may have arrived meanwhile: never (re)publish a closed PR's preview. A closed or
 # merged PR is an intentional skip (cleanup handles its resources); an unknown state still fails.

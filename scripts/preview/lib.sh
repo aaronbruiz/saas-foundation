@@ -63,6 +63,14 @@ cf_api() {
   printf '%s' "$body"
 }
 
+# The parent Worker must already exist (ADR-0019 decision 3): `wrangler preview` would otherwise
+# create it when run with a broader token (manual recovery). Worker-scoped read, so the narrow
+# token can do it.
+require_preview_worker() {
+  cf_api "/workers/workers/$PREVIEW_WORKER" >/dev/null 2>&1 ||
+    { log "ERROR: can't read Worker $PREVIEW_WORKER: the token is wrong/inactive, or the Worker doesn't exist (an admin creates it once)"; return 1; }
+}
+
 # The account's workers.dev subdomain: the CI variable (the narrow token can't read account
 # settings), or the API for manual runs with a broader token.
 workers_subdomain() {
