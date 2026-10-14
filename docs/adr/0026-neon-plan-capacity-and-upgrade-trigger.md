@@ -78,7 +78,7 @@ Taken at acceptance with the read-only Neon CLI 8.3.5 (owner-approved; 2026-10-1
 
 - The project's `synthetic_storage_size` reads 0 (≈ 30 MiB on 2026-10-01), so the API doesn't give project storage; the console does (below).
 - Compute 0.25–0.25 CU, last active 2026-10-14 02:09:53Z; history 21,600 s (6 h), unchanged.
-- **Console check (owner, 2026-10-13, shortly after the CLI reading):** the production project's usage page, "Since Sep 30, 2026" (the billing period that starts 2026-10-01 00:00Z, shown in local time): compute **0.63 CU-hrs**, storage **31.83 MB**, history 352.34 kB, network transfer **7.67 MB**. These match the CLI figures, so the per-branch counters are period-to-date values (consistent with their 0 on 2026-10-01; the reset itself is next visible on 2026-11-01), and project storage is 31.83 MB (≈ 30.4 MiB). No trigger is met. September wasn't shown.
+- **Console check (owner, 2026-10-13, shortly after the CLI reading):** the production project's usage page, "Since Sep 30, 2026" (the billing period that starts 2026-10-01 00:00Z, shown in local time): compute **0.63 CU-hrs**, storage **31.83 MB**, history 352.34 kB, network transfer **7.67 MB**. These match this CLI reading, so for this reading the per-branch counters equal the console's period-to-date totals, and project storage is 31.83 MB (≈ 30.4 MiB). No trigger is met. **Unverified:** that the CLI counters reset each billing period (their 0 on 2026-10-01 fits it); until a reading after 2026-11-01 shows it, use the console's figures for the triggers and the CLI only as an aid. September wasn't shown.
 
 ## Consequences
 
