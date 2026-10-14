@@ -47,13 +47,15 @@ Create new, never shared with the foundation or another product:
 
 Environments `production`, `preview-infra` and `preview`, each limited to deployment branch `main`. No secret at repository level (ADR-0013, ADR-0019, ADR-0021). Scopes and token permissions: runbook "CI credentials".
 
-| Environment     | Secrets                                                                                                                  | Variables                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `production`    | `NEON_API_KEY` (production project only), `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `R2_BACKUP_ENDPOINT` | `NEON_PROJECT_ID`, `R2_BACKUP_BUCKET`, `BACKUP_KEEP`                                                             |
-| `preview-infra` | `CLOUDFLARE_PREVIEW_INFRA_TOKEN` (Hyperdrive Edit only), `NEON_PREVIEW_API_KEY`                                          | `CLOUDFLARE_ACCOUNT_ID`, `NEON_PREVIEW_PROJECT_ID`, `NEON_PREVIEW_PARENT_BRANCH`, `NEON_DATABASE`, `NEON_ROLE`   |
-| `preview`       | `CLOUDFLARE_API_TOKEN` (Workers Editor on `<product>-preview` only), `NEON_PREVIEW_API_KEY`                              | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `NEON_PREVIEW_PROJECT_ID`, `NEON_DATABASE`, `NEON_ROLE` |
+| Environment     | Secrets                                                                                                                                                                               | Variables                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `production`    | `CLOUDFLARE_API_TOKEN` (Workers Editor on `<product>` only), `NEON_API_KEY` (production project only), `R2_BACKUP_ACCESS_KEY_ID`, `R2_BACKUP_SECRET_ACCESS_KEY`, `R2_BACKUP_ENDPOINT` | `NEON_PROJECT_ID`, `R2_BACKUP_BUCKET`, `BACKUP_KEEP`                                                             |
+| `preview-infra` | `CLOUDFLARE_PREVIEW_INFRA_TOKEN` (Hyperdrive Edit only), `NEON_PREVIEW_API_KEY`                                                                                                       | `CLOUDFLARE_ACCOUNT_ID`, `NEON_PREVIEW_PROJECT_ID`, `NEON_PREVIEW_PARENT_BRANCH`, `NEON_DATABASE`, `NEON_ROLE`   |
+| `preview`       | `CLOUDFLARE_API_TOKEN` (Workers Editor on `<product>-preview` only), `NEON_PREVIEW_API_KEY`                                                                                           | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, `NEON_PREVIEW_PROJECT_ID`, `NEON_DATABASE`, `NEON_ROLE` |
 
 Check the names against `grep -ohE '(secrets|vars)\.[A-Z0-9_]+' .github/workflows/*.yml | sort -u` and each workflow's `environment:`; the workflows are the source of truth.
+
+Repository settings (ADR-0029, ADR-0030): squash merge only, with the PR title as the commit message and a blank body; delete head branches on merge; immutable releases; Actions → Workflow permissions → **Allow GitHub Actions to create and approve pull requests** (default token read-only), which release-please needs to open the release PR. Before the first release, tag the commit production runs as `web-v0.1.0` and set it as `bootstrap-sha` in `release-please-config.json` (ADR-0029 decision 1).
 
 ## 5. Verify, including tenant isolation
 
