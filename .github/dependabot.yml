@@ -42,8 +42,6 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: '@types/node' # the runtime is Node 24
         update-types: [version-update:semver-major]
-      - dependency-name: eslint # v9 until the config and typescript-eslint are checked on v10
-        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions # SHA-pinned in .github/workflows
     directory: /
