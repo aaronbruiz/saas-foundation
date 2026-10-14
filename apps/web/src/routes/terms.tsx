@@ -46,8 +46,8 @@ function Terms() {
         <p>
           Paid plans are sold by Polar as merchant of record: Polar takes payment, issues invoices
           and handles taxes and refunds under its own terms. Plans, prices and limits are shown in
-          the service. If a subscription ends or its payment fails, the organization returns to the
-          free plan&apos;s limits; nothing is deleted.
+          the service. If a subscription ends, or its payment still fails after Polar&apos;s
+          retries, the organization returns to the free plan&apos;s limits; nothing is deleted.
         </p>
       </Section>
       <Section title="Liability">
@@ -63,7 +63,7 @@ function Terms() {
           You can stop using the service at any time and ask us to delete your account at{' '}
           {contactEmail}. We may suspend or end your access if you break these terms. When an
           account or organization is deleted, its data is removed from the service, and from backups
-          within 30 days.
+          as they expire or are replaced.
         </p>
       </Section>
       <Section title="Governing law">
@@ -71,10 +71,7 @@ function Terms() {
           These terms are governed by the laws of {governingLaw}, and disputes go to {courts},
           unless the law where you live gives you the right to bring them elsewhere.
         </p>
-        <p>
-          We may update these terms; the version and effective date above change when we do, and we
-          tell account holders by email before a significant change takes effect.
-        </p>
+        <p>We may update these terms; the version and effective date above change when we do.</p>
       </Section>
     </LegalPage>
   )

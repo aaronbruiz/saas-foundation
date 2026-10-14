@@ -91,17 +91,17 @@ function Privacy() {
           </li>
           <li>Request logs: 7 days.</li>
           <li>
-            Backups: daily copies of the database kept for up to 30 days. Deleted data leaves the
-            backups as they age out.
+            Backups: daily copies of the database kept for up to 30 days, and a few recent database
+            snapshots that are replaced as new ones are taken. Deleted data leaves the backups as
+            they expire or are replaced.
           </li>
         </ul>
       </Section>
       <Section title="Your rights">
         <p>
           You can ask us to access, correct, delete or export your personal data, or object to its
-          processing, by writing to {contactEmail}. We answer within 30 days and may ask you to
-          confirm your identity first. You can also complain to the data protection authority where
-          you live.
+          processing, by writing to {contactEmail}. We may ask you to confirm your identity first.
+          You can also complain to the data protection authority where you live.
         </p>
       </Section>
       <Section title="Contact">
