@@ -147,22 +147,23 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
     const orgId = `eval-${run}-paid`
     const endpointUrl = `https://example.com/polar-eval/${run}`
     const endpoints = await polar.webhooks.listWebhookEndpoints({ limit: 100 })
-    let endpoint = endpoints.items.find((e) => e.url === endpointUrl)
+    const endpoint = endpoints.items.find((e) => e.url === endpointUrl)
 
     if (paid === 'start') {
-      endpoint ??= await polar.webhooks.createWebhookEndpoint({
-        url: endpointUrl,
-        format: 'raw',
-        events: [
-          'subscription.created',
-          'subscription.updated',
-          'subscription.active',
-          'subscription.canceled',
-          'subscription.revoked',
-          'subscription.past_due',
-          'subscription.uncanceled',
-        ],
-      })
+      if (!endpoint)
+        await polar.webhooks.createWebhookEndpoint({
+          url: endpointUrl,
+          format: 'raw',
+          events: [
+            'subscription.created',
+            'subscription.updated',
+            'subscription.active',
+            'subscription.canceled',
+            'subscription.revoked',
+            'subscription.past_due',
+            'subscription.uncanceled',
+          ],
+        })
       const url = await polarProvider(config).checkout({
         organizationId: orgId,
         organizationName: `Eval ${run} paid`,

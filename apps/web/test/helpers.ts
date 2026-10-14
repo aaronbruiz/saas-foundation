@@ -108,7 +108,7 @@ export async function expectStatus(fn: () => Promise<unknown>, status: number) {
   } catch (e) {
     const actual = (e as { status?: number }).status
     if (actual === status) return
-    throw new Error(`expected HTTP ${status}, got ${actual ?? String(e)}`)
+    throw new Error(`expected HTTP ${status}, got ${actual ?? String(e)}`, { cause: e })
   }
   throw new Error(`expected HTTP ${status}, but the call succeeded`)
 }

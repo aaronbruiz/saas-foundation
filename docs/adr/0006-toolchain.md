@@ -17,3 +17,7 @@ Status: Accepted · Date: 2026-09-27
 
 - One command vocabulary for people, agents and CI.
 - Dashboard-level resources (DNS, WAF, Hyperdrive configs) stay outside the repo until Terraform is justified.
+
+## Notes (2026-10-14)
+
+**ESLint 10.** `eslint` ^10.12 and `@eslint/js` ^10.0. The flat config needed no change; typescript-eslint 8.71, eslint-plugin-react-hooks 7.1 and eslint-config-prettier 10.1 accept ESLint 10 in their peer ranges, and the import-boundary rules still fire (checked with a probe importing `drizzle-orm` and `@saas-foundation/db/internal` from `apps/web/src`). The new recommended rules (`no-useless-assignment`, `preserve-caught-error`) found two spots in test code, fixed in the same PR. The decision above (ESLint flat config + Prettier) is unchanged; only the major moved.

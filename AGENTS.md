@@ -28,7 +28,7 @@ The import boundaries above are enforced by `eslint.config.js`, along with raw d
 ```
 pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
 pnpm dev           # local Worker on http://localhost:3000 (strict port); DB via Hyperdrive localConnectionString
-pnpm check         # lint (ESLint v9) + format:check (Prettier) + typecheck (tsc --noEmit)
+pnpm check         # lint (ESLint v10) + format:check (Prettier) + typecheck (tsc --noEmit)
 pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
 pnpm format        # apply Prettier
 pnpm build         # production build
@@ -43,7 +43,7 @@ scripts/docs/*.sh   # docs Worker: PR preview, production deploy, rollback; run 
 scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
-Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group); `astro check` is `apps/docs`'s typecheck. ESLint stays on v9 until its config and typescript-eslint are checked against v10. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
+Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group); `astro check` is `apps/docs`'s typecheck. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
 
 **Port 3000 busy:** `pnpm dev` uses `--strictPort` and fails if port 3000 is taken (auth origins depend on it). Don't switch ports and don't kill processes yourself. Stop and tell the user that port 3000 is in use, and recommend they free it with:
 
