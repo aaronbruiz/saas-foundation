@@ -1,6 +1,6 @@
 # ADR-0026: Neon plan for launch: Free's capacity limits and the upgrade trigger
 
-Status: Proposed · Date: 2026-10-01
+Status: Accepted (owner 2026-10-13: option 1 until a trigger, option 3 as the path; first reading below, console check pending) · Date: 2026-10-01
 
 Answers launch milestone D's condition "Neon Free's capacity limits ([ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md)) explicitly accepted or the plan upgraded" (runbook "First production deploy"). Revisits ADR-0003's amendment "Neon stays on the Free plan (2026-09-27)" with current prices and measured usage. The decision is the owner's.
 
@@ -53,7 +53,7 @@ Answers launch milestone D's condition "Neon Free's capacity limits ([ADR-0003](
 
 Once on Launch (options 2–3), decide separately: restore window 1 day → 7 days (ADR-0003's original intent; billed by GB-month of changes), whether to disable scale-to-zero (no cold starts, ~$20/month at 0.25 CU), and whether Neon's scheduled snapshots replace the `backup-*` snapshot branches (ADR-0003 option A). Usage then becomes visible through spending notifications and the consumption API, which covers "watch usage" without ADR-0015's alerting.
 
-## Decision (proposed)
+## Decision
 
 - **Until the trigger: option 1**, with the limits in this ADR's Context accepted as they stand, and the manual check below.
 - **Upgrade trigger: the first of**
@@ -63,7 +63,23 @@ Once on Launch (options 2–3), decide separately: restore window 1 day → 7 da
   4. egress **≥ 2.5 GB** in a period;
   5. any suspension or storage-cap write failure (upgrade at once: it lifts the suspension).
 - **Path: option 3** (production alone on Launch), unless the owner prefers option 2 to keep one organization.
-- **Watch, until alerting exists** (runbook "Database"): the owner checks the Neon console (production project → usage: CU-hours, storage, egress for the current period) **every Monday and before each production deploy**, and upgrades when a trigger above is met. **First reading when this ADR is accepted**: CU-hours and egress were not measured for it, so the owner records the current period's values (and, if shown, September's) before relying on the weekly check; a trigger already met means upgrading now. `neon branches list --project-id flat-cherry-23373668 -o json` (`logical_size` per branch) and `neon projects get flat-cherry-23373668 -o json` (`synthetic_storage_size`) are read-only CLI aids for storage.
+- **Watch, until alerting exists** (runbook "Database"): the owner checks the Neon console (production project → usage: CU-hours, storage, egress for the current period) **every Monday and before each production deploy**, and upgrades when a trigger above is met. **First reading when this ADR is accepted**: CU-hours and egress were not measured for it, so the owner records the current period's values (and, if shown, September's) before relying on the weekly check; a trigger already met means upgrading now. `neon branches list --project-id flat-cherry-23373668 -o json` (`logical_size` per branch) and `neon projects get flat-cherry-23373668 -o json` (`synthetic_storage_size`) are read-only CLI aids for storage. Taken at acceptance from the CLI instead, console check pending: see "First reading".
+
+## First reading (baseline, 2026-10-13)
+
+Taken at acceptance with the read-only Neon CLI 8.3.5 (owner-approved; 2026-10-14 ~03:25Z, the owner's 2026-10-13): `neon branches list` and `neon projects get` for `flat-cherry-23373668`. The CLI values below are under every trigger, so no upgrade now; that no trigger is met is confirmed only by the pending console check (project storage and the counters' period are unverified, see below).
+
+| Measure                                  | Value                                                                        | Trigger                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------- |
+| Storage: `main`'s `logical_size`         | 31,825,920 bytes (≈ 30.4 MiB), unchanged since 2026-10-01                    | ≥ 256 MiB                               |
+| Compute: `main`'s `compute_time_seconds` | 2,283 s ≈ **0.63 CU-hours** (`active_time_seconds` 9,000 = 2.5 h at 0.25 CU) | ≥ 50 before the 15th, ≥ 70 at any point |
+| Egress: `main`'s `data_transfer_bytes`   | 7,665,732 bytes (≈ 7.7 MB)                                                   | ≥ 2.5 GB                                |
+| `backup-20261011` … `backup-20261013`    | same logical size as `main`; 0 compute, transfer and writes                  | count toward project storage            |
+
+- The project's `synthetic_storage_size` reads 0 (≈ 30 MiB on 2026-10-01), so project storage is unverified until the console check; `main`'s `logical_size` stands in for it meanwhile.
+- Compute 0.25–0.25 CU, last active 2026-10-14 02:09:53Z; history 21,600 s (6 h), unchanged.
+- **Not yet confirmed:** that these per-branch counters reset each billing period and so cover 2026-10-01 → now (they read 0 on 2026-10-01, which fits a reset but doesn't prove it).
+- **Console check pending:** the owner compares these figures with the console's usage page for October (and September, if shown) and records the result here. Until then, the CLI figures are the baseline.
 
 ## Consequences
 
