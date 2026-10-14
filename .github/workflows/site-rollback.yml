@@ -1,0 +1,35 @@
+name: Site rollback
+
+# ADR-0029 decision 6 for the marketing site's Worker (ADR-0033), with the shared static-site
+# rollback (decision 9): `wrangler rollback` to a given version, with a required reason. No build,
+# seconds; it shares site-deploy.yml's lock.
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why (recorded as the deployment message)
+        type: string
+        required: true
+      version_id:
+        description: Target version id (from `pnpm --filter site exec wrangler deployments list`)
+        type: string
+        required: true
+
+concurrency:
+  group: deploy-saas-foundation-site
+  cancel-in-progress: false
+  queue: max
+
+permissions: {}
+
+jobs:
+  rollback:
+    uses: ./.github/workflows/static-rollback.yml
+    permissions:
+      contents: read
+    with:
+      site: site
+      reason: ${{ inputs.reason }}
+      version_id: ${{ inputs.version_id }}
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_SITE_TOKEN }}

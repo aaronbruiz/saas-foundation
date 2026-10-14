@@ -1,0 +1,70 @@
+---
+// Every page's head (title, description, canonical, Open Graph; ADR-0033 decision 7), header and
+// footer. No client scripts: the site's CSP allows none.
+import '../styles/site.css'
+import { legalLinks, primaryAction, signIn, site } from '../config'
+
+interface Props {
+  title?: string
+  description?: string
+  /** The 404 page isn't a canonical URL. */
+  noindex?: boolean
+}
+
+const { title, description = site.description, noindex = false } = Astro.props
+const fullTitle = title ? `${title} · ${site.product}` : `${site.product}: ${site.tagline}`
+const canonical = new URL(Astro.url.pathname, Astro.site).href
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.product} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+  </head>
+  <body>
+    <header class="header">
+      <nav class="container nav" aria-label="Main">
+        <a class="brand" href="/">
+          {site.product}
+        </a>
+        <div class="nav-links">
+          <a href="/pricing/">Pricing</a>
+          <a href={site.docsUrl}>Docs</a>
+          <a href={signIn.href}>{signIn.label}</a>
+          <a class="button button-small" href={primaryAction.href}>
+            {primaryAction.label}
+          </a>
+        </div>
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="footer">
+      <div class="container footer-inner">
+        <p>
+          © {new Date().getFullYear()} {site.product}
+        </p>
+        <nav class="footer-links" aria-label="Footer">
+          {legalLinks.map((l) => (
+            <a href={l.href}>{l.label}</a>
+          ))}
+          <a href={site.docsUrl}>Docs</a>
+          <a href={`mailto:${site.contactEmail}`}>Contact</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

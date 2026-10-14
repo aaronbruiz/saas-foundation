@@ -1,23 +1,23 @@
 name: Static site preview
 
 # ADR-0028 decision 5, ADR-0033 decision 9: a PR's static site as Worker Preview `pr-N` of the
-# site's preview Worker, and its deletion when the PR closes. The caller (docs-preview.yml) is
-# triggered by `workflow_run` of the site's build and `pull_request_target`, which run it from the
-# default branch, and owns the lock. The token lives in environment `<site>-preview` (main only)
-# and is Workers Editor on the site's preview Worker only. No job runs PR code or restores a cache:
-# the deploy job installs the default branch's lockfile and deploys the PR's built site (the build
-# run's `<site>-site` artifact) as data.
+# site's preview Worker, and its deletion when the PR closes. The callers (docs-preview.yml,
+# site-preview.yml) are triggered by `workflow_run` of the site's build and `pull_request_target`,
+# which run them from the default branch, and own the lock. The token lives in environment
+# `<site>-preview` (main only) and is Workers Editor on the site's preview Worker only. No job runs
+# PR code or restores a cache: the deploy job installs the default branch's lockfile and deploys
+# the PR's built site (the build run's `<site>-site` artifact) as data.
 #   resolve (no secrets) → deploy (<site>-preview) → comment (no secrets)
 #   cleanup on close (<site>-preview; tidiness: the preview has no data to revoke)
 on:
   workflow_call:
     inputs:
       site:
-        description: The site's app directory under apps/ (docs); its environment is `<site>-preview`
+        description: The site's app directory under apps/ (docs or site); its environment is `<site>-preview`
         type: string
         required: true
       label:
-        description: The site's name in the PR comment (Docs)
+        description: The site's name in the PR comment (Docs, Site)
         type: string
         required: true
     # The caller passes the environment secret by name; the called job's `environment` selects its

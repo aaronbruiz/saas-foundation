@@ -20,7 +20,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --parallel typecheck",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check",
+    "plans:export": "node apps/app/scripts/export-plans.ts",
+    "plans:check": "node apps/app/scripts/export-plans.ts --check",
     "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate",
     "test:e2e": "pnpm --filter app test:e2e"
   },
@@ -32,6 +34,7 @@
     "globals": "^17.13.0",
     "neon": "8.3.5",
     "prettier": "^3.9.10",
+    "prettier-plugin-astro": "^1.1.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1"
   }

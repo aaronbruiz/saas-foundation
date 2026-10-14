@@ -1,0 +1,18 @@
+// ADR-0033: the marketing site's Worker serves static assets only, like the docs Worker (ADR-0028):
+// no `main`, no bindings, no vars, no secrets, no environments, no previews block
+// (scripts/check-bindings.mjs enforces it). Previews deploy to `saas-foundation-site-preview` from
+// CI with this file and `--name`. The apex Custom Domain is attached once by the owner with a
+// manual `wrangler deploy` (per-Worker tokens can't manage domains).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "saas-foundation-site",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "aaronlabr.dev", "custom_domain": true }],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+  },
+}

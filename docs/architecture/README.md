@@ -14,8 +14,11 @@ browser ──HTTPS──▶ Cloudflare edge
 
 browser ──HTTPS──▶ docs.<zone> ──▶ Worker `saas-foundation-docs` (static assets only: Starlight
                                    site, Pagefind index, llms.txt, .md twins; no bindings, ADR-0028)
-PR previews: Worker `saas-foundation-preview` (app, own Neon branch + Hyperdrive config, ADR-0021)
-             and `saas-foundation-docs-preview` (docs, no bindings), on workers.dev
+browser ──HTTPS──▶ <zone> (apex) ──▶ Worker `saas-foundation-site` (static assets only: landing,
+                                   pricing from billing/policy.ts; links to app.<zone>; ADR-0033)
+PR previews: Worker `saas-foundation-preview` (app, own Neon branch + Hyperdrive config, ADR-0021),
+             `saas-foundation-docs-preview` and `saas-foundation-site-preview` (no bindings), on
+             workers.dev
 ```
 
 Rules: [`AGENTS.md`](../../AGENTS.md). Decisions: [`docs/adr/`](../adr/README.md).

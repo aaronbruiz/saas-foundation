@@ -23,10 +23,11 @@ updates:
       # included. Listed first: a dependency goes to the first group it matches.
       better-auth:
         patterns: [better-auth, auth, '@better-auth/*']
-      # ADR-0028: the docs site's Astro and Starlight (0.x, pinned exactly; minors can break) get
-      # their own PR. Dev dependencies of apps/docs, so titled `chore(deps-dev)` (no app release).
+      # ADR-0028, ADR-0033: the static sites' Astro, Starlight (0.x, pinned exactly; minors can
+      # break) and Astro integrations get their own PR. Dev dependencies of apps/docs and apps/site,
+      # so titled `chore(deps-dev)` (no app release).
       astro:
-        patterns: [astro, '@astrojs/*']
+        patterns: [astro, '@astrojs/*', prettier-plugin-astro]
       # Every other minor and patch update, one PR per dependency type so each title is either
       # `fix(deps)` or `chore(deps-dev)`; majors stay separate PRs.
       production-minor-and-patch:

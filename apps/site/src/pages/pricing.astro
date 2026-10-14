@@ -1,0 +1,57 @@
+---
+// ADR-0033 decision 6: plans and limits come from the billing policy (plans.json), amounts from
+// prices.json; src/lib/pricing.ts fails the build if they don't match.
+import Base from '../layouts/Base.astro'
+import { primaryAction, site } from '../config'
+import { formatAmount, limitText, plans, trialDays } from '../lib/pricing'
+
+const per = { month: 'month', year: 'year' } as const
+---
+
+<Base title="Pricing" description={`Plans and prices for ${site.product}.`}>
+  <section class="container page-head">
+    <h1>Pricing</h1>
+    <p class="lead">Every organization starts free. Paid plans are billed per organization.</p>
+  </section>
+  <section class="container grid plans" aria-label="Plans">
+    {plans.map((plan) => (
+      <article class:list={['card', 'plan', { featured: !plan.isDefault }]}>
+        <h2>{plan.name}</h2>
+        {plan.isDefault ? (
+          <p class="price">
+            <span class="amount">Free</span>
+          </p>
+        ) : (
+          plan.prices.map((price) => (
+            <p class="price">
+              <span class="amount">{formatAmount(price)}</span>
+              <span class="per">/ {per[price.interval]}</span>
+            </p>
+          ))
+        )}
+        <ul>
+          <li>{limitText(plan.limits.projects, 'project')}</li>
+          <li>{limitText(plan.limits.members, 'member')}</li>
+          {plan.features.map((f) => (
+            <li>{f}</li>
+          ))}
+        </ul>
+        {!plan.isDefault && trialDays > 0 && (
+          <p class="note">{trialDays}-day free trial for an organization’s first subscription.</p>
+        )}
+        <a
+          class:list={['button', { 'button-secondary': plan.isDefault }]}
+          href={primaryAction.href}
+        >
+          {primaryAction.label}
+        </a>
+      </article>
+    ))}
+  </section>
+  <section class="container">
+    <p class="note">
+      Taxes may apply depending on where you are; checkout shows the total. Questions? Write to{' '}
+      <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+    </p>
+  </section>
+</Base>

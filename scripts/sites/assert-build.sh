@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Asserts what a static site's build promises (ADR-0028, ADR-0033), in the T0 build job (no
 # secrets): the files every deploy requires (check_dist), plus per-site content checks. For the
-# docs: search, a Markdown twin per page and an llms.txt entry per twin.
-# Usage: SITE=docs scripts/sites/assert-build.sh   (after `pnpm --filter $SITE build`)
+# docs: search, a Markdown twin per page and an llms.txt entry per twin. For the marketing site: no
+# script or inline style in any page (its CSP allows neither) and a sitemap listing its pages.
+# Usage: SITE=docs|site scripts/sites/assert-build.sh   (after `pnpm --filter $SITE build`)
 source "$(dirname "$0")/lib.sh"
 dist="$ROOT/apps/$SITE/dist"
 [ -d "$dist" ] || die "no build at apps/$SITE/dist"
@@ -26,6 +27,15 @@ case "$SITE" in
     chunks="$(find pagefind/index -name '*.pf_index' | wc -l)"
     echo "pages=$count indexed=$indexed fragments=$fragments index_chunks=$chunks"
     [ "$indexed" = "$count" ] && [ "$fragments" = "$count" ] && [ "$chunks" -gt 0 ] || die "search index doesn't cover every page"
+    ;;
+  site)
+    # -z: each file is one record, so an attribute split across lines is still found.
+    inline="$(grep -l -z -i -E '<script|<style|[[:space:]]style[[:space:]]*=' $(find . -name '*.html') || true)"
+    [ -z "$inline" ] || die "scripts or inline styles (the CSP blocks them) in: $inline"
+    for path in / /pricing/; do
+      grep -q "<loc>https://$SITE_HOST$path</loc>" sitemap-0.xml || die "the sitemap doesn't list $path"
+    done
+    ! grep -q '404' sitemap-0.xml || die "the sitemap lists the 404 page"
     ;;
 esac
 log "build OK"
