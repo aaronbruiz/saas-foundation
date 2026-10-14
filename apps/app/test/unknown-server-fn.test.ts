@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HttpError } from '../src/server/errors'
-import { isUnknownServerFnError } from '../src/server/unknown-server-fn'
+import { isUnknownServerFnError, isUnknownServerFnPath } from '../src/server/unknown-server-fn'
 
 // ADR-0031 follow-up: an unknown server-function id is a 404, not an alerting 500.
 describe('isUnknownServerFnError', () => {
@@ -20,5 +20,23 @@ describe('isUnknownServerFnError', () => {
     undefined,
   ])('leaves any other error to propagate (%s)', (e) => {
     expect(isUnknownServerFnError(e)).toBe(false)
+  })
+})
+
+describe('isUnknownServerFnPath', () => {
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'recognises an id named like an Object.prototype member (%s)',
+    (id) => {
+      expect(isUnknownServerFnPath(`/_serverFn/${id}`)).toBe(true)
+    },
+  )
+
+  it.each([
+    '/_serverFn/',
+    '/_serverFn/abc123',
+    '/_serverFn/abc123/x',
+    '/_serverFn/%5F%5Fproto%5F%5F',
+  ])('leaves %s to the resolver', (pathname) => {
+    expect(isUnknownServerFnPath(pathname)).toBe(false)
   })
 })
