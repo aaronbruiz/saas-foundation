@@ -2,7 +2,8 @@ name: Docs
 
 # ADR-0028: builds the public docs site (apps/docs) when its build can change. T0: no secrets, no
 # environment. Scans the output like the app's client bundle (invariant 8) and asserts what the
-# site promises: search, the 404 page, llms.txt and a Markdown twin per page.
+# site promises: search, the 404 page, llms.txt and a Markdown twin per page. For a same-repo PR it
+# uploads the site, which docs-preview.yml deploys as data.
 on:
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - .github/workflows/docs*.yml
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
+      - scripts/docs/**
   push:
     branches: [main]
     paths:
@@ -25,6 +27,7 @@ on:
       - .github/workflows/docs*.yml
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
+      - scripts/docs/**
 
 concurrency:
   group: docs-${{ github.event.pull_request.number || github.ref }}
@@ -68,3 +71,11 @@ jobs:
           echo "pages=$count indexed=$indexed fragments=$fragments index_chunks=$chunks"
           [ "$indexed" = "$count" ] && [ "$fragments" = "$count" ] && [ "$chunks" -gt 0 ] || { echo "::error::search index doesn't cover every page"; exit 1; }
           if find . -type l | grep -q .; then echo "::error::symlink in the build"; exit 1; fi
+      - name: Upload the site for the docs preview (same-repo PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-site
+          path: apps/docs/dist
+          retention-days: 3
+          if-no-files-found: error
