@@ -1,8 +1,7 @@
 name: Docs
 
-# ADR-0028: builds the public docs site (apps/docs) when its build can change. T0: no secrets, no
-# environment. Scans the output like the app's client bundle (invariant 8) and asserts what the
-# site promises: search, the 404 page, llms.txt and a Markdown twin per page. For a same-repo PR it
+# ADR-0028: builds the public docs site (apps/docs) when its build can change, with the shared
+# static-site build (ADR-0033 decision 9). T0: no secrets, no environment. For a same-repo PR it
 # uploads the site, which docs-preview.yml deploys as data.
 on:
   pull_request:
@@ -13,9 +12,10 @@ on:
       - package.json
       - .node-version
       - .github/workflows/docs*.yml
+      - .github/workflows/static-*.yml
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
-      - scripts/docs/**
+      - scripts/sites/**
   push:
     branches: [main]
     paths:
@@ -25,57 +25,21 @@ on:
       - package.json
       - .node-version
       - .github/workflows/docs*.yml
+      - .github/workflows/static-*.yml
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
-      - scripts/docs/**
+      - scripts/sites/**
 
 concurrency:
   group: docs-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build:
-    name: docs build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (version from packageManager)
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter docs build
-      - name: Scan the site for secrets
-        run: scripts/scan-client-bundle.sh apps/docs/dist
-      - name: Assert the site's files
-        working-directory: apps/docs/dist
-        run: |
-          for f in index.html 404.html llms.txt index.md guides/getting-started.md pagefind/pagefind.js pagefind/pagefind-entry.json _headers; do
-            [ -s "$f" ] || { echo "::error::missing or empty: $f"; exit 1; }
-          done
-          # Every page has a Markdown twin, llms.txt lists each twin once, and search indexed each page.
-          pages="$(find . -name index.html -not -path './pagefind/*' | sed 's|^\./||; s|/*index\.html$||; s|^$|index|' | sort)"
-          twins="$(find . -name '*.md' | sed 's|^\./||; s|\.md$||' | sort)"
-          listed="$(grep '^- ' llms.txt | sed 's|^- \[.*\](https://docs\.aaronlabr\.dev/\(.*\)\.md).*$|\1|' | sort)"
-          printf 'pages:\n%s\ntwins:\n%s\nllms.txt:\n%s\n' "$pages" "$twins" "$listed"
-          [ -n "$pages" ] && [ "$pages" = "$twins" ] && [ "$twins" = "$listed" ] || { echo "::error::pages, .md twins and llms.txt entries differ"; exit 1; }
-          count="$(grep -c '' <<<"$pages")"
-          indexed="$(jq '[.languages[].page_count] | add' pagefind/pagefind-entry.json)"
-          fragments="$(find pagefind/fragment -name '*.pf_fragment' | wc -l)"
-          chunks="$(find pagefind/index -name '*.pf_index' | wc -l)"
-          echo "pages=$count indexed=$indexed fragments=$fragments index_chunks=$chunks"
-          [ "$indexed" = "$count" ] && [ "$fragments" = "$count" ] && [ "$chunks" -gt 0 ] || { echo "::error::search index doesn't cover every page"; exit 1; }
-          if find . -type l | grep -q .; then echo "::error::symlink in the build"; exit 1; fi
-      - name: Upload the site for the docs preview (same-repo PRs)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: docs-site
-          path: apps/docs/dist
-          retention-days: 3
-          if-no-files-found: error
+    uses: ./.github/workflows/static-build.yml
+    permissions:
+      contents: read
+    with:
+      site: docs

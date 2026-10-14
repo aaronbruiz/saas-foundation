@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Derives the Wrangler config for a docs deploy (ADR-0028) from `main`'s apps/docs/wrangler.jsonc:
+// Derives the Wrangler config for a static site deploy (ADR-0028, ADR-0033) from `main`'s
+// apps/<site>/wrangler.jsonc:
 // only its assets-only keys are copied (an allowlist, so nothing else can reach a deploy), and the
 // assets directory becomes the given site directory. `--preview` drops the routes (a Preview never
 // gets the custom domain) and adds the empty `previews` block that `wrangler preview` requires.
 // Prints the config as JSON.
-// Usage: node scripts/docs/config.mjs <apps/docs/wrangler.jsonc> <absolute site dir> [--preview]
+// Usage: node scripts/sites/config.mjs <apps/<site>/wrangler.jsonc> <absolute site dir> [--preview]
 import { readFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 

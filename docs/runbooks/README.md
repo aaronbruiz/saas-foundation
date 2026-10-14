@@ -199,6 +199,8 @@ Verified on the first release (web 0.2.0, 2026-10-14): `versions upload` writes 
 
 The public docs site `apps/docs` is its own assets-only Worker, `saas-foundation-docs`, on `https://docs.aaronlabr.dev`. It has no bindings, secrets or data, so its deploys are continuous and need no approval.
 
+Its workflows (`docs.yml`, `docs-preview.yml`, `docs-deploy.yml`, `docs-rollback.yml`) call the shared static-site workflows `static-*.yml`, which run `scripts/sites/*.sh` with `SITE=docs` (ADR-0033 decision 9).
+
 - **PR preview:** a same-repo PR that changes the docs build (`docs.yml`'s paths) gets Worker Preview `pr-N` of `saas-foundation-docs-preview` on workers.dev, posted as a PR comment (`docs-preview.yml`; the preview is deleted when the PR closes, tidiness only). Previews are public: a docs PR contains nothing you wouldn't publish.
 - **Production:** every merge to `main` that changes the docs build deploys it at 100% (`docs-deploy.yml`): build without secrets, `versions upload --tag docs-<sha7> --message <sha>`, `versions deploy`, smoke test of `/`, `/llms.txt`, `/index.md` and `/version.json` (which reports the commit). **Redeploy** a commit: Actions → Docs deploy → Run workflow, `commit` = a full SHA on `main`'s history.
 - **Rollback:** Actions → Docs rollback → Run workflow with a `reason` and the target `version_id` (`pnpm --filter docs exec wrangler deployments list`). Seconds, no build, nothing else to guard. Locally, with your own login, from `apps/docs`: `pnpm exec wrangler rollback <version-id>`.

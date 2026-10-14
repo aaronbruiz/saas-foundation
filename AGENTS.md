@@ -39,7 +39,7 @@ pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, loca
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 scripts/preview/infra.sh up|down | deploy-artifact.sh | down.sh   # per-PR preview lifecycle; run by CI (ADR-0021)
 scripts/backup/snapshot.sh | dump.sh   # daily Neon snapshot branch + off-provider pg_dump to R2; run by CI (db-backup.yml; ADR-0003, ADR-0023)
-scripts/docs/*.sh   # docs Worker: PR preview, production deploy, rollback; run by CI (docs-preview.yml, docs-deploy.yml, docs-rollback.yml; ADR-0028)
+scripts/sites/*.sh   # static sites (SITE=docs): build checks, PR preview, production deploy, rollback; run by CI (docs*.yml calling the shared static-*.yml; ADR-0028, ADR-0033)
 scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
