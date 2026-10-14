@@ -1,8 +1,8 @@
 name: Docs rollback
 
-# ADR-0029 decision 6 for the docs Worker (ADR-0028): `wrangler rollback` to a given version, with
-# a required reason. No build, seconds. The docs have no data or secrets, so none of rollback.yml's
-# migration or secret guards apply; it shares docs-deploy.yml's lock.
+# ADR-0029 decision 6 for the docs Worker (ADR-0028), with the shared static-site rollback
+# (ADR-0033 decision 9): `wrangler rollback` to a given version, with a required reason. No build,
+# seconds; it shares docs-deploy.yml's lock.
 on:
   workflow_dispatch:
     inputs:
@@ -24,29 +24,12 @@ permissions: {}
 
 jobs:
   rollback:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: docs
+    uses: ./.github/workflows/static-rollback.yml
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          cache: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
-      - name: Roll back
-        env:
-          VERSION_ID: ${{ inputs.version_id }}
-          REASON: ${{ inputs.reason }}
-          ACTOR: ${{ github.actor }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DOCS_TOKEN }}
-        run: scripts/docs/rollback.sh
+    with:
+      site: docs
+      reason: ${{ inputs.reason }}
+      version_id: ${{ inputs.version_id }}
+    secrets:
+      token: ${{ secrets.CLOUDFLARE_DOCS_TOKEN }}
