@@ -1,6 +1,6 @@
 # ADR-0033: A static marketing site on the apex, a shared static-site pipeline, and the app deployable named `app`
 
-Status: Proposed · Date: 2026-10-14
+Status: Accepted (owner 2026-10-14: the research's four recommendations: the site as its own static Worker, amounts in a site file with checks, the full rename, one ADR) · Date: 2026-10-14
 
 Adds a third Worker under [ADR-0002](0002-single-tanstack-start-worker.md) and [ADR-0007](0007-defer-cloudflare-products.md), following [ADR-0027](0027-polyglot-service-and-repository-boundaries.md)'s criteria and checklist and [ADR-0028](0028-public-docs-site.md)'s pattern. Supersedes in part [ADR-0029](0029-releases-deploys-and-rollback.md) decision 1 (the component and tag name). Takes the "plans and limits" row of ADR-0028's Deferred table. Research: `.local/research/landing-and-rename-2026-10-14.md` (git-ignored, kept by the owner).
 
