@@ -220,6 +220,43 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
 - **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded (accepted 2026-10-13 with an upgrade trigger, ADR-0026).
 - Polar production mode (section "Polar") needs C first, since paying customers are real data, and its sandbox checks passed.
 
+**Smoke-test users removal (ADR-0032 Rollout step 3, owner, once).** After step 2 has deleted every smoke-test organization through Better Auth. No user-deletion endpoint is enabled, so it's SQL, in the Neon console (production project → SQL Editor, branch `main`, database `app`). In both statements, replace the `VALUES` list with **every** smoke-test address ever allowlisted (four by the records: section "Data gate" above and runbook "Email" steps 2 and 5), typed in the editor only: never commit or paste the addresses anywhere else (the SQL Editor keeps them in its query history; they are the owner's own plus-addresses). Deleting a user cascades to its sessions and accounts (passwords); the statement also deletes its password-reset tokens (`verification` rows keyed by user id).
+
+- Check first:
+
+  ```sql
+  WITH smoke(email) AS (VALUES ('<smoke address 1>'), ('<smoke address 2>')),
+  targets AS (SELECT id FROM "user" WHERE email IN (SELECT lower(email) FROM smoke))
+  SELECT
+    (SELECT count(*) FROM "user") AS all_users,
+    (SELECT count(*) FROM targets) AS smoke_users,
+    (SELECT count(*) FROM session WHERE user_id IN (SELECT id FROM targets)) AS sessions,
+    (SELECT count(*) FROM account WHERE user_id IN (SELECT id FROM targets)) AS accounts,
+    (SELECT count(*) FROM verification WHERE identifier LIKE 'reset-password:%' AND value IN (SELECT id FROM targets)) AS reset_tokens,
+    (SELECT count(*) FROM organization) AS organizations,
+    (SELECT count(*) FROM member WHERE user_id IN (SELECT id FROM targets)) AS memberships,
+    (SELECT count(*) FROM invitation WHERE inviter_id IN (SELECT id FROM targets) OR lower(email) IN (SELECT lower(email) FROM smoke)) AS invitations,
+    (SELECT count(*) FROM project WHERE created_by IN (SELECT id FROM targets)) AS projects;
+  ```
+
+  Go on only if `all_users` = `smoke_users` (production holds only smoke-test accounts; another user means an address is missing from the list, or someone else signed up: stop) and `organizations`, `memberships`, `invitations` and `projects` are all 0 (otherwise step 2 isn't finished). Note `smoke_users`.
+
+- Delete (one statement, so it applies entirely or not at all):
+
+  ```sql
+  WITH smoke(email) AS (VALUES ('<smoke address 1>'), ('<smoke address 2>')),
+  targets AS (SELECT id FROM "user" u WHERE email IN (SELECT lower(email) FROM smoke)
+    AND NOT EXISTS (SELECT 1 FROM member m WHERE m.user_id = u.id)
+    AND NOT EXISTS (SELECT 1 FROM invitation i WHERE i.inviter_id = u.id)),
+  reset_tokens AS (DELETE FROM verification WHERE identifier LIKE 'reset-password:%' AND value IN (SELECT id FROM targets) RETURNING 1),
+  users AS (DELETE FROM "user" WHERE id IN (SELECT id FROM targets) RETURNING 1)
+  SELECT (SELECT count(*) FROM users) AS users_deleted, (SELECT count(*) FROM reset_tokens) AS reset_tokens_deleted;
+  ```
+
+  `users_deleted` must equal `smoke_users`. A user still in an organization or with a sent invitation is skipped (a lower count; finish step 2 for it, then rerun); a project they created makes the whole statement fail with `project_created_by_user_id_fk` and deletes nothing.
+
+- Check again with the first statement: every column 0, `all_users` included. Record in ADR-0032 step 3 the date, `users_deleted` and `reset_tokens_deleted` (no addresses or ids).
+
 0. **Preflight:** a clean checkout of `main` at the commit to deploy, Node 24 (`.node-version`), then `pnpm install --frozen-lockfile` (pnpm version from `packageManager`). `pnpm check && pnpm test` pass.
    - _Done 2026-09-30 at `29ce6da`, in a separate detached worktree (`git worktree add --detach <path> origin/main`, no `.dev.vars`): `pnpm check` passed, `pnpm test` 185 passed. Not the main checkout: ESLint also lints git-ignored worktrees nested under `.claude/worktrees/`, which failed `pnpm check` there._
 
