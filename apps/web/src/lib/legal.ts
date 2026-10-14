@@ -85,4 +85,11 @@ export const subprocessors: Subprocessor[] = [
     location: 'Not recorded in the ADRs',
     source: 'ADR-0023',
   },
+  {
+    name: 'Slack',
+    service: 'Production error alerts (from Cloudflare Workers Issues, to a private channel)',
+    data: "Alerts on new and returning production errors: the error message, which may be unredacted and include the request's path, its top stack frame, and the issue's id, type, status and occurrence count",
+    location: 'Not recorded in the ADRs',
+    source: 'ADR-0031 (decision 4, Rollout "Result")',
+  },
 ]
