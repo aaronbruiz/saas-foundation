@@ -65,8 +65,8 @@ jobs:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           out="$RUNNER_TEMP/preview-artifact"
-          mkdir -p "$out/apps/web" "$out/packages/db"
-          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/web/dist "$out/apps/web/"
+          mkdir -p "$out/apps/app" "$out/packages/db"
+          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/app/dist "$out/apps/app/"
           rsync -a packages/db/drizzle "$out/packages/db/"
       - name: Upload the preview artifact
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -86,7 +86,7 @@ jobs:
             echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'
             # ADR-0025: Cloudflare's public always-pass Turnstile test keys.
             echo 'TURNSTILE_SITE_KEY=1x00000000000000000000AA'
-            echo 'TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA'; } >apps/web/.dev.vars
+            echo 'TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA'; } >apps/app/.dev.vars
           pnpm db:migrate
-          pnpm --filter web exec playwright install --with-deps chromium
+          pnpm --filter app exec playwright install --with-deps chromium
           pnpm test:e2e

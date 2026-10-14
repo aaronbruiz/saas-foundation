@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks the production Worker's configuration before a deploy (`pnpm run deploy`, release preflight).
 // Fails when
-//   - apps/web/wrangler.jsonc sets EMAIL_VERIFICATION (ADR-0016: any `vars` block would reach
+//   - apps/app/wrangler.jsonc sets EMAIL_VERIFICATION (ADR-0016: any `vars` block would reach
 //     production; only previews may turn it off, with --var from scripts/preview/lib.sh);
 //   - with --deployed, the production Worker has an EMAIL_VERIFICATION secret (secrets persist
 //     across deploys; the app also ignores `off` outside a workers.dev URL), or lacks either
@@ -11,17 +11,17 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-const CONFIG = new URL('../apps/web/wrangler.jsonc', import.meta.url)
+const CONFIG = new URL('../apps/app/wrangler.jsonc', import.meta.url)
 const errors = []
 
 if (/"EMAIL_VERIFICATION"\s*:/.test(readFileSync(CONFIG, 'utf8')))
   errors.push(
-    'apps/web/wrangler.jsonc sets EMAIL_VERIFICATION; only previews may turn it off (via --var)',
+    'apps/app/wrangler.jsonc sets EMAIL_VERIFICATION; only previews may turn it off (via --var)',
   )
 
 if (process.argv.includes('--deployed')) {
   const out = execFileSync('wrangler', ['secret', 'list', '--format', 'json'], {
-    cwd: new URL('../apps/web/', import.meta.url),
+    cwd: new URL('../apps/app/', import.meta.url),
     encoding: 'utf8',
   })
   const names = new Set(JSON.parse(out.slice(out.indexOf('['))).map((s) => s.name))

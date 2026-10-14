@@ -8,7 +8,7 @@
 source "$(dirname "$0")/lib.sh"
 : "${CLOUDFLARE_API_TOKEN:?}"
 
-(cd "$ROOT/apps/web" && pnpm exec node ../../scripts/check-secrets.mjs --deployed)
+(cd "$ROOT/apps/app" && pnpm exec node ../../scripts/check-secrets.mjs --deployed)
 
 dep="$(deployment)"
 count="$(jq '.versions | length' <<<"$dep")"
@@ -16,6 +16,6 @@ count="$(jq '.versions | length' <<<"$dep")"
 live="$(jq -r '.versions[0].version_id' <<<"$dep")"
 tag="$(annotations "$live" | jq -r '.["workers/tag"] // empty')"
 # Only a release tag counts (and reaches GITHUB_OUTPUT); anything else is "untagged".
-[[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || tag=
+[[ "$tag" =~ ^app-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || tag=
 log "live: $live (${tag:-untagged}) at 100%"
 echo "live_tag=$tag" >>"${GITHUB_OUTPUT:-/dev/null}"

@@ -21,10 +21,10 @@ DOCS_HOST="$(grep -m1 -oE '"pattern": *"[a-z0-9.-]+"' "$DOCS_CONFIG" | grep -oE 
   die "can't read the Worker name or hostname from apps/docs/wrangler.jsonc"
 
 # The docs config has no account id: wrangler takes CLOUDFLARE_ACCOUNT_ID, which must be the one
-# pinned in apps/web/wrangler.jsonc (ADR-0017, as scripts/preview/lib.sh checks).
-pinned_account="$(grep -oE '"account_id": *"[0-9a-f]{32}"' "$ROOT/apps/web/wrangler.jsonc" | grep -oE '[0-9a-f]{32}' || true)"
+# pinned in apps/app/wrangler.jsonc (ADR-0017, as scripts/preview/lib.sh checks).
+pinned_account="$(grep -oE '"account_id": *"[0-9a-f]{32}"' "$ROOT/apps/app/wrangler.jsonc" | grep -oE '[0-9a-f]{32}' || true)"
 [ -n "$pinned_account" ] && [ "${CLOUDFLARE_ACCOUNT_ID:-}" = "$pinned_account" ] ||
-  die "CLOUDFLARE_ACCOUNT_ID doesn't match account_id pinned in apps/web/wrangler.jsonc"
+  die "CLOUDFLARE_ACCOUNT_ID doesn't match account_id pinned in apps/app/wrangler.jsonc"
 
 docs_wrangler() { pnpm --dir "$ROOT/apps/docs" exec wrangler "$@"; }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "bootstrap-sha": "8f1290e4b5843184621e3a8fa31c0fd6e1551d6e",
+  "bootstrap-sha": "5b7ede27c311ea874883d484ca7e82bb4935b123",
   "bump-minor-pre-major": true,
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
@@ -16,11 +16,11 @@
   ],
   "packages": {
     ".": {
-      "component": "web",
+      "component": "app",
       "release-type": "node",
       "include-component-in-tag": true,
       "exclude-paths": ["apps/docs"],
-      "changelog-path": "apps/web/CHANGELOG.md"
+      "changelog-path": "apps/app/CHANGELOG.md"
     }
   }
 }

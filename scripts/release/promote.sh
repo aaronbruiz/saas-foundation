@@ -21,10 +21,10 @@ fi
 ann="$(annotations "$held")"
 tag="$(jq -r '.["workers/tag"] // empty' <<<"$ann")"
 build="$(message_field "$(jq -r '.["workers/message"] // empty' <<<"$ann")" build)"
-[[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$build" ] ||
+[[ "$tag" =~ ^app-v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$build" ] ||
   die "candidate $held has no release tag/build annotation; refusing to promote it"
 
 log "promoting $held ($tag, build $build) over $live"
 wrangler versions deploy "$held@100%" --name "$WORKER" --message "promote $tag" -y >&2
-expect_health "${tag#web-v}" "$build" || die "$tag is at 100% but /api/health doesn't report it; check now (rollback.yml)"
+expect_health "${tag#app-v}" "$build" || die "$tag is at 100% but /api/health doesn't report it; check now (rollback.yml)"
 echo "### Released $tag" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"

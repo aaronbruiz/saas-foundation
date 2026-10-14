@@ -2,10 +2,10 @@ name: Release
 
 # ADR-0029: releases and production deploys of the `saas-foundation` Worker.
 # - push to main: release-please updates the release PR. Merging the release PR creates the
-#   release (tag web-vX.Y.Z) and this same run deploys it: build (no secrets) → production job:
+#   release (tag app-vX.Y.Z) and this same run deploys it: build (no secrets) → production job:
 #   verify tag and artifact → preflight → guard, restore point (if pending) and the tag's migrations → candidate
 #   at 0% + smoke test through the override header → promote to 100%. The repository variable
-#   RELEASE_HOLD=true stops a release at 0% (decision 3, `hold`), as does any apps/web/wrangler.jsonc
+#   RELEASE_HOLD=true stops a release at 0% (decision 3, `hold`), as does any apps/app/wrangler.jsonc
 #   change against the live release, or an untagged live version (step 8).
 # - workflow_dispatch: `promote` a held candidate, `discard` it (the live version alone at 100%),
 #   or `redeploy` an existing tag (same steps), optionally with `hold`.
@@ -22,7 +22,7 @@ on:
         options: [promote, discard, redeploy]
         required: true
       tag:
-        description: redeploy only, e.g. web-v0.2.0
+        description: redeploy only, e.g. app-v1.2.3
         type: string
       hold:
         description: redeploy only, stop at 0% after the smoke test
@@ -88,7 +88,7 @@ jobs:
             mode=redeploy; tag="$INPUT_TAG"; hold="$INPUT_HOLD"
           fi
           if [ "$mode" = deploy ] || [ "$mode" = redeploy ]; then
-            [[ "$tag" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid tag '$tag'"; exit 1; }
+            [[ "$tag" =~ ^app-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid tag '$tag'"; exit 1; }
           fi
           { echo "mode=$mode"; echo "tag=$tag"; echo "hold=$hold"; } >>"$GITHUB_OUTPUT"
 
@@ -128,8 +128,8 @@ jobs:
       - name: Assemble the artifact (Worker build + the tag's migrations)
         run: |
           out="$RUNNER_TEMP/release-artifact"
-          mkdir -p "$out/apps/web" "$out/packages/db"
-          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/web/dist "$out/apps/web/"
+          mkdir -p "$out/apps/app" "$out/packages/db"
+          rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/app/dist "$out/apps/app/"
           rsync -a packages/db/drizzle "$out/packages/db/"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -183,7 +183,7 @@ jobs:
           sha="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
           [ "$sha" = "$BUILT" ] || { echo "::error::$TAG is $sha but the build job built $BUILT"; exit 1; }
           git merge-base --is-ancestor "$sha" HEAD || { echo "::error::$TAG ($sha) is not on main's history"; exit 1; }
-          prev="$(git tag --list 'web-v*' --sort=-v:refname | awk -v t="$TAG" 'f {print; exit} $0 == t {f=1}')"
+          prev="$(git tag --list 'app-v*' --sort=-v:refname | awk -v t="$TAG" 'f {print; exit} $0 == t {f=1}')"
           echo "prev_tag=$prev" >>"$GITHUB_OUTPUT"
           echo "preceding release: ${prev:-none}"
           scripts/release/check-artifact.sh
@@ -203,16 +203,16 @@ jobs:
           # An automatic release deploys only the newest release tag: a re-run after newer releases
           # were tagged is refused, whatever is live (the live identity can be unknown). Going back
           # is a deliberate `redeploy`.
-          newest="$(git tag --list 'web-v*' --sort=-v:refname | head -n1)"
+          newest="$(git tag --list 'app-v*' --sort=-v:refname | head -n1)"
           if [ "$MODE" = deploy ] && [ "$TAG" != "$newest" ]; then
             echo "::error::$TAG isn't the newest release ($newest); use action: redeploy to deploy it"
             exit 1
           fi
           # Step 8: `versions upload` applies no routes, custom domains or cron triggers. Any change
-          # to apps/web/wrangler.jsonc since the live release, or an untagged live version, holds the
+          # to apps/app/wrangler.jsonc since the live release, or an untagged live version, holds the
           # release before promotion (a diff that fails counts as changed); the owner applies
           # route/trigger changes by hand.
-          if [ -n "$LIVE_TAG" ] && git diff --quiet "$LIVE_TAG" "$TAG" -- apps/web/wrangler.jsonc; then changed=false; else changed=true; fi
+          if [ -n "$LIVE_TAG" ] && git diff --quiet "$LIVE_TAG" "$TAG" -- apps/app/wrangler.jsonc; then changed=false; else changed=true; fi
           echo "config_changed=$changed" >>"$GITHUB_OUTPUT"
           echo "wrangler.jsonc changed since ${LIVE_TAG:-the live version (untagged)}: $changed"
       - name: Migrate (guard; restore point if anything is pending; the tag's migrations, main's migrator)

@@ -1,6 +1,6 @@
 // ADR-0022 POC: the real Polar adapter (providers/polar.ts) against the Polar sandbox. Not part of
 // `pnpm test`; run with `vitest run --config vitest.eval.config.ts` and POLAR_EVAL_RUN=<slug>.
-// Uses the sandbox token and eval emails from apps/web/.dev.vars; cleans up its customer.
+// Uses the sandbox token and eval emails from apps/app/.dev.vars; cleans up its customer.
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import {
@@ -15,7 +15,7 @@ const vars = env as unknown as Record<string, string | undefined>
 const run = vars.POLAR_EVAL_RUN ?? ''
 const required = (key: string) => {
   const v = vars[key]
-  if (!v) throw new Error(`${key} missing in apps/web/.dev.vars`)
+  if (!v) throw new Error(`${key} missing in apps/app/.dev.vars`)
   return v
 }
 

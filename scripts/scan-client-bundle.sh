@@ -2,21 +2,21 @@
 # Fails if browser-served assets contain secret VALUES (AGENTS.md invariant 8). Names alone are
 # fine (e.g. Better Auth's env helper references `BETTER_AUTH_SECRET` by name and returns
 # undefined in the browser). Checks: connection strings with credentials, Neon passwords, and the
-# actual values from apps/web/.dev.vars and of secret env vars (CLOUDFLARE_API_TOKEN, NEON_API_KEY,
+# actual values from apps/app/.dev.vars and of secret env vars (CLOUDFLARE_API_TOKEN, NEON_API_KEY,
 # BETTER_AUTH_SECRET, POLAR_ACCESS_TOKEN, POLAR_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY) when present:
 # what a bad Vite `define` would inline.
 # Usage: scripts/scan-client-bundle.sh [dist/client dir]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-dir="${1:-$root/apps/web/dist/client}"
+dir="${1:-$root/apps/app/dist/client}"
 [ -d "$dir" ] || { echo "[scan] no client bundle at $dir (build first)" >&2; exit 1; }
 found=0
 if grep -rIlE 'postgres(ql)?://[^"'"'"' ]+:[^"'"'"' @]+@|npg_[A-Za-z0-9]{8,}' "$dir"; then found=1; fi
-if [ -f "$root/apps/web/.dev.vars" ]; then
+if [ -f "$root/apps/app/.dev.vars" ]; then
   while IFS='=' read -r key value; do
     [ "${#value}" -ge 16 ] || continue
     if grep -rIlF -- "$value" "$dir"; then echo "[scan] value of $key found" >&2; found=1; fi
-  done < <(grep -E '^[A-Z_]+=' "$root/apps/web/.dev.vars")
+  done < <(grep -E '^[A-Z_]+=' "$root/apps/app/.dev.vars")
 fi
 # Values of secrets present in this environment (CI tokens, the preview auth secret). Never printed.
 for var in ${SCAN_SECRET_VARS:-CLOUDFLARE_API_TOKEN NEON_API_KEY BETTER_AUTH_SECRET POLAR_ACCESS_TOKEN POLAR_WEBHOOK_SECRET TURNSTILE_SECRET_KEY}; do

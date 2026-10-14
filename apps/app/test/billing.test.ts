@@ -51,7 +51,7 @@ import {
 
 stubPolarApi()
 
-// Direct SQL for assertions and fixtures only (apps/web doesn't depend on drizzle-orm).
+// Direct SQL for assertions and fixtures only (apps/app doesn't depend on drizzle-orm).
 type RawQuery = (sql: string, params: unknown[]) => Promise<{ rowCount: number | null }>
 const raw = (db: Db) => (rawDb(db) as unknown as { $client: { query: RawQuery } }).$client
 

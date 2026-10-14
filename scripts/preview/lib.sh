@@ -19,16 +19,16 @@ source "$ROOT/scripts/common.sh"
 
 # Fail closed (ADR-0017): the account in CI must be the one pinned in wrangler.jsonc, so direct API
 # calls can't target another account the token reaches.
-pinned_account="$(grep -oE '"account_id": *"[0-9a-f]{32}"' "$ROOT/apps/web/wrangler.jsonc" | grep -oE '[0-9a-f]{32}' || true)"
+pinned_account="$(grep -oE '"account_id": *"[0-9a-f]{32}"' "$ROOT/apps/app/wrangler.jsonc" | grep -oE '[0-9a-f]{32}' || true)"
 if [ -z "$pinned_account" ] || [ "$pinned_account" != "$CLOUDFLARE_ACCOUNT_ID" ]; then
-  log "ERROR: CLOUDFLARE_ACCOUNT_ID doesn't match account_id pinned in apps/web/wrangler.jsonc"
+  log "ERROR: CLOUDFLARE_ACCOUNT_ID doesn't match account_id pinned in apps/app/wrangler.jsonc"
   exit 1
 fi
 # The production Hyperdrive config (the first id in wrangler.jsonc; the previews sentinel is all
 # zeros). Every preview path refuses it explicitly (ADR-0021).
-PROD_HYPERDRIVE_ID="$(grep -oE '"id": *"[0-9a-f]{32}"' "$ROOT/apps/web/wrangler.jsonc" | head -n1 | grep -oE '[0-9a-f]{32}' || true)"
+PROD_HYPERDRIVE_ID="$(grep -oE '"id": *"[0-9a-f]{32}"' "$ROOT/apps/app/wrangler.jsonc" | head -n1 | grep -oE '[0-9a-f]{32}' || true)"
 if ! [[ "$PROD_HYPERDRIVE_ID" =~ ^[0-9a-f]{32}$ ]] || [ "$PROD_HYPERDRIVE_ID" = "$(printf '0%.0s' {1..32})" ]; then
-  log "ERROR: can't find the production Hyperdrive id in apps/web/wrangler.jsonc"
+  log "ERROR: can't find the production Hyperdrive id in apps/app/wrangler.jsonc"
   exit 1
 fi
 
@@ -144,7 +144,7 @@ deploy_preview() {
   # --ignore-base-config: only the checked config, --var and the secrets file apply, never bindings
   # or settings from the dashboard's Preview base config (ADR-0024: previews get no email binding).
   # stdout to stderr: it's reserved for workflow commands (deploy-artifact.sh).
-  pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
+  pnpm --dir "$ROOT/apps/app" exec wrangler preview "$@" --ignore-base-config \
     --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" \
     --var "BETTER_AUTH_URL:$url" --var "SIGNUP_MODE:open" \
     --var "EMAIL_VERIFICATION:off" --var "TURNSTILE_SITE_KEY:1x00000000000000000000AA" \

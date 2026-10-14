@@ -6,7 +6,7 @@
 # only point from before an earlier, failed migration. A prune that fails (e.g. a branch with
 # children after a restore) is a warning, not a stopped release.
 # Restoring from it is the manual runbook procedure ("Database"), never a workflow.
-# Usage: NEON_API_KEY=... NEON_PROJECT_ID=... TAG=web-vX.Y.Z scripts/release/restore-point.sh
+# Usage: NEON_API_KEY=... NEON_PROJECT_ID=... TAG=app-vX.Y.Z scripts/release/restore-point.sh
 source "$(dirname "$0")/lib.sh"
 : "${TAG:?}" # validated by release.yml (resolve)
 KEEP=2
@@ -22,7 +22,7 @@ jq -e --arg n "$name" 'any(.branches[]; .name == $n)' <<<"$branches" >/dev/null 
 log "restore point $name created"
 
 prune=()
-old="$(jq -r --argjson k "$KEEP" '[.branches[] | select(.name | test("^pre-migrate-web-v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{8}T[0-9]{6}Z$"))]
+old="$(jq -r --argjson k "$KEEP" '[.branches[] | select(.name | test("^pre-migrate-app-v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{8}T[0-9]{6}Z$"))]
   | sort_by(.created_at) | reverse | .[$k:][] | "\(.id) \(.name)"' <<<"$branches")"
 lines_to "$old" prune
 for line in "${prune[@]}"; do

@@ -1,5 +1,5 @@
 // Polar sandbox evaluation only (eval/**, not part of `pnpm test`). Runs inside workerd like the app.
-// Sandbox values come from the git-ignored apps/web/.dev.vars (POLAR_* keys only); nothing is logged.
+// Sandbox values come from the git-ignored apps/app/.dev.vars (POLAR_* keys only); nothing is logged.
 import { cloudflareTest } from '@cloudflare/vitest-plugin'
 import { existsSync, readFileSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'

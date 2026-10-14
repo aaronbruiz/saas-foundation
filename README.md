@@ -13,7 +13,7 @@ Also needs Docker (local Postgres 17).
 
 ```sh
 pnpm install
-cp apps/web/.dev.vars.example apps/web/.dev.vars   # then set BETTER_AUTH_SECRET
+cp apps/app/.dev.vars.example apps/app/.dev.vars   # then set BETTER_AUTH_SECRET
 pnpm db:up    # local Postgres: dev DB `app`, test DB `app_test`
 pnpm db:migrate
 pnpm dev      # http://localhost:3000 (health: /api/health)

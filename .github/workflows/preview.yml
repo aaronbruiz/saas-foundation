@@ -187,7 +187,7 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.url }}
         run: |
           [[ "$BASE_URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
-          pnpm --filter web exec playwright install --with-deps chromium
+          pnpm --filter app exec playwright install --with-deps chromium
           pnpm test:e2e
       - name: Comment preview URL on the PR
         if: always() && needs.deploy.outputs.url != ''

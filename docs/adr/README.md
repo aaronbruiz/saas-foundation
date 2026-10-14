@@ -30,7 +30,8 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0026](0026-neon-plan-capacity-and-upgrade-trigger.md): Neon plan for launch: Free's capacity limits and the upgrade trigger
 - [ADR-0027](0027-polyglot-service-and-repository-boundaries.md): Polyglot services and repository boundaries
 - [ADR-0028](0028-public-docs-site.md): Public product docs: a static Starlight site on its own assets-only Worker
-- [ADR-0029](0029-releases-deploys-and-rollback.md): Releases, deploys and rollback: release PRs, a 0% release candidate, dispatch and rollback workflows
+- [ADR-0029](0029-releases-deploys-and-rollback.md): Releases, deploys and rollback: release PRs, a 0% release candidate, dispatch and rollback workflows (component and tag name: superseded by ADR-0033)
 - [ADR-0030](0030-git-workflow.md): Git workflow: trunk-based, squash-merged Conventional PRs, specs in the PR
 - [ADR-0031](0031-production-alerting-issues-to-slack.md): Production alerting: Workers Issues automations to a private Slack channel
 - [ADR-0032](0032-lift-the-data-gate-allowlisted-pilot.md): Lift the data gate: an allowlisted pilot with real customer data on Polar's sandbox
+- [ADR-0033](0033-marketing-site-and-app-naming.md): A static marketing site on the apex, a shared static-site pipeline, and the app deployable named `app`

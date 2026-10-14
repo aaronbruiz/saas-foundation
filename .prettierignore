@@ -7,4 +7,4 @@ pnpm-lock.yaml
 **/.astro
 **/drizzle/meta
 **/src/schema/auth.ts
-/apps/web/CHANGELOG.md
+/apps/app/CHANGELOG.md

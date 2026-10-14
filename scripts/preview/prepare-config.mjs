@@ -20,9 +20,9 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 
-const WORKER_NAME = 'saas-foundation' // `name` in the committed apps/web/wrangler.jsonc
+const WORKER_NAME = 'saas-foundation' // `name` in the committed apps/app/wrangler.jsonc
 const PREVIEWS_SENTINEL = '0'.repeat(32)
-// `send_email` in the committed apps/web/wrangler.jsonc (ADR-0024). Removed from every preview.
+// `send_email` in the committed apps/app/wrangler.jsonc (ADR-0024). Removed from every preview.
 const COMMITTED_SEND_EMAIL = [
   { name: 'EMAIL', allowed_sender_addresses: ['no-reply@mail.aaronlabr.dev'] },
 ]
