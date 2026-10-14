@@ -2,7 +2,7 @@
 
 Status: Accepted (owner decision 2026-09-28, Q8) · Date: 2026-09-28
 
-Superseded in part by [ADR-0031](0031-production-alerting-issues-to-slack.md): the alerting requirement's rate rule (restated as an alert on every new issue) and the "not configured here" note (automations to a private Slack channel).
+Superseded in part by [ADR-0031](0031-production-alerting-issues-to-slack.md): the alerting requirement, both clauses (restated as an alert on each new issue and on an issue's return after an hour), and the "not configured here" note (automations to a private Slack channel).
 
 ## Context
 

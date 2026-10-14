@@ -36,8 +36,17 @@ Other options considered (owner, 2026-10-13):
 
    The preview and docs Workers get none: previews are short-lived and fail on purpose in tests.
 
-3. **ADR-0015's requirement, restated** (supersedes its rate rule): every `5xx` response is an Issues occurrence, so "any new issue alerts" is stricter than "5xx above 1 % over 5 minutes" for the first failure of a kind. What's lost: an issue already alerted on and still occurring doesn't alert again until it has been quiet for an hour. The owner treats an alerted issue as ongoing until it's resolved in the Issues page. A rate rule becomes a Sentry trigger if that proves too weak.
-4. **Data sent to Slack**: an issue's summary and diagnostic context (error message, stack trace, request path). ADR-0015's log contract already keeps secrets and PII out of our logs (redaction is best effort), and query strings are stripped. Nobody but the owner joins the channel. Alert content isn't copied to other channels or tickets (runbook "Observability").
+3. **ADR-0015's requirement, restated** (supersedes both of its clauses, "any `server_fn.unhandled` or `health.db_down` event" and the 5xx rate rule). The owner is notified within 15 minutes of:
+   - the **first occurrence of each new issue**: any uncaught exception, failed invocation, `5xx` response or error-level log, `server_fn.unhandled` and `health.db_down` included;
+   - an issue's **return after at least 1 hour without occurrences**.
+
+   What's lost compared with ADR-0015: **later occurrences of an issue already alerted on don't alert** (ADR-0015 asked for every event), and there's no rate rule. For the first failure of a kind this is stricter than "5xx above 1 % over 5 minutes", since one `5xx` is enough. The owner treats an alerted issue as ongoing until it's resolved in the Issues page, where its occurrence count shows whether it continues. A per-event or rate rule becomes a Sentry trigger if this proves too weak.
+
+4. **Data sent to Slack**: an issue's summary and diagnostic context. Its exact fields aren't documented beyond Cloudflare Notifications' webhook payload, so the end-to-end test records them (Rollout step 3).
+   - **What our code controls:** our own log lines follow ADR-0015's log contract (no secrets or PII, best-effort redaction), and query strings are stripped from logged URLs (`redact_query_string`).
+   - **What it doesn't:** Issues captures uncaught exceptions and failed invocations **without our logger**, so their messages and stack traces are the framework's or library's, unredacted. Its diagnostic context may also carry request metadata or log lines. A private channel controls who sees them; it doesn't scrub anything.
+   - **Residual risk, accepted** for a private channel with only the owner as a member: an unredacted exception message (for example one quoting a value) could reach Slack. If the test alert shows request headers, cookies, tokens, emails or bodies, the destination isn't acceptable as is: stop and revisit (a webhook to an endpoint we control that forwards a reduced summary, or Sentry with scrubbing). Slack keeps messages under the workspace's retention settings.
+   - Alert content isn't copied to other channels or tickets (runbook "Observability").
 5. **Latency target: 15 minutes**, checked by the end-to-end test below. Cloudflare doesn't document a latency, so the test is the evidence.
 6. **The Neon usage check stays manual** (ADR-0026, every Monday): Issues doesn't see Neon's usage.
 
@@ -55,13 +64,13 @@ Owner, in the Cloudflare dashboard and Slack; then Claude records the result her
      https://app.aaronlabr.dev/_serverFn/alert-test-$(date -u +%Y%m%d%H%M)
    ```
 
-   Pass: `500`, an issue in the Issues page, and a Slack message **within 15 minutes** of the request. Record: the request time (UTC), the status, the issue, the Slack message time. If production returns anything but `5xx`, pick another controlled failure before recording anything. Then resolve the test issue.
+   Pass: `500`, an issue in the Issues page, and a Slack message **within 15 minutes** of the request. Record: the request time (UTC), the status, the issue, the Slack message time, and **which fields the Slack message carries** (decision 4: none of headers, cookies, tokens, emails or bodies). If production returns anything but `5xx`, pick another controlled failure before recording anything. Then resolve the test issue.
 
-4. Fail (no message within 15 minutes, or no destination works): the requirement stays unmet, and Sentry's ADR becomes the next step (ADR-0015).
+4. Fail (no message within 15 minutes, no destination works, or the message carries data decision 4 excludes): the requirement stays unmet, and Sentry's ADR becomes the next step (ADR-0015).
 
 ## Consequences
 
 - When the test passes, ADR-0015's alerting requirement is met, as restated in decision 3. Milestone C still needs smoke-account removal and the ADR that lifts the data gate.
 - A failure the Worker turns into a non-5xx response without an error log (for example an expected 4xx) doesn't alert. That's intended.
 - Anyone can cause such a `500` from outside (unknown server-function ids are answered with `500`, not `404`). Grouping limits the noise to one alert per new issue, plus one per hour of recurrence. If it becomes noise, follow-up: answer unknown ids with `404`.
-- ADR-0015 gets a "Superseded in part by ADR-0031" line for the rate rule and the "not configured here" note. Its log contract and Sentry triggers stand.
+- ADR-0015 gets a "Superseded in part by ADR-0031" line for its alerting requirement (both clauses, restated in decision 3) and the "not configured here" note. Its log contract and Sentry triggers stand.
