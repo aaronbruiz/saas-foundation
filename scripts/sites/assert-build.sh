@@ -29,7 +29,8 @@ case "$SITE" in
     [ "$indexed" = "$count" ] && [ "$fragments" = "$count" ] && [ "$chunks" -gt 0 ] || die "search index doesn't cover every page"
     ;;
   site)
-    inline="$(grep -l -i -E '<script|<style|[[:space:]]style[[:space:]]*=' $(find . -name '*.html') || true)"
+    # -z: each file is one record, so an attribute split across lines is still found.
+    inline="$(grep -l -z -i -E '<script|<style|[[:space:]]style[[:space:]]*=' $(find . -name '*.html') || true)"
     [ -z "$inline" ] || die "scripts or inline styles (the CSP blocks them) in: $inline"
     for path in / /pricing/; do
       grep -q "<loc>https://$SITE_HOST$path</loc>" sitemap-0.xml || die "the sitemap doesn't list $path"
