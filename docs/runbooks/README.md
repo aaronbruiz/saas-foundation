@@ -40,7 +40,10 @@ Where to look when production fails:
   - A user-reported Cloudflare ray id (shown on Cloudflare error pages) matches `rayId`.
   - Each request's invocation log shows its status and outcome.
 - **Live:** `pnpm --filter web exec wrangler tail saas-foundation --format pretty --search '"level":"error"'`. Don't rely on `--status error`: it filters on the invocation's outcome, and server-function failures are turned into responses, so those invocations end `ok`.
-- **Issues:** Workers & Pages → `saas-foundation` → Issues groups exceptions, `5xx` responses and error-level logs (ADR-0015). No automation or destination is configured yet, so nothing alerts; check it by hand.
+- **Issues:** Workers & Pages → `saas-foundation` → Issues groups exceptions, `5xx` responses and error-level logs (ADR-0015).
+- **Alerting (ADR-0031):** Issues automations post to the owner's private Slack channel: occurrence threshold 1 (each new issue once) and recurrence after 1 hour of inactivity. Destination `slack-saas-foundation-alerts` (Cloudflare Notifications webhook to a Slack incoming webhook). Tested end to end 2026-10-14: a new-issue alert within about a minute (ADR-0031 "Result"; channel privacy, app scopes and the recurrence automation owner-confirmed; recurrence not yet exercised). To re-test after changing it, run ADR-0031's test request.
+  - On an alert: open the issue, find its `event` and `rayId` in Logs, and treat it as ongoing until resolved in Issues (a still-occurring issue doesn't alert again).
+  - Don't forward alert content to other channels or tickets (it carries error messages and stack traces).
 - **Health:** `curl -s https://<domain>/api/health` returns `{ ok, db, version, commit, build }` (ADR-0029: root `package.json` version, 7-character commit, CI build id or `local`). A `503` means the database is unreachable; the reason is in the `health.db_down` event.
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
@@ -213,7 +216,7 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
 
 - **A. Technically deployed:** production DB migrated, Worker deployed (steps 0–7). Sign-up allowlisted to smoke-test addresses; no real customer data, no Polar production mode, no public sign-up.
 - **B. Internal production smoke complete:** smoke test passed (step 8), WAF rule applied and tested (steps 9–10), the previous broad Cloudflare user token confirmed revoked (step 11). Still no real customer data.
-- **C. Real customer data, sign-up still allowlisted:** backup option B implemented and a restore from it tested (ADR-0014), alerting operational (ADR-0015), email delivery live and email verification enforced (ADR-0016), smoke-test accounts removed, and a new ADR lifting the data gate. Then, after deleting the smoke-test accounts, `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with only the admitted customers' addresses (no smoke-test address left in it), and keep `SIGNUP_MODE` unset.
+- **C. Real customer data, sign-up still allowlisted:** backup option B implemented and a restore from it tested (ADR-0014), alerting operational (ADR-0015, ADR-0031), email delivery live and email verification enforced (ADR-0016), smoke-test accounts removed, and a new ADR lifting the data gate. Then, after deleting the smoke-test accounts, `pnpm --filter web exec wrangler secret put SIGNUP_ALLOWLIST` with only the admitted customers' addresses (no smoke-test address left in it), and keep `SIGNUP_MODE` unset.
 - **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded (accepted 2026-10-13 with an upgrade trigger, ADR-0026).
 - Polar production mode (section "Polar") needs C first, since paying customers are real data, and its sandbox checks passed.
 

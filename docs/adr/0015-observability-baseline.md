@@ -2,6 +2,8 @@
 
 Status: Accepted (owner decision 2026-09-28, Q8) · Date: 2026-09-28
 
+Superseded in part by [ADR-0031](0031-production-alerting-issues-to-slack.md): the alerting requirement, both clauses (restated as an alert on each new issue and on an issue's return after an hour), and the "not configured here" note (automations to a private Slack channel).
+
 ## Context
 
 First production needs a way to see and act on failures. The owner chose Cloudflare's built-in Workers Observability as the baseline and ruled out adding a vendor just because Phase 5 says "error tracking". Sentry is the prepared next step for gaps that Cloudflare demonstrably doesn't cover.
