@@ -1,6 +1,6 @@
 # ADR-0034: OpenAPI generation for the public API: `@hono/zod-openapi` from `packages/contracts`
 
-Status: Proposed · Date: 2026-10-14
+Status: Accepted (owner 2026-10-14) · Date: 2026-10-14
 
 Decides in advance how the public developer API's OpenAPI document is produced, so the API Worker's own ADR doesn't reopen it. Nothing is built until that API's trigger fires ([ADR-0002](0002-single-tanstack-start-worker.md), [ADR-0007](0007-defer-cloudflare-products.md): a public developer API → a separate Worker, Hono allowed). Settles the generator left open by [ADR-0028](0028-public-docs-site.md)'s Deferred row "Reference pages generated from code: API reference" and applies [ADR-0027](0027-polyglot-service-and-repository-boundaries.md)'s "Contracts" rule to an HTTP API.
 
