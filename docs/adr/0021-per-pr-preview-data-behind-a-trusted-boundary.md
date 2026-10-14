@@ -112,3 +112,7 @@ Investigated 2026-09-28/29 on the preview Worker, with evidence (test PR numbers
 - Cost of Access: a new Cloudflare product (its own ADR, invariant 14) plus a service token for the preview E2E job, a new secret in the `preview` environment.
 
 Revisit (Access ADR) before a preview gets anything non-synthetic or a real credential (production data, a live billing provider, real email delivery, a production secret), or if abuse of a preview URL shows up (cost, sign-up spam).
+
+## Notes (2026-10-14)
+
+**Dependabot PRs get no preview** (owner decision). `preview.yml` and `docs-preview.yml` skip branches starting with `dependabot/`, as they skip `release-please--*`. A dependency bump is gated by CI's `check + test` (which includes the unit and integration suites against Postgres) and by the owner's merge; the preview's E2E run against a Neon branch added little for it and held one of the preview project's 10 branches per open Dependabot PR. A branch name only decides whether a preview is skipped, so a human branch named `dependabot/…` can only lose its own preview.

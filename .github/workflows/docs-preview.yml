@@ -41,13 +41,15 @@ permissions: {}
 
 jobs:
   resolve:
-    # Same-repo PRs only, once the docs build passed; not the release PR (ADR-0029).
+    # Same-repo PRs only, once the docs build passed; not the release PR (ADR-0029) nor Dependabot's
+    # PRs (ADR-0021 Notes 2026-10-14).
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      !startsWith(github.event.workflow_run.head_branch, 'release-please--')
+      !startsWith(github.event.workflow_run.head_branch, 'release-please--') &&
+      !startsWith(github.event.workflow_run.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -7,6 +7,7 @@ Starting a new product from this foundation: [start-new-product.md](start-new-pr
 **Invariant:** preview resources are created and removed by CI. Normal preview lifecycle operations (create, reset, deploy, revoke) require no human intervention. Manual operations are administrative or recovery procedures only.
 
 - **Per PR:** Neon branch `preview/pr-<N>` (child of `preview-seed` in the preview project, its own `app_owner` password) and Hyperdrive config `saas-pr-<N>` (caching off). Hyperdrive ids are never reused: a closed PR's config is deleted, a reopened PR gets a new one. **Deleting the config is what revokes database access.** A 404 from a deleted Preview URL is not: deleted Previews and their deployment URLs can keep executing (Cloudflare Previews beta).
+- **Not previewed:** the release PR (ADR-0029), Dependabot's PRs (CI's check + test is their gate) and PRs that change only `apps/docs/**` (they get a docs preview, ADR-0028).
 - **Flow** (`.github/workflows/preview.yml`, `workflow_run` after CI; default-branch code only):
   - `resolve`: the one open same-repo PR whose head is the CI run's commit;
   - `infra` (environment `preview-infra`): `scripts/preview/infra.sh up` creates the branch, or resets its data to the seed, and creates or reuses the guarded config; never sees the artifact;

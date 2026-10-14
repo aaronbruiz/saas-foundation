@@ -1,6 +1,6 @@
-# Dependabot version updates. Every Dependabot PR is a same-repo PR, so it also gets a
-# per-PR preview (ADR-0021): one Neon branch of the preview project's 10 each. Hence few,
-# grouped PRs. Pins that AGENTS.md "Toolchain" explains are kept by the ignore rules.
+# Dependabot version updates. Its PRs get no preview (ADR-0021 Notes 2026-10-14): CI's check +
+# test is their gate. Few, grouped PRs keep the review load low. Pins that AGENTS.md "Toolchain"
+# explains are kept by the ignore rules.
 version: 2
 updates:
   - package-ecosystem: npm # pnpm workspace; one root lockfile
@@ -41,6 +41,8 @@ updates:
       - dependency-name: vitest # ^4.1: @cloudflare/vitest-plugin doesn't support Vitest 5
         update-types: [version-update:semver-major]
       - dependency-name: '@types/node' # the runtime is Node 24
+        update-types: [version-update:semver-major]
+      - dependency-name: eslint # v9 until the config and typescript-eslint are checked on v10
         update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions # SHA-pinned in .github/workflows
