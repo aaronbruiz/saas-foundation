@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.3.0...app-v0.3.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **deps:** bump zod from 4.6.5 to 4.6.6 in the production-minor-and-patch group ([#126](https://github.com/aaronbruiz/saas-foundation/issues/126)) ([279b7c3](https://github.com/aaronbruiz/saas-foundation/commit/279b7c323937573ea4de37fb00a71c8e3e62752e))
+
 ## [0.3.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.2.0...app-v0.3.0) (2026-10-14)
 
 
