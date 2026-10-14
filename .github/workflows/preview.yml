@@ -72,7 +72,7 @@ jobs:
           files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" \
             --jq '.[] | [.filename, .previous_filename // empty] | join("\t")')"
           if [ -n "$files" ] && [ "$(grep -c '' <<<"$files")" = "$changed" ] \
-            && ! tr '\t' '\n' <<<"$files" | grep -qv '^apps/docs/'; then
+            && ! grep -qv '^apps/docs/' <<<"${files//$'\t'/$'\n'}"; then
             echo "::notice title=Preview skipped::PR #$pr changes only apps/docs"
             exit 0
           fi
