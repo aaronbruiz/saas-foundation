@@ -5,8 +5,8 @@ name: Release
 #   release (tag web-vX.Y.Z) and this same run deploys it: build (no secrets) → production job:
 #   verify tag and artifact → preflight → guard, restore point (if pending) and the tag's migrations → candidate
 #   at 0% + smoke test through the override header → promote to 100%. The repository variable
-#   RELEASE_HOLD=true stops a release at 0% (decision 3, `hold`), as does a routes/triggers change
-#   against the live release (step 8).
+#   RELEASE_HOLD=true stops a release at 0% (decision 3, `hold`), as does any apps/web/wrangler.jsonc
+#   change against the live release, or an untagged live version (step 8).
 # - workflow_dispatch: `promote` a held candidate, `discard` it (the live version alone at 100%),
 #   or `redeploy` an existing tag (same steps), optionally with `hold`.
 # Every deploy runs decision 6's breaking-release guard. The production job runs `main`'s scripts
@@ -190,7 +190,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: scripts/release/preflight.sh
-      - name: Release order and routes/triggers against the live release
+      - name: Release order and wrangler.jsonc against the live release
         id: live
         env:
           MODE: ${{ needs.resolve.outputs.mode }}
@@ -205,7 +205,13 @@ jobs:
             echo "::error::$TAG isn't the newest release ($newest); use action: redeploy to deploy it"
             exit 1
           fi
-          BASE_TAG="$LIVE_TAG" scripts/release/routes-changed.sh
+          # Step 8: `versions upload` applies no routes, custom domains or cron triggers. Any change
+          # to apps/web/wrangler.jsonc since the live release, or an untagged live version, holds the
+          # release before promotion (a diff that fails counts as changed); the owner applies
+          # route/trigger changes by hand.
+          if [ -n "$LIVE_TAG" ] && git diff --quiet "$LIVE_TAG" "$TAG" -- apps/web/wrangler.jsonc; then changed=false; else changed=true; fi
+          echo "config_changed=$changed" >>"$GITHUB_OUTPUT"
+          echo "wrangler.jsonc changed since ${LIVE_TAG:-the live version (untagged)}: $changed"
       - name: Migrate (guard; restore point if anything is pending; the tag's migrations, main's migrator)
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
@@ -228,16 +234,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: scripts/release/candidate.sh
       - name: Held at 0%
-        if: needs.resolve.outputs.hold == 'true' || steps.live.outputs.routes_changed == 'true'
+        if: needs.resolve.outputs.hold == 'true' || steps.live.outputs.config_changed == 'true'
         env:
           TAG: ${{ needs.resolve.outputs.tag }}
           CANDIDATE: ${{ steps.candidate.outputs.candidate_version }}
-          ROUTES: ${{ steps.live.outputs.routes_changed }}
+          CONFIG: ${{ steps.live.outputs.config_changed }}
         run: |
-          why="hold requested"; [ "$ROUTES" = true ] && why="routes/triggers differ from the live release (or it's untagged): apply them by hand first"
+          why="hold requested"; [ "$CONFIG" = true ] && why="wrangler.jsonc differs from the live release (or it's untagged): apply any route/trigger changes by hand first"
           echo "::notice title=Held at 0%::$TAG ($CANDIDATE): $why. Test with the header Cloudflare-Workers-Version-Overrides: saas-foundation=\"$CANDIDATE\", then run this workflow with action: promote (or discard)."
       - name: Promote to 100%
-        if: needs.resolve.outputs.hold != 'true' && steps.live.outputs.routes_changed != 'true'
+        if: needs.resolve.outputs.hold != 'true' && steps.live.outputs.config_changed != 'true'
         env:
           CANDIDATE: ${{ steps.candidate.outputs.candidate_version }}
           LIVE: ${{ steps.candidate.outputs.live_version }}

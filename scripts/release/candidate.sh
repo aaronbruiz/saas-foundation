@@ -7,16 +7,11 @@
 # Outputs (GITHUB_OUTPUT): candidate_version, live_version.
 # Usage: CLOUDFLARE_API_TOKEN=... ARTIFACT_DIR=... TAG=web-vX.Y.Z SHA=<commit> BUILD_ID=<run>-<attempt>
 #        scripts/release/candidate.sh
+# Inputs come from release.yml, which validated the tag (resolve) and the artifact
+# (check-artifact.sh) before any production change.
 source "$(dirname "$0")/lib.sh"
 : "${CLOUDFLARE_API_TOKEN:?}" "${ARTIFACT_DIR:?}" "${TAG:?}" "${SHA:?}" "${BUILD_ID:?}"
-[[ "$TAG" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "unexpected tag $TAG"
-[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "unexpected commit $SHA"
-[[ "$BUILD_ID" =~ ^[0-9]+-[0-9]+$ ]] || die "unexpected build id $BUILD_ID"
-
-artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
-config="$artifact/apps/web/dist/server/wrangler.json"
-# Validated before any production change (check-artifact.sh); again here, right before the upload.
-"$(dirname "$0")/check-artifact.sh"
+config="$(cd "$ARTIFACT_DIR" && pwd -P)/apps/web/dist/server/wrangler.json"
 
 dep="$(deployment)"
 [ "$(jq '.versions | length' <<<"$dep")" = 1 ] || die "the deployment already holds a candidate"

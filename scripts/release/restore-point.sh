@@ -8,8 +8,7 @@
 # Restoring from it is the manual runbook procedure ("Database"), never a workflow.
 # Usage: NEON_API_KEY=... NEON_PROJECT_ID=... TAG=web-vX.Y.Z scripts/release/restore-point.sh
 source "$(dirname "$0")/lib.sh"
-: "${TAG:?}"
-[[ "$TAG" =~ ^web-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "unexpected tag $TAG"
+: "${TAG:?}" # validated by release.yml (resolve)
 KEEP=2
 
 name="pre-migrate-$TAG-$(date -u +%Y%m%dT%H%M%SZ)"
