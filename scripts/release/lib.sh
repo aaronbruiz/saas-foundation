@@ -12,6 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG="$ROOT/apps/web/wrangler.jsonc"
 log() { echo "[release] $*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
+NEON_API_PROJECT="${NEON_PROJECT_ID:-}"
+source "$ROOT/scripts/common.sh"
 
 # The production Worker's name, account and hostname, from `main`'s wrangler.jsonc.
 WORKER="$(grep -m1 -oE '^  "name": *"[a-z0-9-]+"' "$CONFIG" | grep -oE '"[a-z0-9-]+"$' | tr -d '"' || true)"
@@ -97,35 +99,14 @@ expect_health() { # $1 = version, $2 = build id, $3 = version id to override to 
   return 1
 }
 
-# Neon REST API for the production project (no CLI). $1 = path under /projects/:id, rest = curl
-# args. Retries while another operation holds the branch (HTTP 423). Prints the body on 2xx.
-neon_api() {
-  : "${NEON_API_KEY:?}" "${NEON_PROJECT_ID:?}"
-  local path="$1"; shift
-  local out code body
-  for _ in $(seq 1 30); do
-    out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $NEON_API_KEY" \
-      -H 'Content-Type: application/json' -H 'Accept: application/json' \
-      "https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID$path" "$@")" || die "Neon API $path: no response"
-    code="${out##*$'\n'}"
-    body="${out%$'\n'*}"
-    [ "$code" = 423 ] || break
-    sleep 3
-  done
-  [[ "$code" =~ ^2[0-9][0-9]$ ]] || die "Neon API $path -> HTTP $code: $(jq -c '.message // .' <<<"$body" 2>/dev/null)"
-  printf '%s' "$body"
-}
-
-neon_main_id() { neon_api /branches | jq -r '[.branches[] | select(.name == "main") | .id][0] // empty'; }
-
 # Sets DB_URL to production `main`'s direct (non-pooler) connection URI and masks it in CI. Call it
 # at a script's top level (not inside `$(…)`: the mask command must reach the runner's stdout).
 # Never print DB_URL.
 load_prod_db_url() {
   local id
-  id="$(neon_main_id)"
+  id="$(neon_branch_id main)"
   [ -n "$id" ] || die "no Neon branch named main"
-  DB_URL="$(neon_api "/connection_uri?branch_id=$id&database_name=${NEON_DATABASE:-app}&role_name=${NEON_ROLE:-app_owner}&pooled=false" | jq -r .uri)"
+  DB_URL="$(neon_connection_uri "$id")"
   [ -n "$DB_URL" ] && [ "$DB_URL" != null ] || die "no connection URI for main"
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$DB_URL"; fi
 }

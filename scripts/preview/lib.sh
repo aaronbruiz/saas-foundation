@@ -7,8 +7,6 @@
 set -euo pipefail
 
 : "${CLOUDFLARE_API_TOKEN:?}" "${CLOUDFLARE_ACCOUNT_ID:?}"
-NEON_DATABASE="${NEON_DATABASE:-app}"
-NEON_ROLE="${NEON_ROLE:-app_owner}"
 NEON_PREVIEW_PARENT_BRANCH="${NEON_PREVIEW_PARENT_BRANCH:-preview-seed}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,6 +14,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREVIEW_WORKER="${PREVIEW_WORKER:-saas-foundation-preview}"
 
 log() { echo "[preview] $*" >&2; }
+NEON_API_PROJECT="${NEON_PREVIEW_PROJECT_ID:-}"
+source "$ROOT/scripts/common.sh"
 
 # Fail closed (ADR-0017): the account in CI must be the one pinned in wrangler.jsonc, so direct API
 # calls can't target another account the token reaches.
@@ -63,67 +63,12 @@ cf_api() {
   printf '%s' "$body"
 }
 
-# Neon REST API for the preview project (no CLI: the privileged jobs install no packages).
-# $1 = path under /projects/:id, rest = curl args. Retries while another operation holds the
-# branch (HTTP 423), so never pass a request body on stdin. Prints the body on 2xx, else returns 1.
-neon_api() {
-  : "${NEON_API_KEY:?}" "${NEON_PREVIEW_PROJECT_ID:?}"
-  local path="$1"; shift
-  local out code body
-  for _ in $(seq 1 30); do
-    if ! out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $NEON_API_KEY" \
-      -H 'Content-Type: application/json' -H 'Accept: application/json' \
-      "https://console.neon.tech/api/v2/projects/$NEON_PREVIEW_PROJECT_ID$path" "$@")"; then
-      log "ERROR: Neon API $path: no response"
-      return 1
-    fi
-    code="${out##*$'\n'}"
-    body="${out%$'\n'*}"
-    [ "$code" = 423 ] || break
-    sleep 3
-  done
-  if ! [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
-    log "ERROR: Neon API $path -> HTTP $code: $(printf '%s' "$body" | jq -c '.message // .' 2>/dev/null)"
-    return 1
-  fi
-  printf '%s' "$body"
-}
-
-# Id of the preview-project branch named $1 (empty if none). Fails if the listing fails.
-neon_branch_id() {
-  local list
-  list="$(neon_api /branches)" || return 1
-  jq -r --arg n "$1" '[.branches[] | select(.name == $n) | .id][0] // empty' <<<"$list"
-}
-
-# Direct (non-pooler: Hyperdrive pools) connection URI of branch id $1. Never print it.
-neon_connection_uri() {
-  neon_api "/connection_uri?branch_id=$1&database_name=$NEON_DATABASE&role_name=$NEON_ROLE&pooled=false" | jq -r .uri
-}
-
-# Preflight: say which kind of token CLOUDFLARE_API_TOKEN is and whether it's active, without
-# printing it. User tokens verify at /user/tokens/verify, account-owned tokens at
-# /accounts/:id/tokens/verify.
-cf_token_preflight() {
-  local user acct
-  user="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-    https://api.cloudflare.com/client/v4/user/tokens/verify | jq -r '.result.status // ("invalid: " + (.errors|tostring))')"
-  acct="$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" | jq -r '.result.status // ("invalid: " + (.errors|tostring))')"
-  log "Cloudflare token check: as user token -> $user; as account-owned token for $CLOUDFLARE_ACCOUNT_ID -> $acct"
-  if [ "$user" != active ] && [ "$acct" != active ]; then
-    log "not a verifiable API token (e.g. a local OAuth session); the next API call decides"
-  fi
-}
-
-# Worker-side preflight: the per-Worker token can't create Workers, and `wrangler preview` would try
-# to when the parent is missing. Worker-scoped read, so the narrow token can do it.
-cf_worker_preflight() {
-  cf_token_preflight
-  if ! cf_api "/workers/workers/$PREVIEW_WORKER" >/dev/null 2>&1; then
-    log "ERROR: can't read Worker $PREVIEW_WORKER: the token is wrong/inactive, or the Worker doesn't exist (an admin creates it once)"
-    return 1
-  fi
+# The parent Worker must already exist (ADR-0019 decision 3): `wrangler preview` would otherwise
+# create it when run with a broader token (manual recovery). Worker-scoped read, so the narrow
+# token can do it.
+require_preview_worker() {
+  cf_api "/workers/workers/$PREVIEW_WORKER" >/dev/null 2>&1 ||
+    { log "ERROR: can't read Worker $PREVIEW_WORKER: the token is wrong/inactive, or the Worker doesn't exist (an admin creates it once)"; return 1; }
 }
 
 # The account's workers.dev subdomain: the CI variable (the narrow token can't read account
@@ -182,12 +127,15 @@ new_auth_secret() {
 # email, so email verification is off (ADR-0016; the app honours `off` only on a workers.dev URL,
 # and `pnpm run deploy` refuses it for production). Turnstile runs on Cloudflare's public
 # always-pass test keys (ADR-0025; the app accepts test keys only on workers.dev and localhost).
-# The URL is deterministic, so Better Auth's origin checks match it.
+# The URL is deterministic, so Better Auth's origin checks match it, and it's the one smoke-tested.
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 deploy_preview() {
-  local subdomain auth_url out url
+  local subdomain url
   subdomain="$(workers_subdomain)"
-  auth_url="https://${PREVIEW_NAME}-${PREVIEW_WORKER}.${subdomain}.workers.dev"
+  url="https://${PREVIEW_NAME}-${PREVIEW_WORKER}.${subdomain}.workers.dev"
+  # Defense in depth: only a plain workers.dev URL may leave this script.
+  [[ "$url" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] ||
+    { log "ERROR: unexpected preview URL shape; refusing to output it"; exit 1; }
   # Global, not local: the EXIT trap runs after this function has returned.
   SECRETS_FILE="$(mktemp)"
   trap 'rm -f "$SECRETS_FILE"' EXIT
@@ -195,18 +143,13 @@ deploy_preview() {
   printf 'BETTER_AUTH_SECRET=%s\n' "$AUTH_SECRET" >"$SECRETS_FILE"
   # --ignore-base-config: only the checked config, --var and the secrets file apply, never bindings
   # or settings from the dashboard's Preview base config (ADR-0024: previews get no email binding).
-  out="$(pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
-    --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" --json \
-    --var "BETTER_AUTH_URL:$auth_url" --var "SIGNUP_MODE:open" \
+  # stdout to stderr: it's reserved for workflow commands (deploy-artifact.sh).
+  pnpm --dir "$ROOT/apps/web" exec wrangler preview "$@" --ignore-base-config \
+    --worker-name "$PREVIEW_WORKER" --name "$PREVIEW_NAME" --message "${GITHUB_SHA:-manual}" \
+    --var "BETTER_AUTH_URL:$url" --var "SIGNUP_MODE:open" \
     --var "EMAIL_VERIFICATION:off" --var "TURNSTILE_SITE_KEY:1x00000000000000000000AA" \
     --var "TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA" \
-    --secrets-file "$SECRETS_FILE")"
-  url="$(printf '%s' "$out" | node -e '
-    const t = require("fs").readFileSync(0, "utf8"); const i = t.indexOf("{\n  \"preview\"");
-    const d = JSON.parse(t.slice(i)); process.stdout.write(d.preview.urls[0]);')"
-  # Defense in depth: only a plain workers.dev URL may leave this script.
-  [[ "$url" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] ||
-    { log "ERROR: unexpected preview URL shape; refusing to output it"; exit 1; }
+    --secrets-file "$SECRETS_FILE" >&2
 
   # Smoke test: the preview reaches its own database through Hyperdrive.
   for _ in $(seq 1 10); do

@@ -21,21 +21,10 @@ names_for "$PR_NUMBER"
 artifact="$(cd "$ARTIFACT_DIR" && pwd -P)"
 config="$artifact/apps/web/dist/server/wrangler.json"
 migrations="$artifact/packages/db/drizzle"
-# The artifact must be plain files: a symlink could point the config or assets outside it.
-if [ -n "$(find "$artifact" -type l -print -quit)" ]; then
-  log "ERROR: artifact contains symlinks; refusing it"
-  exit 1
-fi
-# No env files: wrangler could read local vars/secrets from them next to the config.
-if [ -n "$(find "$artifact" \( -name '.dev.vars*' -o -name '.env*' \) -print -quit)" ]; then
-  log "ERROR: artifact contains .dev.vars/.env files; refusing it"
-  exit 1
-fi
-[ -f "$config" ] || { log "ERROR: artifact has no apps/web/dist/server/wrangler.json"; exit 1; }
-[ -f "$migrations/meta/_journal.json" ] || { log "ERROR: artifact has no packages/db/drizzle journal"; exit 1; }
+check_artifact_files "$artifact" || exit 1
 # Validate before touching any cloud resource; the real Hyperdrive id is patched in below.
 node "$ROOT/scripts/preview/prepare-config.mjs" "$config" "$CLOUDFLARE_ACCOUNT_ID"
-cf_worker_preflight
+require_preview_worker || exit 1
 
 # A close event may have arrived meanwhile: never (re)publish a closed PR's preview. A closed or
 # merged PR is an intentional skip (cleanup handles its resources); an unknown state still fails.
