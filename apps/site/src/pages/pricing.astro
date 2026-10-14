@@ -17,7 +17,7 @@ const per = { month: 'month', year: 'year' } as const
     {plans.map((plan) => (
       <article class:list={['card', 'plan', { featured: !plan.isDefault }]}>
         <h2>{plan.name}</h2>
-        {plan.prices.length === 0 ? (
+        {plan.isDefault ? (
           <p class="price">
             <span class="amount">Free</span>
           </p>

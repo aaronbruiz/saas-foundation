@@ -11,7 +11,8 @@
 // The static sites' configs are the only other configs allowed, and only as assets-only: the docs
 // (ADR-0028) and the marketing site (ADR-0033), each with the keys in STATIC_KEYS and nothing else
 // (no `main`, binding, `vars`, `env` or `previews`), named `<app Worker>-<site>`, never on
-// workers.dev or Preview URLs, a custom domain as its only route.
+// workers.dev or Preview URLs, `404-page` and `auto-trailing-slash` assets, one custom domain as
+// its only route.
 // Usage: node scripts/check-bindings.mjs [base-ref]   (default origin/main)
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -110,16 +111,21 @@ for (const [site, path] of Object.entries(STATIC_CONFIGS)) {
     for (const key of Object.keys(assets))
       if (!STATIC_ASSETS_KEYS.includes(key)) bad(`"assets.${key}" isn't allowed`)
     if (assets.directory !== './dist') bad('"assets.directory" must be "./dist"')
+    if (assets.not_found_handling !== '404-page')
+      bad('"assets.not_found_handling" must be "404-page"')
+    if (assets.html_handling !== 'auto-trailing-slash')
+      bad('"assets.html_handling" must be "auto-trailing-slash"')
   }
-  for (const r of config.routes ?? [])
-    if (
-      !r ||
-      typeof r !== 'object' ||
-      typeof r.pattern !== 'string' ||
-      r.custom_domain !== true ||
-      Object.keys(r).length !== 2
-    )
-      bad(`every route must be { "pattern": "<hostname>", "custom_domain": true }`)
+  const routes = config.routes
+  const r = Array.isArray(routes) && routes.length === 1 ? routes[0] : undefined
+  if (
+    !r ||
+    typeof r !== 'object' ||
+    typeof r.pattern !== 'string' ||
+    r.custom_domain !== true ||
+    Object.keys(r).length !== 2
+  )
+    bad(`"routes" must be one { "pattern": "<hostname>", "custom_domain": true }`)
 }
 if ('env' in head)
   errors.push(

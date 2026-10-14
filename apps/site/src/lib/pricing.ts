@@ -29,21 +29,30 @@ function loadPlans(): Plan[] {
     if (!purchasable.has(key))
       throw new Error(`prices.json: "${key}" isn't a purchasable price in plans.json`)
 
-  return (plansData.plans as ExportedPlan[]).map((plan) => ({
-    ...plan,
-    isDefault: plan.key === plansData.defaultPlan,
-    prices: plan.prices.map(({ key, interval }) => {
-      const entry = amounts[key] as { amount?: unknown; currency?: unknown } | undefined
-      if (!entry) throw new Error(`prices.json: no amount for "${key}"`)
-      const { amount, currency } = entry
-      if (!Number.isInteger(amount) || (amount as number) <= 0)
-        throw new Error(`prices.json: "${key}".amount must be a positive integer (minor units)`)
-      if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))
-        throw new Error(`prices.json: "${key}".currency must be an ISO 4217 code`)
-      if (!isInterval(interval)) throw new Error(`plans.json: "${key}" has interval "${interval}"`)
-      return { key, interval, amount: amount as number, currency }
-    }),
-  }))
+  if (!plansData.plans.some((p) => p.key === plansData.defaultPlan))
+    throw new Error(`plans.json: the default plan "${plansData.defaultPlan}" is missing`)
+  return (plansData.plans as ExportedPlan[]).map((plan) => {
+    const isDefault = plan.key === plansData.defaultPlan
+    // Only the default plan is free; a plan on sale has prices (export-plans.ts drops the rest).
+    if (isDefault !== (plan.prices.length === 0))
+      throw new Error(`plans.json: "${plan.key}" must be the default plan or have prices, not both`)
+    return {
+      ...plan,
+      isDefault,
+      prices: plan.prices.map(({ key, interval }) => {
+        const entry = amounts[key] as { amount?: unknown; currency?: unknown } | undefined
+        if (!entry) throw new Error(`prices.json: no amount for "${key}"`)
+        const { amount, currency } = entry
+        if (!Number.isInteger(amount) || (amount as number) <= 0)
+          throw new Error(`prices.json: "${key}".amount must be a positive integer (minor units)`)
+        if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))
+          throw new Error(`prices.json: "${key}".currency must be an ISO 4217 code`)
+        if (!isInterval(interval))
+          throw new Error(`plans.json: "${key}" has interval "${interval}"`)
+        return { key, interval, amount: amount as number, currency }
+      }),
+    }
+  })
 }
 
 export const plans = loadPlans()

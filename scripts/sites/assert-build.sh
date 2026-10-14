@@ -29,7 +29,7 @@ case "$SITE" in
     [ "$indexed" = "$count" ] && [ "$fragments" = "$count" ] && [ "$chunks" -gt 0 ] || die "search index doesn't cover every page"
     ;;
   site)
-    inline="$(grep -l -E '<script|<style|[[:space:]]style=' $(find . -name '*.html') || true)"
+    inline="$(grep -l -i -E '<script|<style|[[:space:]]style[[:space:]]*=' $(find . -name '*.html') || true)"
     [ -z "$inline" ] || die "scripts or inline styles (the CSP blocks them) in: $inline"
     for path in / /pricing/; do
       grep -q "<loc>https://$SITE_HOST$path</loc>" sitemap-0.xml || die "the sitemap doesn't list $path"
