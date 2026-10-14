@@ -56,6 +56,8 @@ No preview secret lives at repo level: a `pull_request` workflow runs the PR's o
 | `CLOUDFLARE_PREVIEW_INFRA_TOKEN`                                               | environment `preview-infra` (`main` only)  | account-owned token: Account · **Hyperdrive · Edit** (API name `Hyperdrive Write`) only                                                                                                       | `preview.yml` infra, `preview-cleanup.yml` cleanup-infra    |
 | `NEON_PREVIEW_API_KEY`                                                         | environments `preview-infra` and `preview` | Neon org key limited to the preview project                                                                                                                                                   | infra, deploy, cleanup-infra                                |
 | `CLOUDFLARE_API_TOKEN`                                                         | environment `preview` (`main` only)        | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-preview`** only                                                                                             | `preview.yml` deploy, `preview-cleanup.yml` cleanup-preview |
+| `CLOUDFLARE_DOCS_TOKEN`                                                        | environment `docs` (`main` only)           | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-docs`** only                                                                                                | `docs-deploy.yml`, `docs-rollback.yml`                      |
+| `CLOUDFLARE_DOCS_PREVIEW_TOKEN`                                                | environment `docs-preview` (`main` only)   | account-owned token: Workers **Editor** on **Specified Workers → `saas-foundation-docs-preview`** only                                                                                        | `docs-preview.yml` deploy and cleanup                       |
 
 Variables (not secret): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKERS_SUBDOMAIN`, the `NEON_*` ids; in `production`, `R2_BACKUP_BUCKET` (`saas-foundation-prod-db-dumps`).
 
@@ -181,6 +183,16 @@ Code only, seconds, no build: **Actions → Rollback → Run workflow** with a s
 **Secrets while rolled back or after a `discard`:** the newest uploaded version is then not the deployed one, so `wrangler secret put` refuses, and `wrangler versions secret put` would build on that newest upload, re-shipping the code you just left. Redeploy the good tag first (Release → `redeploy`), then change the secret.
 
 Verified on the first release (web 0.2.0, 2026-10-14): `versions upload` writes the version id to `WRANGLER_OUTPUT_FILE_PATH`, and `versions deploy` works with the per-Worker token (candidate at 0%, then `promote`). Not yet verified: `wrangler rollback` with that token (first rollback). Secret changes are recognised by the `workers/triggered_by: secret` annotation (seen on production versions, 2026-10-13).
+
+## Docs (ADR-0028)
+
+The public docs site `apps/docs` is its own assets-only Worker, `saas-foundation-docs`, on `https://docs.aaronlabr.dev`. It has no bindings, secrets or data, so its deploys are continuous and need no approval.
+
+- **PR preview:** a same-repo PR that changes the docs build (`docs.yml`'s paths) gets Worker Preview `pr-N` of `saas-foundation-docs-preview` on workers.dev, posted as a PR comment (`docs-preview.yml`; the preview is deleted when the PR closes, tidiness only). Previews are public: a docs PR contains nothing you wouldn't publish.
+- **Production:** every merge to `main` that changes the docs build deploys it at 100% (`docs-deploy.yml`): build without secrets, `versions upload --tag docs-<sha7> --message <sha>`, `versions deploy`, smoke test of `/`, `/llms.txt`, `/index.md` and `/version.json` (which reports the commit). **Redeploy** a commit: Actions → Docs deploy → Run workflow, `commit` = a full SHA on `main`'s history.
+- **Rollback:** Actions → Docs rollback → Run workflow with a `reason` and the target `version_id` (`pnpm --filter docs exec wrangler deployments list`). Seconds, no build, nothing else to guard. Locally, with your own login, from `apps/docs`: `pnpm exec wrangler rollback <version-id>`.
+- **Routes and domain:** CI never changes them (per-Worker tokens can't manage custom domains). If `routes` in `apps/docs/wrangler.jsonc` changes, apply it once by hand from a clean `main`: `pnpm --filter docs build && pnpm --filter docs exec wrangler deploy`.
+- **Setup (owner, done 2026-10-14):** Workers `saas-foundation-docs` (created by the manual `wrangler deploy` that attached `docs.aaronlabr.dev`, version `80debee2`) and `saas-foundation-docs-preview` (dashboard, Hello World until the first preview); tokens and environments in "CI credentials". **Rotate** a token: roll it in the dashboard, `gh secret set CLOUDFLARE_DOCS_TOKEN --env docs` (or `CLOUDFLARE_DOCS_PREVIEW_TOKEN --env docs-preview`), then run a redeploy or a docs PR preview.
 
 ## First production deploy (owner sequence, 2026-09-28)
 

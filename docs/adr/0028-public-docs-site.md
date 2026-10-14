@@ -131,3 +131,15 @@ Deleted Previews keep serving (ADR-0021). For docs this only means an old PR's d
 - Starlight is 0.x, so upgrades are deliberate PRs, not a grouped bump.
 - Draft docs of open or closed PRs are public on `workers.dev` preview URLs.
 - The follow-up PR updates the AGENTS.md module map and invariant 14's wording, the runbook ("Docs", "CI credentials"), `start-new-product.md` (Worker names, hostname, environments) and the architecture diagram.
+
+## Notes (2026-10-14)
+
+**Owner setup done:** Workers `saas-foundation-docs` (created by the manual `wrangler deploy` that attached `docs.aaronlabr.dev`, version `80debee2`) and `saas-foundation-docs-preview`, one per-Worker token each, environments `docs` and `docs-preview` limited to `main`.
+
+**Implementation details beyond the decision text** (`docs-preview.yml`, `docs-deploy.yml`, `docs-rollback.yml`, `scripts/docs/`):
+
+- `wrangler preview` refuses a config without a `previews` block (it can be empty), and `check-bindings.mjs` keeps that block out of `apps/docs/wrangler.jsonc`. So every CI deploy uses a config **derived** from `main`'s file (`scripts/docs/config.mjs`): an allowlist of its assets-only keys, `assets.directory` set to the downloaded site, and for previews no `routes` plus an empty `previews`. It's written to its own temporary directory, so wrangler finds no `.env`/`.dev.vars` next to it.
+- The docs rollback is its own workflow, `docs-rollback.yml`, not an input of `rollback.yml`: none of that workflow's guards (migrations, secrets, held candidates) apply to a site with no data or secrets. It shares `docs-deploy.yml`'s lock `deploy-saas-foundation-docs`.
+- `/version.json` is written by `docs-deploy.yml`'s build only; previews don't need it. The deploy refuses a site whose `version.json` doesn't report the commit it was asked to deploy.
+- The preview reuses `scripts/preview/lib.sh` with `PREVIEW_WORKER` set to the docs preview Worker (PR state, Worker check, deterministic URL, deletion).
+- `scripts/docs/**` joins the trigger paths of the build and both deploys.
