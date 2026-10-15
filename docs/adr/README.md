@@ -36,3 +36,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0032](0032-lift-the-data-gate-allowlisted-pilot.md): Lift the data gate: an allowlisted pilot with real customer data on Polar's sandbox
 - [ADR-0033](0033-marketing-site-and-app-naming.md): A static marketing site on the apex, a shared static-site pipeline, and the app deployable named `app`
 - [ADR-0034](0034-openapi-generation-for-the-public-api.md): OpenAPI generation for the public API: `@hono/zod-openapi` from `packages/contracts` (applies when the public API is built)
+- [ADR-0035](0035-temporary-workers-for-recovery-drills.md): Temporary Workers and Hyperdrive configs for recovery drills
