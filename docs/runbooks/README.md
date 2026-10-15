@@ -135,30 +135,31 @@ When an organization's Billing page disagrees with its subscription in Polar: af
 _Not drilled yet: the first use (sandbox first) records here whether a metadata-only update sends `subscription.updated` and what the delivery answered._
 
 1. **Find the subscription:** the organization's id (Neon SQL Editor: `select id from organization where slug = '<slug>'`), then `select provider_subscription_id, status, plan_key, provider_event_at from billing_subscription where organization_id = '<org id>'`. With no row, or to check for a newer subscription, find the customer in the Polar dashboard by external id = the organization id and take its subscription.
-2. **A delivery that failed** (never answered 2xx, e.g. during an outage): redeliver it from the endpoint's delivery log in the Polar dashboard. It was never recorded, so the app applies it. A redelivery of a delivery the app already answered keeps its `webhook-id` and answers `duplicate`, which changes nothing; for that, use step 3.
-3. **Make Polar send a new event**, from the owner's own terminal with a temporary organization access token holding `subscriptions:read` and `subscriptions:write` (the app's token is read-only for subscriptions; delete this one afterwards). Enter it at a hidden prompt so it stays out of the shell history:
+2. **A delivery that failed** (never answered 2xx, e.g. during an outage): redeliver it from the endpoint's delivery log in the Polar dashboard, then read its answer (step 4). A redelivery keeps its `webhook-id` and its original event time: it answers `duplicate` if the app had already recorded it (also possible when the app committed but its response was lost), and `stale` if a newer event for the subscription was applied since. Either way nothing changes; if the mismatch remains, use step 3.
+3. **Make Polar send a new event**, from the owner's own terminal with a temporary organization access token holding `subscriptions:read` and `subscriptions:write` (the app's token is read-only for subscriptions; delete this one afterwards). Enter it at a hidden prompt so it stays out of the shell history, and pass it to curl on stdin so it stays out of process listings:
 
    ```sh
    read -rs POLAR_TOKEN && export POLAR_TOKEN
    API=https://sandbox-api.polar.sh/v1   # POLAR_SERVER=production: https://api.polar.sh/v1
    SUB=<subscription id>
-   curl -fsS -H "Authorization: Bearer $POLAR_TOKEN" "$API/subscriptions/$SUB" |
+   polar() { printf 'Authorization: Bearer %s\n' "$POLAR_TOKEN" | curl -fsS -H @- "$@"; }
+   polar "$API/subscriptions/$SUB" |
      jq '{status, cancel_at_period_end, current_period_end, metadata, external_id: .customer.external_id}'
    ```
 
    `metadata.organization_id` and `external_id` must both equal the organization's id; otherwise the app records the subscription as unlinked and never applies it (ADR-0022), and a re-sync won't change that. Then send the subscription's metadata back with one key added (Polar's docs don't say whether metadata is merged or replaced, so the whole set goes back):
 
    ```sh
-   meta="$(curl -fsS -H "Authorization: Bearer $POLAR_TOKEN" "$API/subscriptions/$SUB" |
+   meta="$(polar "$API/subscriptions/$SUB" |
      jq -c '.metadata + {resync_at: (now | todate)}')"
-   curl -fsS -X PATCH -H "Authorization: Bearer $POLAR_TOKEN" -H 'Content-Type: application/json' \
+   polar -X PATCH -H 'Content-Type: application/json' \
      "$API/subscriptions/$SUB" -d "{\"metadata\": $meta}" | jq '{status, metadata}'
    unset POLAR_TOKEN
    ```
 
    `resync_at` stays on the subscription; the app ignores it, and the next re-sync overwrites it. If Polar refuses the update (for example on a subscription that has ended), record the mismatch here and leave the row as it is.
 
-4. **Check:** the endpoint's delivery log shows the new `subscription.updated` answered 200 with `"outcome":"applied"`, and the organization's Billing page now matches Polar (plan, status, renewal or end date). Other outcomes: `stale` (the organization's row holds another subscription, and this one has ended or the other one's last event is newer; kept on purpose), `unlinked` (step 3's ids disagree), `conflict` (the subscription is linked to another organization). Record the date, the organization, what was wrong and the outcome here.
+4. **Check:** the endpoint's delivery log shows the new `subscription.updated` answered 200 with `"outcome":"applied"`, and the organization's Billing page now matches Polar (plan, status, renewal or end date). Other outcomes: `stale` (an older event: for the same subscription, one applied since is newer; or the organization's row holds another subscription, and this one has ended or the other one's last event is newer; kept on purpose), `unlinked` (step 3's ids disagree), `conflict` (the subscription is linked to another organization), `duplicate` (already recorded; a redelivery, step 2). Record the date, the organization, what was wrong and the outcome here.
 
 ### Before production go-live (sandbox checks, ADR-0022 step 3)
 
