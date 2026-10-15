@@ -347,8 +347,6 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
-  packages/testkit: {}
-
 packages:
 
   '@astrojs/astro2tsx@0.1.2':
