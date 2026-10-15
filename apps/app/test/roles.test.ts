@@ -201,21 +201,41 @@ describe('Better Auth organization endpoints (default roles)', () => {
   })
 
   it("a non-member can't delete, update, invite into or change members of an organization", async () => {
-    const o = await freshOrg()
+    // Unpaid: a deletion refused for a live subscription would hide a missing membership check.
+    const o = await freshOrg({ paid: false })
     const stranger = await signUp()
     const email = `x-${crypto.randomUUID()}@test.local`
-    const attempts = [
-      post(stranger, 'delete', { organizationId: o.orgId }),
-      post(stranger, 'update', { data: { name: 'pwned' }, organizationId: o.orgId }),
-      post(stranger, 'invite-member', { email, role: 'member', organizationId: o.orgId }),
-      post(stranger, 'remove-member', { memberIdOrEmail: o.member.email, organizationId: o.orgId }),
-      post(stranger, 'update-member-role', {
-        memberId: await memberId(o, o.member),
-        role: 'admin',
-        organizationId: o.orgId,
-      }),
+    const notAMember = 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION'
+    // Better Auth looks up the caller's own membership first for member operations.
+    const noMembership = 'MEMBER_NOT_FOUND'
+    const attempts: [Promise<Response>, string][] = [
+      [post(stranger, 'delete', { organizationId: o.orgId }), notAMember],
+      [post(stranger, 'update', { data: { name: 'pwned' }, organizationId: o.orgId }), notAMember],
+      [
+        post(stranger, 'invite-member', { email, role: 'member', organizationId: o.orgId }),
+        noMembership,
+      ],
+      [
+        post(stranger, 'remove-member', {
+          memberIdOrEmail: o.member.email,
+          organizationId: o.orgId,
+        }),
+        noMembership,
+      ],
+      [
+        post(stranger, 'update-member-role', {
+          memberId: await memberId(o, o.member),
+          role: 'admin',
+          organizationId: o.orgId,
+        }),
+        noMembership,
+      ],
     ]
-    for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    for (const [res, code] of attempts) {
+      const r = await res
+      expect(r.status).toBe(400)
+      await expect(r.json()).resolves.toMatchObject({ code })
+    }
     await expect(invitedEmails(o)).resolves.not.toContain(email)
     await expect(getTenant(o.owner.headers, { tenant: o.slug })).resolves.toMatchObject({
       name: o.slug,
