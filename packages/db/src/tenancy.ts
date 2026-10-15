@@ -111,14 +111,6 @@ export function projects(db: Db, scope: TenantScope) {
         if (!created) throw new Error('insert returned no row')
         return created
       }),
-    create: async (fields: ProjectFields, createdBy: string): Promise<Project> => {
-      const [row] = await rawDb(db)
-        .insert(project)
-        .values({ ...fields, organizationId: scope.orgId, createdBy })
-        .returning()
-      if (!row) throw new Error('insert returned no row')
-      return row
-    },
     update: async (id: string, fields: Partial<ProjectFields>): Promise<Project | null> =>
       (await rawDb(db).update(project).set(fields).where(inTenant(id)).returning())[0] ?? null,
     remove: async (id: string): Promise<boolean> =>
