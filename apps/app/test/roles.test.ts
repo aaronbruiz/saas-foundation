@@ -127,6 +127,13 @@ describe('capability matrix', () => {
     for (const capability of CAPABILITIES)
       await expectStatus(() => attempt(outsider, orgA, capability, id), 404)
   })
+
+  it('a member gets 404 (not 403) deleting a project id that exists nowhere', async () => {
+    await expectStatus(
+      () => attempt(users.member, orgA, 'project:delete', crypto.randomUUID()),
+      404,
+    )
+  })
 })
 
 // Better Auth's own /api/auth/organization/* endpoints are reachable over HTTP and enforce its
@@ -191,6 +198,31 @@ describe('Better Auth organization endpoints (default roles)', () => {
     })
     await expect(roleIn(o.slug, o.admin)).resolves.toBe('admin')
     await expect(roleIn(o.slug, o.member)).resolves.toBe('member')
+  })
+
+  it("a non-member can't delete, update, invite into or change members of an organization", async () => {
+    const o = await freshOrg()
+    const stranger = await signUp()
+    const email = `x-${crypto.randomUUID()}@test.local`
+    const attempts = [
+      post(stranger, 'delete', { organizationId: o.orgId }),
+      post(stranger, 'update', { data: { name: 'pwned' }, organizationId: o.orgId }),
+      post(stranger, 'invite-member', { email, role: 'member', organizationId: o.orgId }),
+      post(stranger, 'remove-member', { memberIdOrEmail: o.member.email, organizationId: o.orgId }),
+      post(stranger, 'update-member-role', {
+        memberId: await memberId(o, o.member),
+        role: 'admin',
+        organizationId: o.orgId,
+      }),
+    ]
+    for (const res of await Promise.all(attempts)) expect(res.ok).toBe(false)
+    await expect(invitedEmails(o)).resolves.not.toContain(email)
+    await expect(getTenant(o.owner.headers, { tenant: o.slug })).resolves.toMatchObject({
+      name: o.slug,
+    })
+    await expect(roleIn(o.slug, o.owner)).resolves.toBe('owner')
+    await expect(roleIn(o.slug, o.member)).resolves.toBe('member')
+    await expectStatus(() => roleIn(o.slug, stranger), 404)
   })
 
   it('an admin cannot reach or touch the owner role', async () => {
