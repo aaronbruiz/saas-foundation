@@ -202,9 +202,9 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
       const c = await polar.customers.getExternal(orgId)
       const subs = (await polar.subscriptions.list({ customer_id: c.id, limit: 10 })).items
       expect(subs).toHaveLength(1)
-      expect(subs[0].status).toBe('trialing')
+      expect(subs[0]!.status).toBe('trialing')
       const trialEnd = new Date(Date.now() + 3 * 60_000).toISOString()
-      const s = await polar.subscriptions.update(subs[0].id, { trial_end: trialEnd })
+      const s = await polar.subscriptions.update(subs[0]!.id, { trial_end: trialEnd })
       console.log('[eval] trial now ends', s.trial_end, 'period end', s.current_period_end)
       return
     }
@@ -315,7 +315,7 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
     console.log('[eval] customer billing country:', customer.billing_address?.country ?? null)
     const subs = (await polar.subscriptions.list({ customer_id: customer.id, limit: 10 })).items
     expect(subs).toHaveLength(1)
-    expect(subs[0].status).toBe('trialing')
+    expect(subs[0]!.status).toBe('trialing')
 
     /** The endpoint's subscription events not yet in `skip`, checked against the run. */
     async function check(skip: Set<string>, expectedStatus: string) {
@@ -341,7 +341,7 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
     expect(trial).toContain('subscription.created:trialing')
 
     // Stage 2: a revocation-only end (no cancel first), checked on the events it produces alone.
-    await polar.subscriptions.revoke(subs[0].id)
+    await polar.subscriptions.revoke(subs[0]!.id)
     await new Promise((r) => setTimeout(r, 30_000))
     const end = await check(handled, 'canceled')
     console.log('[eval] revocation events (type:status at delivery):', end)

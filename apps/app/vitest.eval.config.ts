@@ -9,7 +9,7 @@ const polarVars: Record<string, string> = {}
 if (existsSync(file))
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     const m = line.match(/^\s*(POLAR_[A-Z_]+)\s*=\s*(.*?)\s*$/)
-    if (m) polarVars[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2')
+    if (m) polarVars[m[1]!] = m[2]!.replace(/^(['"])(.*)\1$/, '$2')
   }
 
 export default defineConfig({
