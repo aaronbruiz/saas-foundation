@@ -13,20 +13,20 @@ Two recovery drills need such resources. Both are designed in the recovery-readi
 
 Alternatives considered:
 
-- **Use the existing preview Worker.** It's shared by PR previews and bound to the preview Hyperdrive slots ([ADR-0019](0019-ci-credentials-and-preview-slots.md), [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md)). A drill would disturb a preview and run next to a preview credential. Rejected.
+- **Use the production Worker's Previews.** Each PR's Preview binds its own Hyperdrive config `saas-pr-N` and Neon branch, created and deleted only by default-branch jobs in `main`-only environments ([ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md)). A drill there would run inside that trusted CI boundary or next to a preview credential, and couldn't repoint or delete its own Hyperdrive config. Rejected.
 - **Don't drill.** Leaves ADR-0029's open item and the rebuild time unproven before real pilot data ([ADR-0032](0032-lift-the-data-gate-allowlisted-pilot.md)). Rejected.
 
 ## Decision
 
 Temporary Workers and Hyperdrive configs may be created for recovery drills under these rules. A drill that can't meet them needs its own ADR.
 
-1. **Purpose.** Only to rehearse a recovery path: the secret-revert drill (D1b) and the "Neon lost" rebuild drill (D5). A new drill purpose is added by a note on this ADR.
+1. **Purpose.** Only to rehearse a recovery path: the secret-revert drill (D1b) and the "Neon lost" rebuild drill (D5). Any other purpose needs another lightweight ADR covering the same four points.
 2. **Isolation.**
    - **Names** are unique per execution: `r02-<drill>-<UTC timestamp>-<random>`. A drill never reuses or touches a resource it didn't create. It deploys only after a lookup of that name fails with Cloudflare's not-found error.
-   - **Reach:** `workers.dev` only. No routes or custom domains, no `vars`, `env` or `previews`.
+   - **Reach:** `workers.dev` only. No routes or custom domains, no `vars` or `env`. `preview_urls` is `false` and no Preview is ever created, so the config has no `previews` block.
    - **Bindings:** D1b has none and uses synthetic secret values. D5 has exactly one: a Hyperdrive config created by the same execution, pointing at a throwaway Neon project. It never uses a production or preview Hyperdrive config, the production database, or a preview Neon branch.
    - **Config:** the drill's Wrangler config is generated outside the repository and passed explicitly. Wrangler runs from outside the repository, so it can't discover or write `apps/*/wrangler.jsonc`, and creates resources with `--update-config=false`. Nothing is added to any tracked Wrangler config, so `scripts/check-bindings.mjs` is unaffected.
-   - **Credentials:** the owner's own Wrangler and Neon logins. No CI job, CI token or GitHub environment is involved.
+   - **Credentials:** the owner's own Wrangler and Neon logins. The drill unsets every inherited Cloudflare credential and `NEON_API_KEY`, so neither tool can use another key. D5's optional Hyperdrive-restart API token is the owner's own, passed only to that request. No CI job, CI token or GitHub environment is involved.
    - **Data:** D5 restores a production dump. It runs only while production holds no real customer data, before ADR-0032 step 6. Restoring real customer data into a drill project needs a new decision.
 3. **Lifetime.** A resource exists only while its drill runs (expected under 1 hour) and never past the same UTC day.
 4. **Cleanup.**
@@ -36,7 +36,8 @@ Temporary Workers and Hyperdrive configs may be created for recovery drills unde
 
 ## Consequences
 
-- Invariant 14 is met for these resources. ADR-0007's deferral table, `apps/app/wrangler.jsonc` and CI don't change.
+- Invariant 14 is met by this ADR, with one stated exception: D5's Hyperdrive binding has no `previews` override. The override exists so a Preview never inherits a production storage binding. A drill Worker creates no Preview, and its only binding is its own throwaway config. AGENTS.md invariant 14 names this exception.
+- ADR-0007's deferral table, `apps/app/wrangler.jsonc` and CI don't change.
 - While a drill runs, its Worker is publicly reachable on `workers.dev`:
   - D1b returns a synthetic secret value.
   - D5 returns the database name, a backend process id and two row counts (organizations, applied migrations), never row contents.
