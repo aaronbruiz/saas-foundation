@@ -63,9 +63,10 @@ const unnormalizedPaths = {
     'Write the import path normalized (no //, inner ./ or a/../), so lint can check it (AGENTS.md invariants 2-3).',
 }
 
-// A workspace package's files imported by path (relative, absolute, or through node_modules)
-// skip its `exports` and every rule above: `packages/db/src/client.ts` hands out the raw client.
-const filePath = '^/|(^|/)(packages|node_modules)/'
+// A workspace package's files imported by path (`../` or absolute, through a `packages/` or
+// `node_modules/` directory) skip its `exports` and every rule above: `packages/db/src/client.ts`
+// hands out the raw client. Package names (`@scope/packages/x`) and `./` paths stay allowed.
+const filePath = '^(/|(\\.\\./)+)(.*/)?(packages|node_modules)/'
 const noFilePathImports = {
   regex: filePath,
   message: 'Import workspace packages by name, never by file path (AGENTS.md invariants 2-3).',

@@ -96,6 +96,9 @@ const cases = [
   [server, `import { rawDb } from '../../../../packages/db/src/client.ts'`, FILE_PATH],
   [provider, `import { x } from '../../../../../../packages/db/src/client.ts'`, FILE_PATH],
   [projects, `const m = import.meta.glob('../../../../../packages/db/src/*.ts')`, GLOB],
+  [route, `import css from '/src/styles.css?url'`, null],
+  [projects, `import { x } from '@example/packages/util'`, null],
+  [projects, `import { x } from './packages/local'`, null],
   // Modules use each other only through public entry points.
   [projects, `import { getBillingOverview } from '../billing/service'`, MODULE],
   [projects, `import type { BillingProvider } from '../billing/provider'`, MODULE],
