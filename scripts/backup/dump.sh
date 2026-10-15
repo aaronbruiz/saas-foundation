@@ -105,3 +105,5 @@ size="$(s3api head-object --bucket "$R2_BACKUP_BUCKET" --key "$KEY" --query Cont
 [ "$size" = "$(wc -c <"$WORK/$NAME")" ] || fail "uploaded size $size doesn't match the local dump"
 s3api put-object --bucket "$R2_BACKUP_BUCKET" --key "$KEY.sha256" --body "$WORK/$NAME.sha256" >/dev/null
 log "uploaded $KEY ($size bytes) and $KEY.sha256"
+# ADR-0037: only a newly completed copy refreshes the backup heartbeat (a same-day re-run exits above).
+[ -z "${GITHUB_OUTPUT:-}" ] || echo "uploaded=true" >>"$GITHUB_OUTPUT"
