@@ -37,3 +37,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0033](0033-marketing-site-and-app-naming.md): A static marketing site on the apex, a shared static-site pipeline, and the app deployable named `app`
 - [ADR-0034](0034-openapi-generation-for-the-public-api.md): OpenAPI generation for the public API: `@hono/zod-openapi` from `packages/contracts` (applies when the public API is built)
 - [ADR-0035](0035-temporary-workers-for-recovery-drills.md): Temporary Workers and Hyperdrive configs for recovery drills
+- [ADR-0036](0036-recovery-objectives.md): Recovery objectives: backup copy age ≤ 24 h and RTO ≤ 1 h of execution, how they are measured, and their limits
