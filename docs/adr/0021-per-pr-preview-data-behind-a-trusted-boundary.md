@@ -116,3 +116,7 @@ Revisit (Access ADR) before a preview gets anything non-synthetic or a real cred
 ## Notes (2026-10-14)
 
 **Dependabot PRs get no preview** (owner decision). `preview.yml` and `docs-preview.yml` skip branches starting with `dependabot/`, as they skip `release-please--*`. A dependency bump is gated by CI's `check + test` (which includes the unit and integration suites against Postgres) and by the owner's merge; the preview's E2E run against a Neon branch added little for it and held one of the preview project's 10 branches per open Dependabot PR. A branch name only decides whether a preview is skipped, so a human branch named `dependabot/…` can only lose its own preview.
+
+## Notes (2026-10-15)
+
+**Documentation-only PRs get no app preview** (owner decision, to save Actions minutes). `preview.yml`'s `resolve` already skips a PR that changes only the static sites. It now also skips one whose files are all under `docs/**` or are root-level `*.md` (AGENTS.md, CLAUDE.md, README.md). The app doesn't build from either. Same rules as before: a rename counts at both paths, and an incomplete file list keeps the preview. Such a PR is still gated by CI's `check + test`.

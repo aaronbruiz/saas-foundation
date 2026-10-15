@@ -2,7 +2,8 @@ name: PR title
 
 # ADR-0030: squash merges use the PR title as the commit title on `main`, and release-please reads it
 # (ADR-0029), so the title must be a Conventional Commit. Its own workflow so a title edit re-runs only
-# these checks, not CI. No install, no secrets; the title is passed as data, never as code.
+# these checks, not CI. No install, no secrets; the title is passed as data, never as code. One job:
+# GitHub bills every job at least a whole minute, and both checks take seconds.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
@@ -17,9 +18,12 @@ jobs:
   title:
     name: Conventional PR title
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
+    permissions:
+      contents: read # the contract-migration step's checkout
     steps:
-      - env:
+      - name: Conventional Commit title
+        env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           re='^(feat|fix|perf|refactor|revert|docs|test|chore|ci|build)(\([a-z0-9][a-z0-9-]*\))?!?: [^ ].*$'
@@ -31,21 +35,17 @@ jobs:
             echo "::error::PR title is ${#TITLE} characters; the limit is 100."
             exit 1
           fi
-
-  # ADR-0029 decision 7: a migration that drops, renames or retypes anything is a contract
-  # migration; its PR title needs `!` so the release lists it under BREAKING CHANGES.
-  contract-migration:
-    name: Contract migration marked breaking
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # ADR-0029 decision 7: a migration that drops, renames or retypes anything is a contract
+      # migration; its PR title needs `!` so the release lists it under BREAKING CHANGES.
+      # Also after a failed title step, so one run reports both problems.
+      - if: success() || failure()
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # the PR merge commit and its base parent
           persist-credentials: false
-      - env:
+      - name: Contract migration marked breaking
+        if: success() || failure()
+        env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           # Checked assignments, not `< <(…)`: a failing producer must fail this check.
