@@ -16,7 +16,7 @@
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @saas-foundation/db db:generate",
     "db:migrate": "pnpm --filter @saas-foundation/db db:migrate",
-    "lint": "eslint .",
+    "lint": "eslint . && node --test scripts/lint-boundaries.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --parallel typecheck",
