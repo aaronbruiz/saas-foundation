@@ -43,3 +43,7 @@ Temporary Workers and Hyperdrive configs may be created for recovery drills unde
   - D5 returns the database name, a backend process id and two row counts (organizations, applied migrations), never row contents.
 - A drill Worker left behind after a failed cleanup stays reachable until deleted; the owner's same-day check covers it.
 - ADR-0029's open item on secret revert is closed only when D1b has run and its result is recorded there.
+
+## Notes (2026-10-15)
+
+D1b and D5 ran on 2026-10-15 with owner approval, each with names unique to the run. Each deleted its Worker, Hyperdrive config and Neon project on exit. Afterwards `wrangler deployments status` returned not found (10007), `wrangler hyperdrive list` showed no `r02-` config and the Neon organization listed no `r02-` project. D1b's result is recorded in ADR-0029 (Notes 2026-10-15); D5's in the runbook ("Database", step 5).
