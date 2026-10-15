@@ -62,3 +62,7 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
 - One database for identity and domain data, with FKs to `organization.id`.
 - We own the security configuration (trusted origins, cookies, rate limits).
 - SSO/SCIM (Better Auth SSO or WorkOS) waits for an enterprise requirement.
+
+## Notes (2026-10-15)
+
+**Schema generation command.** The `auth` CLI is now a pinned dev dependency of `packages/auth` (1.7.7), run with `pnpm auth:generate`, instead of `npx auth@latest generate`. The decision (generated schema, migrations only through drizzle-kit) is unchanged.
