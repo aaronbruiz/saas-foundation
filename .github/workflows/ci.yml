@@ -13,23 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
-  # `previews` override. No install, no secrets.
-  bindings:
-    name: bindings need an ADR
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2 # the PR merge commit and its base parent
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - run: node scripts/check-bindings.mjs HEAD^1
-      - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
-
+  # One job: GitHub bills every job at least a whole minute, so the seconds-long bindings check runs
+  # here as its first steps instead of in its own job.
   check:
     name: check + test
     runs-on: ubuntu-latest
@@ -47,11 +32,19 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0 (version from packageManager)
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: pnpm
+      # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
+      # `previews` override. Before the install, so it fails fast.
+      - name: Bindings need an ADR
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-bindings.mjs HEAD^1
+      - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
       - run: pnpm install --frozen-lockfile
       - name: Create test database (mirrors docker/postgres-init)
         run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
