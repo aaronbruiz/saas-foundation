@@ -8,7 +8,7 @@ source "$(dirname "$0")/lib.sh"
 dist="$ROOT/apps/$SITE/dist"
 [ -d "$dist" ] || die "no build at apps/$SITE/dist"
 check_dist "$dist"
-cd "$dist"
+cd "$dist" || die "can't enter apps/$SITE/dist"
 
 case "$SITE" in
   docs)
@@ -30,7 +30,7 @@ case "$SITE" in
     ;;
   site)
     # -z: each file is one record, so an attribute split across lines is still found.
-    inline="$(grep -l -z -i -E '<script|<style|[[:space:]]style[[:space:]]*=' $(find . -name '*.html') || true)"
+    inline="$(find . -name '*.html' -exec grep -l -z -i -E '<script|<style|[[:space:]]style[[:space:]]*=' {} + || true)"
     [ -z "$inline" ] || die "scripts or inline styles (the CSP blocks them) in: $inline"
     for path in / /pricing/; do
       grep -q "<loc>https://$SITE_HOST$path</loc>" sitemap-0.xml || die "the sitemap doesn't list $path"
