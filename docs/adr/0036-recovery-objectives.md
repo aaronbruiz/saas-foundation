@@ -1,6 +1,6 @@
 # ADR-0036: Recovery objectives (RPO and RTO) and how they're measured
 
-Status: Proposed · Date: 2026-10-15
+Status: Accepted (owner 2026-10-15) · Date: 2026-10-15
 
 ## Context
 
