@@ -19,6 +19,6 @@ export function isUnknownServerFnError(e: unknown): boolean {
  * The id is the first path segment after TanStack's default base, `/_serverFn/`.
  */
 export function isUnknownServerFnPath(pathname: string): boolean {
-  const id = pathname.slice('/_serverFn/'.length).split('/')[0]
+  const id = pathname.slice('/_serverFn/'.length).split('/')[0] ?? ''
   return id !== '' && id in Object.prototype
 }

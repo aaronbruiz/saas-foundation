@@ -74,7 +74,9 @@ async function freshOrg(prefix = 'bill'): Promise<{ owner: TestUser; orgId: stri
 }
 
 beforeAll(async () => {
-  ;[orgA, orgB] = (await Promise.all([freshOrg('bill-a'), freshOrg('bill-b')])).map((o) => o.orgId)
+  const [a, b] = await Promise.all([freshOrg('bill-a'), freshOrg('bill-b')])
+  orgA = a.orgId
+  orgB = b.orgId
 })
 
 describe('billing webhook: verification', () => {
