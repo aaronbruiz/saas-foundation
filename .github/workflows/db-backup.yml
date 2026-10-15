@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - name: Dump production main to R2
+        id: dump
         # Secrets only reach this step, not checkout/setup/install (dependency lifecycle scripts).
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
@@ -60,3 +61,21 @@ jobs:
           R2_BACKUP_ENDPOINT: ${{ secrets.R2_BACKUP_ENDPOINT }}
           R2_BACKUP_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
         run: scripts/backup/dump.sh
+      - name: Report to the backup heartbeat
+        # ADR-0037: "/fail" (alerts at once) when the snapshot or the dump failed; "success" only when both
+        # succeeded and the dump uploaded a new copy; nothing when a same-day re-run made no new copy, so the
+        # check keeps counting from the real one. A run that never gets here (stuck, dropped, cancelled)
+        # alerts after 24 h + 8 h grace. Inline, so it still reports when checkout or setup failed.
+        # A missing secret fails the job.
+        if: ${{ !cancelled() }}
+        env:
+          HC_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+          OUTCOME: ${{ (needs.snapshot.result != 'success' || job.status != 'success') && 'fail' || (steps.dump.outputs.uploaded == 'true' && 'success' || 'none') }}
+        run: |
+          [ -n "$HC_PING_URL" ] || { echo "::error::HEALTHCHECKS_PING_URL isn't set in the production environment (ADR-0037)"; exit 1; }
+          case "$OUTCOME" in
+            success) suffix='' ;;
+            fail) suffix=/fail ;;
+            *) echo "No new copy in this run (today's is already complete): no ping"; exit 0 ;;
+          esac
+          curl -fsS -m 10 --retry 5 -o /dev/null "$HC_PING_URL$suffix"
