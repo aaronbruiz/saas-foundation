@@ -60,3 +60,15 @@ jobs:
           R2_BACKUP_ENDPOINT: ${{ secrets.R2_BACKUP_ENDPOINT }}
           R2_BACKUP_BUCKET: ${{ vars.R2_BACKUP_BUCKET }}
         run: scripts/backup/dump.sh
+      - name: Report to the backup heartbeat
+        # ADR-0037: "success" only when the snapshot and this dump both succeeded, otherwise "/fail", which
+        # alerts at once. A run that never gets here (stuck, dropped, cancelled) alerts after 24 h + 8 h grace.
+        # Inline, so it still reports when checkout or setup failed. A missing secret fails the job.
+        if: ${{ !cancelled() }}
+        env:
+          HC_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+          OUTCOME: ${{ needs.snapshot.result == 'success' && job.status == 'success' && 'success' || 'fail' }}
+        run: |
+          [ -n "$HC_PING_URL" ] || { echo "::error::HEALTHCHECKS_PING_URL isn't set in the production environment (ADR-0037)"; exit 1; }
+          suffix=''; [ "$OUTCOME" = success ] || suffix=/fail
+          curl -fsS -m 10 --retry 5 -o /dev/null "$HC_PING_URL$suffix"
