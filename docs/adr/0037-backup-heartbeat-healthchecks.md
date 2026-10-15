@@ -1,6 +1,6 @@
 # ADR-0037: Backup heartbeat on Healthchecks.io
 
-Status: Proposed (owner choices 2026-10-15: Healthchecks.io, alerts by email; check and secret set up by the owner 2026-10-15) · Date: 2026-10-15
+Status: Accepted (owner 2026-10-15: Healthchecks.io, alerts by email; check and secret set up by the owner 2026-10-15) · Date: 2026-10-15
 
 ## Context
 
