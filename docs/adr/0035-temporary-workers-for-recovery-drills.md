@@ -46,4 +46,4 @@ Temporary Workers and Hyperdrive configs may be created for recovery drills unde
 
 ## Notes (2026-10-15)
 
-D1b and D5 ran on 2026-10-15 with owner approval, each with names unique to the run. Each deleted its Worker, Hyperdrive config and Neon project on exit. Afterwards `wrangler deployments status` returned not found (10007), `wrangler hyperdrive list` showed no `r02-` config and the Neon organization listed no `r02-` project. D1b's result is recorded in ADR-0029 (Notes 2026-10-15); D5's in the runbook ("Database", step 5).
+D1b and D5 ran on 2026-10-15 with owner approval, each with names unique to the run. On exit D1b deleted its Worker, and D5 its Worker, Hyperdrive config and Neon project. Afterwards `wrangler deployments status` returned not found (10007), `wrangler hyperdrive list` showed no `r02-` config and the Neon organization listed no `r02-` project. D1b's result is recorded in ADR-0029 (Notes 2026-10-15); D5's in the runbook ("Database", step 5).
