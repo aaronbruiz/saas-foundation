@@ -1,6 +1,6 @@
 # ADR-0035: Temporary Workers and Hyperdrive configs for recovery drills
 
-Status: Proposed · Date: 2026-10-15
+Status: Accepted (owner 2026-10-15) · Date: 2026-10-15
 
 ## Context
 
