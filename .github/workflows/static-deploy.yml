@@ -70,6 +70,11 @@ jobs:
           jq -n --arg c "$SHA" --arg b "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{commit: $c, built: $b}' >"apps/$SITE/dist/version.json"
       - name: Scan the site for secrets
         run: scripts/scan-client-bundle.sh "apps/$SITE/dist"
+      # static-build.yml runs on PRs only, so this is the build check on `main`. The commit's own
+      # script: a redeploy needs a commit from #123 on (docs) or #124 on (site); go further back
+      # with the site's rollback workflow.
+      - name: Assert the site's files
+        run: scripts/sites/assert-build.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.site }}-site

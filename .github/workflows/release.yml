@@ -58,8 +58,9 @@ jobs:
 
   resolve:
     needs: release-please
-    # Runs for dispatch too (release-please skipped).
-    if: ${{ !cancelled() && !failure() }}
+    # Runs for dispatch too (release-please skipped); on a push, only when a release was created
+    # (no runner for the ordinary push to main).
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}

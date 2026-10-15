@@ -69,7 +69,7 @@ Deleted Previews keep serving (ADR-0021). For docs this only means an old PR's d
 
 | Workflow / job                        | Trigger                                            | Tier | Environment (`main` only) and secret                                                              |
 | ------------------------------------- | -------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------- |
-| `docs.yml` build                      | `pull_request`, `push: main`; paths below          | T0   | none. Builds, scans `dist` with `scripts/scan-client-bundle.sh`, uploads `dist` for same-repo PRs |
+| `docs.yml` build                      | `pull_request`; paths below                        | T0   | none. Builds, scans `dist` with `scripts/scan-client-bundle.sh`, uploads `dist` for same-repo PRs |
 | `docs-preview.yml` deploy             | `workflow_run` of `docs.yml` (default-branch code) | T1   | `docs-preview`: `CLOUDFLARE_DOCS_PREVIEW_TOKEN`, Workers Editor on `<product>-docs-preview` only  |
 | `docs-preview.yml` cleanup (tidiness) | `pull_request_target: closed`                      | T1   | `docs-preview`, same token                                                                        |
 | `docs-deploy.yml`                     | `push: main`; paths below                          | T2   | `docs`: `CLOUDFLARE_DOCS_TOKEN`, Workers Editor on `<product>-docs` only                          |
@@ -144,3 +144,7 @@ Deleted Previews keep serving (ADR-0021). For docs this only means an old PR's d
 - The preview reuses `scripts/preview/lib.sh` with `PREVIEW_WORKER` set to the docs preview Worker (PR state, Worker check, deterministic URL, deletion).
 - Preview URLs are a setting of the Worker, not of a Preview: `wrangler preview` leaves it as it is, even with `preview_urls: true` in its config (tested 2026-10-14: the Preview deployed with no URL). The owner enables Preview URLs once on the docs preview Worker (done 2026-10-14); the derived config keeps `preview_urls: false`. Verified afterwards with the owner's login: a Preview `pr-0` from the derived config served `/`, `/llms.txt` and `/index.md` (text/markdown) at `https://pr-0-saas-foundation-docs-preview.<subdomain>.workers.dev`, then was deleted. The CI token path is verified by the first docs PR.
 - `scripts/docs/**` joins the trigger paths of the build and both deploys.
+
+## Notes (2026-10-15)
+
+**No push build of the static sites** (to save Actions minutes). `docs.yml` and `site.yml` ran on `push: main` as well as on PRs, so every matching push built each site twice: once there and once in `static-deploy.yml`'s build job. Their builds now run on PRs only, and `static-deploy.yml`'s build runs `scripts/sites/assert-build.sh` after its scan, so `main` keeps the same checks before anything deploys. Its build uses the deployed commit's own scripts, so a redeploy by commit needs one from #123 on (docs) or #124 on (site); older versions are reached with the site's rollback workflow.

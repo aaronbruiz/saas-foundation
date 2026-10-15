@@ -1,23 +1,11 @@
 name: Docs
 
-# ADR-0028: builds the public docs site (apps/docs) when its build can change, with the shared
-# static-site build (ADR-0033 decision 9). T0: no secrets, no environment. For a same-repo PR it
-# uploads the site, which docs-preview.yml deploys as data.
+# ADR-0028: builds the public docs site (apps/docs) for a PR that can change its build, with the
+# shared static-site build (ADR-0033 decision 9). T0: no secrets, no environment. For a same-repo PR
+# it uploads the site, which docs-preview.yml deploys as data. No push build: on `main`,
+# docs-deploy.yml's build runs the same checks (ADR-0028 Notes 2026-10-15).
 on:
   pull_request:
-    paths:
-      - apps/docs/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - package.json
-      - .node-version
-      - .github/workflows/docs*.yml
-      - .github/workflows/static-*.yml
-      - scripts/check-bindings.mjs
-      - scripts/scan-client-bundle.sh
-      - scripts/sites/**
-  push:
-    branches: [main]
     paths:
       - apps/docs/**
       - pnpm-lock.yaml
