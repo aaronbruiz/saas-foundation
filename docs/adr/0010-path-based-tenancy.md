@@ -17,3 +17,7 @@ Previews already use the hostname (`pr-143.preview.example.com`). Subdomain tena
 
 - One host, cookie domain, certificate and callback URL; previews need no tenant DNS.
 - Per-tenant custom domains would need rework (trigger: an enterprise or white-label requirement).
+
+## Notes (2026-10-15)
+
+**Signature.** `getTenantContext` now takes `(db, headers, slug)`: the caller opens the database handle (`withDb`) and passes the request headers. It still resolves slug → org → membership through the uncached `DB` on every call; the decision is unchanged.
