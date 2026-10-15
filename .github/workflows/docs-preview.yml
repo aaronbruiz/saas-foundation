@@ -24,6 +24,7 @@ on:
       - .node-version
       - .github/workflows/docs*.yml
       - .github/workflows/static-*.yml
+      - .github/actions/**
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
       - scripts/sites/**

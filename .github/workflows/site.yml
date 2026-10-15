@@ -14,6 +14,7 @@ on:
       - .node-version
       - .github/workflows/site*.yml
       - .github/workflows/static-*.yml
+      - .github/actions/**
       - scripts/check-bindings.mjs
       - scripts/scan-client-bundle.sh
       - scripts/sites/**

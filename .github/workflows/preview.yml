@@ -41,32 +41,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read # the default branch's scripts
       pull-requests: read
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
       - id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           LOCK_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
-        # The PR number comes from GitHub, never from the run's branch name or artifact: the one open
-        # same-repo PR whose head is exactly this commit (an older commit's run is skipped).
+        # scripts/preview/resolve-pr.sh: the PR number comes from GitHub, never from the run's branch
+        # name or artifact, and only the PR this run is locked for.
         run: |
-          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "unexpected head sha"; exit 1; }
-          prs="$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" | jq -r '[.[] | select(.state == "open"
-            and .head.sha == env.HEAD_SHA and .head.repo.full_name == env.REPO
-            and .base.repo.full_name == env.REPO) | .number]')"
-          count="$(jq length <<<"$prs")"
-          if [ "$count" != 1 ]; then echo "no single open PR at $HEAD_SHA ($count); skipping"; exit 0; fi
-          pr="$(jq -r '.[0]' <<<"$prs")"
-          [[ "$pr" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "unexpected PR number"; exit 1; }
-          # This run holds the lock of LOCK_PR only: never touch another PR's resources.
-          if [ "$pr" != "$LOCK_PR" ]; then
-            echo "::notice title=Preview skipped::this run isn't locked for PR #$pr (lock: '${LOCK_PR}')"
-            exit 0
-          fi
+          pr="$(scripts/preview/resolve-pr.sh)"
+          [ -n "$pr" ] || exit 0
           # ADR-0028, ADR-0033: a PR that changes only the static sites (apps/docs/**, apps/site/**)
           # gets no app preview (it would hold one of
           # the preview project's 10 Neon branches for nothing). Neither does one that changes only
@@ -130,14 +124,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       # Default-branch lockfile, no cache: nothing the PR influenced is restored or saved here.
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          cache: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: Download the PR's build artifact (untrusted data)
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -177,14 +164,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          cache: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: E2E against the preview (default-branch suite; the PR's own tests ran in CI)
         env:
           BASE_URL: ${{ needs.deploy.outputs.url }}
@@ -205,15 +185,9 @@ jobs:
           # Refuse to post anything that isn't a plain workers.dev URL (defense in depth).
           [[ "$URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]{0,6}$ ]] || { echo "unexpected PR number"; exit 1; }
-          marker='<!-- saas-foundation-preview -->'
-          body="$marker
+          export MARKER='<!-- saas-foundation-preview -->'
+          export BODY="$MARKER
           **Preview** for ${HEAD_SHA::7}: $URL (E2E: $E2E)
           Health: $URL/api/health · its own Neon branch \`preview/pr-$PR_NUMBER\` and Hyperdrive config \`saas-pr-$PR_NUMBER\` (caching off)
           Its database access is revoked automatically when the PR closes."
-          id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
-          else
-            gh api "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null
-          fi
+          scripts/preview/comment.sh
