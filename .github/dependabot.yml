@@ -44,8 +44,8 @@ updates:
       - dependency-name: '@types/node' # the runtime is Node 24
         update-types: [version-update:semver-major]
 
-  - package-ecosystem: github-actions # SHA-pinned in .github/workflows
-    directory: /
+  - package-ecosystem: github-actions # SHA-pinned in .github/workflows and .github/actions
+    directories: [/, /.github/actions/*]
     # Monthly: version bumps of the pinned actions rarely matter within a month, and each update run
     # and its PR's CI cost Actions minutes. Security updates don't wait for this schedule.
     schedule:
