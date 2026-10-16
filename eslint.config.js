@@ -63,10 +63,28 @@ const unnormalizedPaths = {
     'Write the import path normalized (no //, inner ./ or a/../), so lint can check it (AGENTS.md invariants 2-3).',
 }
 
+// A workspace package's files imported by path (`../` or absolute, through a `packages/` or
+// `node_modules/` directory) skip its `exports` and every rule above: `packages/db/src/client.ts`
+// hands out the raw client. Package names (`@scope/packages/x`) and `./` paths stay allowed.
+const filePath = '^(/|(\\.\\./)+)(.*/)?(packages|node_modules)/'
+const noFilePathImports = {
+  regex: filePath,
+  message: 'Import workspace packages by name, never by file path (AGENTS.md invariants 2-3).',
+}
+
 // no-restricted-imports doesn't see import(), so the same limits for dynamic
 // imports, which must take a string literal for lint to check them. Selector regexes
 // can't contain '/', hence \x2F.
 const noDynamicRawDb = [
+  {
+    selector: `:matches(ImportExpression, TSImportType)[source.value=/${filePath.replaceAll('/', '\\x2F')}/]`,
+    message: noFilePathImports.message,
+  },
+  {
+    // Vite's glob imports take patterns lint can't check.
+    selector: "CallExpression[callee.object.type='MetaProperty'][callee.property.name=/^glob/]",
+    message: 'Import modules explicitly, not with import.meta.glob (AGENTS.md invariants 2-3).',
+  },
   {
     selector: "ImportExpression[source.type!='Literal']",
     message:
@@ -166,6 +184,7 @@ export default defineConfig([
             noDbClient,
             noRawDb,
             unnormalizedPaths,
+            noFilePathImports,
           ],
         },
       ],
@@ -184,6 +203,7 @@ export default defineConfig([
             noDbClient,
             noRawDb,
             unnormalizedPaths,
+            noFilePathImports,
             moduleBoundary(name).pattern,
           ],
         },
@@ -202,6 +222,7 @@ export default defineConfig([
             uiMustNotTouchDataOrAuth,
             noServerDbInUi,
             unnormalizedPaths,
+            noFilePathImports,
           ],
         },
       ],
@@ -218,6 +239,7 @@ export default defineConfig([
           patterns: [
             providerSdksOnlyInProviders,
             unnormalizedPaths,
+            noFilePathImports,
             {
               ...uiMustNotTouchDataOrAuth,
               group: uiMustNotTouchDataOrAuth.group.filter((g) => !g.includes('/auth')),
@@ -234,7 +256,15 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [providerSdksOnlyInProviders, noDrizzleOrm, noRawDb, unnormalizedPaths] },
+        {
+          patterns: [
+            providerSdksOnlyInProviders,
+            noDrizzleOrm,
+            noRawDb,
+            unnormalizedPaths,
+            noFilePathImports,
+          ],
+        },
       ],
     },
   },
@@ -268,6 +298,7 @@ export default defineConfig([
             noDbClient,
             noRawDb,
             unnormalizedPaths,
+            noFilePathImports,
             moduleBoundary('billing').pattern,
           ],
         },
