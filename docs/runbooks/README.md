@@ -289,11 +289,14 @@ origin() { jq -n --arg h "$1" '{scheme: "postgresql", host: $h, port: 5432, data
 # Points production Hyperdrive at the branch in PG* (owner_env) as $1 (app_owner: PGPASSWORD; app_runtime:
 # RUNTIME_PW), keeps caching disabled, then restarts the pool (an update doesn't close pooled connections).
 hd_point() {
-  local v=PGPASSWORD; [ "$1" = app_runtime ] && v=RUNTIME_PW
-  jq -n --arg h "$PGHOST" --arg u "$1" --arg v "$v" '{origin: {scheme: "postgresql", host: $h, port: 5432,
+  local v=PGPASSWORD r; [ "$1" = app_runtime ] && v=RUNTIME_PW
+  r="$(jq -n --arg h "$PGHOST" --arg u "$1" --arg v "$v" '{origin: {scheme: "postgresql", host: $h, port: 5432,
     database: "app", user: $u, password: env[$v]}, caching: {disabled: true}}' |
-    hd "/$PROD_HD" -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}' &&
-    hd "/$PROD_HD/restart" -X POST | jq .success
+    hd "/$PROD_HD" -X PATCH --data-binary @-)" || { echo "update failed; pool not restarted" >&2; return 1; }
+  jq -e '.success == true' <<<"$r" >/dev/null || { jq -c .errors <<<"$r" >&2; echo "update refused; pool not restarted" >&2; return 1; }
+  jq -c '{user: .result.origin.user}' <<<"$r"
+  hd "/$PROD_HD/restart" -X POST | jq -e '.success == true' >/dev/null || { echo "pool restart failed" >&2; return 1; }
+  echo "pool restarted"
 }
 # At the end: unset RUNTIME_PW PGPASSWORD CLOUDFLARE_API_TOKEN NEON_API_KEY
 ```
