@@ -16,7 +16,8 @@ const pgCloudflareWorkerdBuild = join(
 // Worker entry-point @tanstack/react-start/server-entry". That module only exists inside TanStack's
 // Vite plugin; our tests import modules directly and don't call the Worker entry.
 // Tests run inside workerd with the Worker's real bindings (ADR-0006).
-// The DB binding is pointed at the separate `app_test` database so tests never touch dev data.
+// The DB binding is pointed at the separate `app_test` database so tests never touch dev data, as
+// the least-privilege runtime role (ADR-0038; test/global-setup.ts gives it its local login).
 export default defineConfig({
   // Same build constant as vite.config.ts (ADR-0029), so server code under test sees it too.
   define: { __BUILD_INFO__: JSON.stringify(readBuildInfo()) },
@@ -24,7 +25,7 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
-        hyperdrives: { DB: 'postgres://app:app@localhost:5432/app_test' },
+        hyperdrives: { DB: 'postgres://app_runtime:app_runtime@localhost:5432/app_test' },
         bindings: {
           // Test-only values; real secrets come from Cloudflare (prod) or .dev.vars (local dev).
           BETTER_AUTH_SECRET: 'test-only-secret-not-used-anywhere-else-0123456789',

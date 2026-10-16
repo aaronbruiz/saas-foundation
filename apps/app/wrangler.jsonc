@@ -32,12 +32,13 @@
   "upload_source_maps": true,
   // ADR-0003/0004: the only DB binding. Remote: Hyperdrive config `saas-foundation-prod` in the
   // account above (caching disabled) → Neon project flat-cherry-23373668, branch `main`, direct host.
-  // Locally, wrangler connects directly to docker-compose Postgres (no pooling/caching).
+  // Locally, wrangler connects directly to docker-compose Postgres (no pooling/caching), as the
+  // least-privilege runtime role (ADR-0038; local password from docker/postgres-init or the tests).
   "hyperdrive": [
     {
       "binding": "DB",
       "id": "e788b06678f1450eb89f8b52384ab3a3",
-      "localConnectionString": "postgres://app:app@localhost:5432/app",
+      "localConnectionString": "postgres://app_runtime:app_runtime@localhost:5432/app",
     },
   ],
   // ADR-0016, ADR-0024: transactional email through Cloudflare Email Service (domain mail.aaronlabr.dev).

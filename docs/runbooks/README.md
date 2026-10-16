@@ -242,6 +242,68 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
   - **Baseline:** ADR-0026 "First reading" (2026-10-13, CLI and console agree: 31.83 MB storage, 0.63 CU-hours, 7.67 MB egress). Whether the CLI counters reset each period is unverified, so the console's figures decide the triggers.
   - Free has no consumption API (403) and no usage notifications.
 
+### Runtime role (ADR-0038)
+
+The app is meant to connect as `app_runtime` (created by migration `0005_runtime_role` without a login; table grants in ADR-0038). **Production keeps `app_owner` until steps 1–4 are done and recorded here.** Migrations, backups and previews stay on `app_owner`.
+
+Passwords: set them only from the owner's terminal with `psql`'s `\password` (it sends a SCRAM verifier, not the password), and store them only in the Hyperdrive config. Wrangler's `--origin-password` would put the password in process arguments, so send Hyperdrive configs through the API instead, as `scripts/preview/infra.sh` does: the password in an environment variable read at a hidden prompt, the body on stdin, the token in a header read from a file descriptor. Never put a password in a file, a URL in history, or chat.
+
+```sh
+read -rs RUNTIME_PW && export RUNTIME_PW   # the password just given to \password
+read -rs CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN   # Hyperdrive edit on the account
+ACCOUNT="$(grep -oE '"account_id": *"[0-9a-f]{32}"' apps/app/wrangler.jsonc | grep -oE '[0-9a-f]{32}')"
+# The token header comes from a file descriptor (not argv), so the body can use stdin.
+hd() { curl -fsS -H @<(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN") -H 'Content-Type: application/json' \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/hyperdrive/configs$1" "${@:2}"; }
+origin() { jq -n --arg h "$1" '{scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_runtime", password: env.RUNTIME_PW}'; }
+# when done: unset RUNTIME_PW CLOUDFLARE_API_TOKEN
+```
+
+Config ids: `wrangler hyperdrive list` (Wrangler's `get`, `update` and `delete` take an id, not a name).
+
+**Identity check** (as `app_owner`, in the Neon SQL Editor or `psql`):
+
+```sql
+select rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
+  from pg_roles where rolname = 'app_runtime';
+select roleid::regrole from pg_auth_members where member = 'app_runtime'::regrole;
+select table_name, string_agg(privilege_type, ',' order by privilege_type)
+  from information_schema.role_table_grants where grantee = 'app_runtime' group by 1 order by 1;
+select usename, count(*) from pg_stat_activity where datname = 'app' group by 1;
+```
+
+Expected:
+
+- one role row with every flag false except `rolcanlogin` (true once it has a login);
+- no memberships;
+- exactly ADR-0038's grants;
+- after the switch, the Worker's connections listed under `app_runtime`.
+
+1. **Verify on a disposable preview-project branch**, before touching production:
+   - `pnpm exec neon branches create --project-id withered-credit-11647832 --name runtime-check --parent preview-seed`, then migrate it as the owner: `DATABASE_URL="$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)" pnpm db:migrate`.
+   - `docker run -it --rm postgres:17-alpine psql "$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)"`, then `alter role app_runtime login;`, `\password app_runtime`, and the identity check.
+   - Create a temporary config: `origin <branch host> | jq '{name: "saas-runtime-check", caching: {disabled: true}, origin: .}' | hd "" -X POST --data-binary @- | jq '{success, id: .result.id}'`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access through Hyperdrive.
+   - The app through Hyperdrive as `app_runtime` (needs Actions): on the next PR preview, give that PR branch's `app_runtime` a login and password as above, then `origin <PR branch host> | jq '{origin: .}' | hd "/<id of saas-pr-N>" -X PATCH --data-binary @- | jq .success`, and re-run the preview's e2e job. Closing the PR deletes that config as usual (ADR-0021).
+   - Clean up: `hd "/<id of saas-runtime-check>" -X DELETE | jq .success` and `pnpm exec neon branches delete runtime-check --project-id withered-credit-11647832`. Record the results here.
+2. **Production password:** after the release that applied `0005_runtime_role`, open `psql` against production as `app_owner`, run `alter role app_runtime login;` and `\password app_runtime`, then the identity check.
+3. **Switch:** `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` for the current host, then `origin <same host> | jq '{origin: ., caching: {disabled: true}}' | hd /e788b06678f1450eb89f8b52384ab3a3 -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}'`. Then restart the pool as in "Full rollback" above. `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` must now show user `app_runtime`.
+4. **Confirm:**
+   - `/api/health` answers 200;
+   - signing in, opening a tenant, and creating and deleting a project all work;
+   - the identity check's last query lists `app_runtime`;
+   - Workers Issues and Logs show no `permission denied` (SQLSTATE `42501`) for an hour.
+
+   Record the date here.
+
+**Rollback:** `wrangler hyperdrive update e788b06678f1450eb89f8b52384ab3a3 --connection-string="$(neon connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner)"` (as in "Full rollback"), restart the pool, check `/api/health`. The role and its grants can stay.
+
+**After a restore or a promote:**
+
+- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psql "<owner URL>" -v ON_ERROR_STOP=1 -f packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
+- Give `app_runtime` a new password (step 2), and use it wherever the steps above point Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
+
+**A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
+
 ## Releases (ADR-0029)
 
 The default way to deploy production. Every merge to `main` updates one release PR (`chore(main): release app X.Y.Z`, branch `release-please--branches--main--components--app`; no preview). Only `feat`, `fix`, `perf`, `refactor` and `revert` titles release.

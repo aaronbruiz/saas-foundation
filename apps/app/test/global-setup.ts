@@ -3,6 +3,7 @@
 import { execFileSync, execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import type { TestProject } from 'vitest/node'
+import { enableLocalRuntimeLogin } from './local-runtime-role.ts'
 
 declare module 'vitest' {
   export interface ProvidedContext {
@@ -12,11 +13,13 @@ declare module 'vitest' {
   }
 }
 
-export default function setup(project: TestProject) {
+export default async function setup(project: TestProject) {
   execSync('pnpm --filter @saas-foundation/db db:migrate', {
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: 'postgres://app:app@localhost:5432/app_test' },
   })
+  // Tests connect as the runtime role, like production (ADR-0038); migrations stay on the owner.
+  await enableLocalRuntimeLogin()
   const { version } = JSON.parse(
     readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
   ) as { version: string }
