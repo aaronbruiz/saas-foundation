@@ -32,8 +32,15 @@ Tenant isolation stays in application code: `getTenantContext` and the `packages
 3. **The owner keeps migrations, backups and previews.** `app_owner` runs `scripts/release/migrate.sh`, `scripts/backup/*` and the preview migrator, as today. Previews keep their per-branch `app_owner` credential (ADR-0021) until a follow-up moves them to the runtime role (step 6).
 4. **No committed password.** The migration creates the role without a login. Each environment gives it one separately:
    - local docker-compose and CI: `docker/postgres-init/02-runtime-role.sql` and `apps/app/test/local-runtime-role.ts` set the known local password `app_runtime`, only against `localhost`;
-   - production: the owner sets it in their own terminal with `psql`'s `\password`, which sends only a SCRAM verifier, and stores it only in the Hyperdrive config (runbook "Database → Runtime role").
-5. **Production switches only after verification.** The runbook steps run in order, each recorded there: (a) on a disposable preview-project branch, check that the runtime role connects through a Hyperdrive config and that the app works with it; (b) set the production password and update `saas-foundation-prod`'s connection string; (c) confirm the identity (`wrangler hyperdrive get` shows `app_runtime`; the identity SQL as owner) and `/api/health`; (d) watch Workers Issues for `42501` (permission denied). Until then production keeps `app_owner`. The migration is harmless there: the role exists without a login.
+   - production: the owner generates a random password in their own terminal and sets it with a plaintext `ALTER ROLE app_runtime LOGIN PASSWORD :'pw'` over verified TLS. `psql` fills in `:'pw'` from an environment variable (`\getenv`), so the password never appears in argv, files, shell or psql history. It's stored only in the Hyperdrive config, which receives it in an API request body on stdin (runbook "Database → Runtime role"). Neon refuses pre-hashed SCRAM verifiers ("Neon only supports being given plaintext passwords", 2026-10-16), so `psql`'s `\password` doesn't work there. Postgres receives the password in plaintext. So before setting it, the runbook checks that statement and duration logging are off and that `pg_stat_statements` isn't installed. `log_min_error_statement` (which the owner can't change) logs the statement if it fails, so a password from a failed attempt counts as exposed and is replaced. Neon's own logs are outside our control. Secrets reach containers on stdin, never through `docker run -e`, whose values Docker keeps in the container's configuration. The alternative is Neon's reset-password API (runbook), which sends no password through SQL but isn't yet verified for a role created in SQL.
+5. **Production switches only after verification and explicit owner approval.** The runbook's gates must all be recorded there first:
+   - (a) the role, its grants and a Hyperdrive login checked on a disposable preview-project branch (done 2026-10-16, see Notes);
+   - (b) migration 0005 released to production;
+   - (c) the app itself working through Hyperdrive as `app_runtime`: a PR preview's e2e run, or an approved isolated Worker smoke test;
+   - (d) the owner's explicit approval to change production credentials.
+
+   Only then: set the production password, update `saas-foundation-prod`, confirm the identity and `/api/health`, and watch Workers Issues for `42501` (permission denied). Until then production keeps `app_owner`. The migration is harmless there: the role exists without a login.
+
 6. **Follow-ups, not decided here:** move previews to the runtime role (infra.sh would set a per-branch password; it needs Actions to verify); row-level security on tenant tables and a delete-audit trigger (R06 phases 2–3, after R04 and R05, in their own ADR).
 
 ## Residual risks (stated, not solved by this ADR)
@@ -50,7 +57,7 @@ Tenant isolation stays in application code: `getTenantContext` and the `packages
 - **Adding a table** (AGENTS.md recipe) now also means granting its privileges to `app_runtime` in a migration (`drizzle-kit generate --custom`) and adding it to `GRANTS` in `test/database-role.test.ts`.
 - **Restores:** dumps are restored with `--no-acl` (runbook), so the grants don't come back with the data. After a restore, re-apply `packages/db/drizzle/0005_runtime_role.sql` and later grant migrations with `psql -v ON_ERROR_STOP=1 -f` (idempotent), then give the role its login on the new project.
 - **Local setup:** a fresh docker volume creates the role with its local login. An existing volume gets it the first time `pnpm test` or `pnpm test:e2e` runs; `pnpm dev` alone needs `pnpm db:migrate` and one test run first.
-- **Rollback:** point `saas-foundation-prod` back at `app_owner` (`wrangler hyperdrive update … --connection-string=<app_owner URL>`). The role and grants can stay; removing them later is a contract migration.
+- **Rollback:** point `saas-foundation-prod` back at `app_owner` through the Hyperdrive API (runbook `hd_point app_owner`, which also restarts the pool; no credential in argv). Optionally remove `app_runtime`'s login. The role and grants can stay; removing them later is a contract migration.
 
 ## Alternatives
 
@@ -58,3 +65,14 @@ Tenant isolation stays in application code: `getTenantContext` and the `packages
 - **Create the runtime role in the Neon Console or API:** it would get `neon_superuser` membership and `BYPASSRLS` like `app_owner`.
 - **Default privileges** (`ALTER DEFAULT PRIVILEGES … GRANT … TO app_runtime`): every new table would be readable and writable by the app before anyone decided, failing open (R06 Codex review).
 - **Column-level grants on the auth tables:** Better Auth's adapter selects whole rows; it would break sign-in for little gain.
+
+## Notes
+
+- **2026-10-16, gate (a) verified** on a disposable preview-project branch `runtime-check`, with a temporary Hyperdrive config `saas-runtime-check`. Both were deleted afterwards, and the production Hyperdrive config's fingerprint was unchanged.
+  - Migration as `app_owner`: `app_runtime` was created without a login and with every attribute false. Its grants matched decision 2 exactly. `app_owner` became an admin member of it, without inherit or `SET`.
+  - After `LOGIN` and a password, as `app_runtime` over certificate-verified TLS:
+    - no memberships, nothing inherited (`neon_superuser`, `pg_*_all_data`, `app_owner`) and nothing owned;
+    - DDL, `TRUNCATE`, deletes on the add-only tables, the migrations table, `CREATE ROLE` and `SET ROLE app_owner` refused (`42501`), and `SET ROLE neon_superuser` refused by Neon.
+  - Creating the Hyperdrive config as `app_runtime` succeeded (caching disabled; the API doesn't return the password). The same origin with a wrong password was refused (code 2013).
+  - Found: Neon refuses SCRAM verifiers, so decision 4 now uses a plaintext password over TLS.
+  - Evidence is in the owner's local research artifacts (`R06-artifacts/runtime-check-2026-10-16.txt`, sanitized).
