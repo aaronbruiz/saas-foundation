@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings
+          fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings and migrations
       - uses: ./.github/actions/setup
         with:
           cache: pnpm
@@ -48,6 +48,20 @@ jobs:
       - name: Create test database (mirrors docker/postgres-init)
         run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
       - run: pnpm check
+      # Invariant 10: applied migrations stay untouched, the history has no collision, no schema
+      # change lacks its migration, schema/auth.ts is current, and the migrations' SQL builds the
+      # schema. Base: the PR's merge parent, or the commit a push to main replaced (fetched if the
+      # depth-2 checkout lacks it).
+      - name: Migrations are immutable and match the schema
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          if [[ ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE"
+          fi
+          node scripts/check-migrations.mjs "$BASE"
+          scripts/check-schema-sql.sh
       - run: pnpm test
       - name: Build and scan the client bundle for secrets
         run: pnpm build && scripts/scan-client-bundle.sh
