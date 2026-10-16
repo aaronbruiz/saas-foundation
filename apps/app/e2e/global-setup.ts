@@ -4,9 +4,12 @@
 // within a minute failed with 429s. Previews get a fresh database on every deploy.
 import { createDb } from '@saas-foundation/db'
 import { rawDb, schema } from '@saas-foundation/db/internal'
+import { enableLocalRuntimeLogin } from '../test/local-runtime-role.ts'
 
 export default async function setup() {
   if (process.env.BASE_URL) return
+  // The dev server connects as the runtime role (ADR-0038; wrangler.jsonc localConnectionString).
+  await enableLocalRuntimeLogin()
   // The local dev database (wrangler.jsonc `localConnectionString`); known local credentials.
   const { db, close } = await createDb('postgres://app:app@localhost:5432/app')
   try {
