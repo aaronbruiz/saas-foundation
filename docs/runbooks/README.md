@@ -244,24 +244,52 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
 
 ### Runtime role (ADR-0038)
 
-The app is meant to connect as `app_runtime` (created by migration `0005_runtime_role` without a login; table grants in ADR-0038). **Production keeps `app_owner` until steps 1–4 are done and recorded here.** Migrations, backups and previews stay on `app_owner`.
+The app is meant to connect as `app_runtime`, which migration `0005_runtime_role` creates without a login (table grants in ADR-0038). Migrations, backups and previews stay on `app_owner`.
 
-Passwords: set them only from the owner's terminal with `psql`'s `\password` (it sends a SCRAM verifier, not the password), and store them only in the Hyperdrive config. Wrangler's `--origin-password` would put the password in process arguments, so send Hyperdrive configs through the API instead, as `scripts/preview/infra.sh` does: the password in an environment variable read at a hidden prompt, the body on stdin, the token in a header read from a file descriptor. Never put a password in a file, a URL in history, or chat.
+**Production keeps `app_owner` until every gate is recorded here:**
+
+- [x] **G1** role, grants and Hyperdrive login verified on a disposable preview-project branch: 2026-10-16 (ADR-0038 Notes; sanitized evidence in the owner's local `R06-artifacts/runtime-check-2026-10-16.txt`).
+- [ ] **G2** migration 0005 released to production: the identity check (below) on production shows `app_runtime` with its grants.
+- [ ] **G3** the app working through Hyperdrive as `app_runtime`: step 2's PR preview e2e run, or an isolated Worker smoke test the owner approved.
+- [ ] **G4** the owner's explicit approval to change production credentials (date and who, here).
+
+**Secret handling.**
+
+- A password never goes in argv, a file, a log, shell or psql history, chat or a committed artifact.
+- Passwords live only in exported shell variables for one session; `unset` them at the end.
+- `psql` gets the password through `\getenv`; Hyperdrive gets it in an API body on stdin; the API token goes in a header read from a file descriptor.
+- Owner connections use `PG*` variables, not a URL argument, with verified TLS (`PGSSLMODE=verify-full`, `PGSSLROOTCERT=system`; libpq ≥ 16, the `postgres:17-alpine` image has the system CA bundle). Hyperdrive's default `sslmode=require` already validates the origin's certificate (WebPKI).
+- Postgres receives a password set with `ALTER ROLE … PASSWORD` in plaintext. Neon refuses pre-hashed SCRAM verifiers ("Neon only supports being given plaintext passwords"), so `\password` doesn't work. Step 1b therefore checks first that statement logging is off and `pg_stat_statements` isn't installed.
+- Neon requires at least 60 bits of entropy; `openssl rand -hex 24` gives 192.
+
+**Session setup.** Run in `bash`, from the repo root:
 
 ```sh
-read -rs RUNTIME_PW && export RUNTIME_PW   # the password just given to \password
-read -rs CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN   # Hyperdrive edit on the account
+P_PREVIEW=withered-credit-11647832; P_PROD=flat-cherry-23373668; PROD_HD=e788b06678f1450eb89f8b52384ab3a3
 ACCOUNT="$(grep -oE '"account_id": *"[0-9a-f]{32}"' apps/app/wrangler.jsonc | grep -oE '[0-9a-f]{32}')"
-# The token header comes from a file descriptor (not argv), so the body can use stdin.
+# Cloudflare token with Hyperdrive edit: Wrangler's own login, or paste one at a hidden prompt.
+export CLOUDFLARE_API_TOKEN="$(pnpm --filter app exec wrangler auth token 2>/dev/null </dev/null | tail -n1 | tr -d '[:space:]')"
+# Hyperdrive API: the token header comes from a file descriptor (not argv), so the body can use stdin.
 hd() { curl -fsS -H @<(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN") -H 'Content-Type: application/json' \
   "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/hyperdrive/configs$1" "${@:2}"; }
+# Exports PG* for app_owner on branch $1 of project $2, with verified TLS. The URL never reaches argv.
+owner_env() {
+  local u re='^postgres(ql)?://([^:]+):([^@]+)@([^/?]+)/([^?]+)'
+  u="$(pnpm exec neon connection-string "$1" --project-id "$2" --database-name app --role-name app_owner </dev/null)"
+  [[ "$u" =~ $re ]] || { echo "unexpected connection string shape" >&2; return 1; }
+  export PGUSER="${BASH_REMATCH[2]}" PGPASSWORD="${BASH_REMATCH[3]}" PGHOST="${BASH_REMATCH[4]}" PGDATABASE="${BASH_REMATCH[5]}" \
+    PGSSLMODE=verify-full PGSSLROOTCERT=system
+}
+psqlo() { docker run --rm -i -e PGUSER -e PGPASSWORD -e PGHOST -e PGDATABASE -e PGSSLMODE -e PGSSLROOTCERT -e RUNTIME_PW \
+  postgres:17-alpine psql -X -v ON_ERROR_STOP=1 "$@"; }
+# Origin body for app_runtime on host $1; the password comes from the environment.
 origin() { jq -n --arg h "$1" '{scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_runtime", password: env.RUNTIME_PW}'; }
-# when done: unset RUNTIME_PW CLOUDFLARE_API_TOKEN
+# At the end: unset RUNTIME_PW PGPASSWORD CLOUDFLARE_API_TOKEN NEON_API_KEY
 ```
 
-Config ids: `wrangler hyperdrive list` (Wrangler's `get`, `update` and `delete` take an id, not a name).
+Config ids: `wrangler hyperdrive list`. Wrangler's `get`, `update` and `delete` take an id, not a name.
 
-**Identity check** (as `app_owner`, in the Neon SQL Editor or `psql`):
+**Identity check** (as the owner: `owner_env <branch> <project>`, then `psqlo -f - <<'SQL'` … `SQL`):
 
 ```sql
 select rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
@@ -279,28 +307,58 @@ Expected:
 - exactly ADR-0038's grants;
 - after the switch, the Worker's connections listed under `app_runtime`.
 
-1. **Verify on a disposable preview-project branch**, before touching production:
-   - `pnpm exec neon branches create --project-id withered-credit-11647832 --name runtime-check --parent preview-seed`, then migrate it as the owner: `DATABASE_URL="$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)" pnpm db:migrate`.
-   - `docker run -it --rm postgres:17-alpine psql "$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)"`, then `alter role app_runtime login;`, `\password app_runtime`, and the identity check.
-   - Create a temporary config: `origin <branch host> | jq '{name: "saas-runtime-check", caching: {disabled: true}, origin: .}' | hd "" -X POST --data-binary @- | jq '{success, id: .result.id}'`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access through Hyperdrive.
-   - The app through Hyperdrive as `app_runtime` (needs Actions): on the next PR preview, give that PR branch's `app_runtime` a login and password as above, then `origin <PR branch host> | jq '{origin: .}' | hd "/<id of saas-pr-N>" -X PATCH --data-binary @- | jq .success`, and re-run the preview's e2e job. Closing the PR deletes that config as usual (ADR-0021).
-   - Clean up: `hd "/<id of saas-runtime-check>" -X DELETE | jq .success` and `pnpm exec neon branches delete runtime-check --project-id withered-credit-11647832`. Record the results here.
-2. **Production password:** after the release that applied `0005_runtime_role`, open `psql` against production as `app_owner`, run `alter role app_runtime login;` and `\password app_runtime`, then the identity check.
-3. **Switch:** `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` for the current host, then `origin <same host> | jq '{origin: ., caching: {disabled: true}}' | hd /e788b06678f1450eb89f8b52384ab3a3 -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}'`. Then restart the pool as in "Full rollback" above. `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` must now show user `app_runtime`.
-4. **Confirm:**
+1. **Disposable-branch check (G1; repeat after changing this procedure).** Wrap it in a `trap` that deletes the config and the branch on any exit, including a failure, as the 2026-10-16 run did.
+   1. **Branch and migration:** `pnpm exec neon branches create --project-id $P_PREVIEW --name runtime-check --parent preview-seed`, then `owner_env runtime-check $P_PREVIEW && DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST/$PGDATABASE?sslmode=require" pnpm db:migrate` (the URL is built in the environment, not typed).
+   2. **Set the password:**
+      - `psqlo -At -c 'show log_statement' -c "select exists (select from pg_extension where extname = 'pg_stat_statements')"` must print `none` and `f`. Otherwise stop, and use the API alternative below.
+      - `export RUNTIME_PW="$(openssl rand -hex 24)"`
+      - `printf '%s\n' '\getenv pw RUNTIME_PW' "alter role app_runtime login password :'pw';" | psqlo -q -f -`
+   3. **Identity check** as above.
+   4. **Hyperdrive:**
+      - `origin "$PGHOST" | jq '{name: "saas-runtime-check", caching: {disabled: true}, origin: .}' | hd "" -X POST --data-binary @- | jq '{success, id: .result.id, user: .result.origin.user}'`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access.
+      - Negative check: the same body with a wrong password must fail with code 2013.
+   5. **Clean up:** `hd "/<id>" -X DELETE | jq .success`, `pnpm exec neon branches delete runtime-check --project-id $P_PREVIEW`, then `wrangler hyperdrive list` and `neon branches list` show only `saas-foundation-prod` and `preview-seed`.
+2. **App through Hyperdrive (G3; needs Actions):**
+   - On a PR preview, `owner_env preview/pr-<N> $P_PREVIEW`, then set a password on that branch (step 1.2).
+   - `origin "$PGHOST" | jq '{origin: .}' | hd "/<id of saas-pr-N>" -X PATCH --data-binary @- | jq .success`, then `hd "/<id of saas-pr-N>/restart" -X POST`.
+   - Re-run the preview's e2e job. It must pass with the Worker's connections listed under `app_runtime` (identity check, last query).
+   - Closing the PR deletes the config as usual (ADR-0021).
+   - An isolated remote Worker smoke test is the alternative only with the owner's approval: it's a new Worker (invariant 14).
+3. **Production password (after G1–G4):** `owner_env main $P_PROD`, then step 1.2's three commands, then the identity check.
+4. **Switch:**
+   - `wrangler hyperdrive get $PROD_HD` for the current host.
+   - `origin <same host> | jq '{origin: ., caching: {disabled: true}}' | hd "/$PROD_HD" -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}'`
+   - Restart the pool: `hd "/$PROD_HD/restart" -X POST | jq .success`. An update doesn't close existing pooled connections.
+   - `wrangler hyperdrive get $PROD_HD` must show user `app_runtime`, caching disabled.
+5. **Confirm:**
    - `/api/health` answers 200;
    - signing in, opening a tenant, and creating and deleting a project all work;
    - the identity check's last query lists `app_runtime`;
    - Workers Issues and Logs show no `permission denied` (SQLSTATE `42501`) for an hour.
 
-   Record the date here.
+   Record the date here, then `unset RUNTIME_PW PGPASSWORD CLOUDFLARE_API_TOKEN`.
 
-**Rollback:** `wrangler hyperdrive update e788b06678f1450eb89f8b52384ab3a3 --connection-string="$(neon connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner)"` (as in "Full rollback"), restart the pool, check `/api/health`. The role and its grants can stay.
+**API alternative for setting the password (step 1.2):** Neon's reset-password endpoint generates the password itself, so nothing goes through SQL. It needs a Neon API key with access to the project (`read -rs NEON_API_KEY && export NEON_API_KEY`). It's **unverified for a role created in SQL**: try it on a disposable branch first, and re-run the identity check afterwards, which must still show no memberships (no `neon_superuser`).
+
+```sh
+BRANCH_ID="$(pnpm exec neon branches list --project-id <project> -o json </dev/null | jq -r --arg b <branch> '.[] | select(.name == $b) | .id')"
+psqlo -c 'alter role app_runtime login'   # reset_password sets a password, not LOGIN
+export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
+  curl -fsS -H @- -X POST "https://console.neon.tech/api/v2/projects/<project>/branches/$BRANCH_ID/roles/app_runtime/reset_password" |
+  jq -r .role.password)"
+```
+
+**Rollback** (any time after step 4):
+
+- `owner_env main $P_PROD`, then `jq -n --arg h "$PGHOST" '{origin: {scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_owner", password: env.PGPASSWORD}, caching: {disabled: true}}' | hd "/$PROD_HD" -X PATCH --data-binary @-`, then `hd "/$PROD_HD/restart" -X POST`.
+- Check `/api/health`; `wrangler hyperdrive get $PROD_HD` shows `app_owner`.
+- To revoke the runtime credential as well: `psqlo -c 'alter role app_runtime nologin'`.
+- The role and its grants can stay; removing them is a contract migration.
 
 **After a restore or a promote:**
 
-- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psql "<owner URL>" -v ON_ERROR_STOP=1 -f packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
-- Give `app_runtime` a new password (step 2), and use it wherever the steps above point Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
+- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo -f - < packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
+- Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
 
 **A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
 
