@@ -205,8 +205,7 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
   3. **Full rollback ("promote"; loses writes made after the snapshot):**
      - `neon branches add-compute backup-YYYYMMDD --type read_write --project-id "$NEON_PROJECT_ID"`
      - `neon branches rename main main-before-restore-YYYYMMDD --project-id "$NEON_PROJECT_ID"`, then `neon branches rename backup-YYYYMMDD main --project-id "$NEON_PROJECT_ID"`, then `neon branches set-default main --project-id "$NEON_PROJECT_ID"`
-     - `wrangler hyperdrive update <prod-hyperdrive-id> --connection-string="$(neon connection-string main --project-id "$NEON_PROJECT_ID" --database-name app --role-name app_owner)"` (caching stays disabled; the id and binding are unchanged, so no redeploy)
-     - **Restart the Hyperdrive pool:** an update doesn't tear down existing pooled connections, which would keep using the old branch. `curl -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs/<prod-hyperdrive-id>/restart"` (Cloudflare API "Restart Hyperdrive"; `<prod-hyperdrive-id>` is the `DB` id in `apps/app/wrangler.jsonc`), or the dashboard: Hyperdrive → `saas-foundation-prod` → Settings → Danger zone → **Restart**. In-flight queries may briefly error.
+     - **Point Hyperdrive at the promoted `main` and restart its pool**, with the helpers from "Runtime role (ADR-0038)" → Session setup (no credential in argv): `owner_env main $P_PROD && hd_point app_owner`. Once production runs as `app_runtime` (that section's gates done), give the promoted branch's `app_runtime` a new password (its step 1.2) and run `hd_point app_runtime` instead. Caching stays disabled; the id and binding are unchanged, so no redeploy. The restart matters because an update doesn't close existing pooled connections, which would keep using the old branch. Dashboard alternative for the restart: Hyperdrive → `saas-foundation-prod` → Settings → Danger zone → **Restart**. In-flight queries may briefly error.
      - _Drilled 2026-10-15 (throwaway projects; no Hyperdrive): the renames and `set-default` took 2–3 s. Point-in-time restore on the promoted `main` worked for a time 2 min after the promotion; a time before the snapshot branch was created was refused ("historical data is not available"). Times between the snapshot's creation and the promotion are untested. In a separate drill (step 5 below), traffic followed a `hyperdrive update` without the restart; keep the restart step, since that was one test with a nearly idle pool._
      - verify `/api/health`. The promoted copy holds the snapshot's billing state: check every organization with a subscription against Polar and re-sync any mismatch ("Polar" → "Re-sync one subscription from Polar"; deliveries made since the snapshot aren't recorded in it, so redelivering them also works). `main-before-restore-*` **can't be deleted**: it's the parent of the new `main` and of the older snapshots, and Neon forbids deleting branches that have children. Each promote therefore permanently uses one of the 10 branch slots, so treat promote as a last resort and prefer selective recovery. Snapshots keep working because the new production branch is named `main` again.
 - Neon's snapshot feature (one-step restore that keeps the connection string) is limited on Free to **1 manual snapshot, no schedules**. Registered as a possible complement, not adopted.
@@ -226,7 +225,7 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
      `select table_schema||'.'||table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text::int from information_schema.tables where table_schema in ('public','drizzle') and table_type='BASE TABLE' order by 1`
      Counts can differ only by writes made after the dump's creation time (the `Archive created at` line of `pg_restore --list`).
   4. **Clean up:** `docker rm -f restore-check`, delete the downloaded files.
-  5. **Real recovery** (Neon lost): create a new Neon project and database `app` (Postgres 17), `pg_restore --no-owner --no-acl --exit-on-error` the dump into it (connection in `PG*` variables from an env file, as `dump.sh` does, not a URL argument), point production Hyperdrive at it (`wrangler hyperdrive update … --connection-string=…`, then restart the pool as in the promote steps above), check `/api/health`. Writes after the dump are lost.
+  5. **Real recovery** (Neon lost): create a new Neon project and database `app` (Postgres 17), `pg_restore --no-owner --no-acl --exit-on-error` the dump into it (connection in `PG*` variables from an env file, as `dump.sh` does, not a URL argument), point production Hyperdrive at it and restart the pool (`owner_env main <new project id> && hd_point app_owner`, helpers in "Runtime role (ADR-0038)"; as `app_runtime` once production uses it: re-apply the grants and set a password first, see "After a restore or a promote" there), check `/api/health`. Writes after the dump are lost.
      _Drilled 2026-10-15 on disposable infrastructure (ADR-0035; the 10-15 dump): new project with role `app_owner` and database `app` 12 s, `pg_restore` done and row counts equal at 24 s, a new Hyperdrive config and Worker healthy at 59 s. `hyperdrive update` to another branch took 3 s, and the next request (6 s later) already reached the new branch without a pool restart. Not covered: updating and restarting production's Hyperdrive config, production `/api/health`, and the new `NEON_PROJECT_ID` and `NEON_API_KEY` the next backup needs (see "CI credentials")._
   - _Restore test done 2026-09-30 (steps 1–4; owner and Claude): dump `daily/app-20260930.dump` (27013 bytes), written by `db-backup.yml`'s `dump` job in a manually dispatched run (run 36773098184, archive created 20:39:10Z, server 17.11, `pg_dump` 17.10 from the pinned client image). Downloaded from the dashboard (saved as `daily_app-20260930.dump`, renamed as in step 1); `sha256sum -c` printed `OK`. `pg_restore --no-owner --no-acl --exit-on-error` into a fresh `postgres:17-alpine`: no errors. Per-table counts, restored copy = production `main` (Neon SQL Editor, shortly after): `drizzle.__drizzle_migrations` 5, `account` 2, `billing_subscription` 2, `billing_webhook_event` 18, `invitation` 0, `member` 2, `organization` 2, `project` 1, `rate_limit` 1, `session` 1, `user` 2, `verification` 0: all 12 tables equal. Container and downloaded files deleted afterwards. **This meets the data gate's "restore tested" condition** (owner decision 2026-09-30: a manually dispatched run of the `dump` job counts; ADR-0023 decision 5)._
   - _Repeated 2026-10-15, timed (owner and Claude): dump `daily/app-20261015.dump` (28470 bytes, scheduled run, archive created 09:13:34Z), `sha256sum -c` `OK`; container ready 2.4 s, `pg_restore` 0.6 s (exit 0, no output), counts query 0.1 s; all 12 tables equal to production `main`. The dashboard download and the SQL Editor take the hands-on minutes._
@@ -259,7 +258,8 @@ The app is meant to connect as `app_runtime`, which migration `0005_runtime_role
 - Passwords live only in exported shell variables for one session; `unset` them at the end.
 - `psql` gets the password through `\getenv`; Hyperdrive gets it in an API body on stdin; the API token goes in a header read from a file descriptor.
 - Owner connections use `PG*` variables, not a URL argument, with verified TLS (`PGSSLMODE=verify-full`, `PGSSLROOTCERT=system`; libpq ≥ 16, the `postgres:17-alpine` image has the system CA bundle). Hyperdrive's default `sslmode=require` already validates the origin's certificate (WebPKI).
-- Postgres receives a password set with `ALTER ROLE … PASSWORD` in plaintext. Neon refuses pre-hashed SCRAM verifiers ("Neon only supports being given plaintext passwords"), so `\password` doesn't work. Step 1b therefore checks first that statement logging is off and `pg_stat_statements` isn't installed.
+- Secrets never go into `docker run -e`: Docker stores those values in the container's configuration (`docker inspect`), even with `--rm`. `psqlo` feeds them to the container on stdin instead.
+- Postgres receives a password set with `ALTER ROLE … PASSWORD` in plaintext. Neon refuses pre-hashed SCRAM verifiers ("Neon only supports being given plaintext passwords"), so `\password` doesn't work. The statement text reaches a server log through `log_statement`, through the duration settings, and, **if the statement fails**, through `log_min_error_statement` (default `error`), which the owner can't change. So step 1.2 checks the settings first. If the `ALTER ROLE` fails for any reason, treat that password as exposed: generate a new one, and never reuse it. Neon's own logs are outside our control. The reset-password API (below) sends no password through SQL, once verified for this role.
 - Neon requires at least 60 bits of entropy; `openssl rand -hex 24` gives 192.
 
 **Session setup.** Run in `bash`, from the repo root:
@@ -280,16 +280,27 @@ owner_env() {
   export PGUSER="${BASH_REMATCH[2]}" PGPASSWORD="${BASH_REMATCH[3]}" PGHOST="${BASH_REMATCH[4]}" PGDATABASE="${BASH_REMATCH[5]}" \
     PGSSLMODE=verify-full PGSSLROOTCERT=system
 }
-psqlo() { docker run --rm -i -e PGUSER -e PGPASSWORD -e PGHOST -e PGDATABASE -e PGSSLMODE -e PGSSLROOTCERT -e RUNTIME_PW \
-  postgres:17-alpine psql -X -v ON_ERROR_STOP=1 "$@"; }
+# psql in a container, SQL on stdin. The two secrets go in through stdin too, never `docker run -e`.
+psqlo() { { printf '%s\n%s\n' "$PGPASSWORD" "${RUNTIME_PW:-}"; cat; } |
+  docker run --rm -i -e PGUSER -e PGHOST -e PGDATABASE -e PGSSLMODE -e PGSSLROOTCERT postgres:17-alpine \
+    sh -c 'IFS= read -r PGPASSWORD; IFS= read -r RUNTIME_PW; export PGPASSWORD RUNTIME_PW; exec psql -X -v ON_ERROR_STOP=1 -f - "$@"' psql "$@"; }
 # Origin body for app_runtime on host $1; the password comes from the environment.
 origin() { jq -n --arg h "$1" '{scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_runtime", password: env.RUNTIME_PW}'; }
+# Points production Hyperdrive at the branch in PG* (owner_env) as $1 (app_owner: PGPASSWORD; app_runtime:
+# RUNTIME_PW), keeps caching disabled, then restarts the pool (an update doesn't close pooled connections).
+hd_point() {
+  local v=PGPASSWORD; [ "$1" = app_runtime ] && v=RUNTIME_PW
+  jq -n --arg h "$PGHOST" --arg u "$1" --arg v "$v" '{origin: {scheme: "postgresql", host: $h, port: 5432,
+    database: "app", user: $u, password: env[$v]}, caching: {disabled: true}}' |
+    hd "/$PROD_HD" -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}' &&
+    hd "/$PROD_HD/restart" -X POST | jq .success
+}
 # At the end: unset RUNTIME_PW PGPASSWORD CLOUDFLARE_API_TOKEN NEON_API_KEY
 ```
 
 Config ids: `wrangler hyperdrive list`. Wrangler's `get`, `update` and `delete` take an id, not a name.
 
-**Identity check** (as the owner: `owner_env <branch> <project>`, then `psqlo -f - <<'SQL'` … `SQL`):
+**Identity check** (as the owner: `owner_env <branch> <project>`, then `psqlo <<'SQL'` … `SQL`):
 
 ```sql
 select rolname, rolcanlogin, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication
@@ -310,9 +321,9 @@ Expected:
 1. **Disposable-branch check (G1; repeat after changing this procedure).** Wrap it in a `trap` that deletes the config and the branch on any exit, including a failure, as the 2026-10-16 run did.
    1. **Branch and migration:** `pnpm exec neon branches create --project-id $P_PREVIEW --name runtime-check --parent preview-seed`, then `owner_env runtime-check $P_PREVIEW && DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST/$PGDATABASE?sslmode=require" pnpm db:migrate` (the URL is built in the environment, not typed).
    2. **Set the password:**
-      - `psqlo -At -c 'show log_statement' -c "select exists (select from pg_extension where extname = 'pg_stat_statements')"` must print `none` and `f`. Otherwise stop, and use the API alternative below.
+      - Check the logging settings: `echo "select name, setting from pg_settings where name in ('log_statement', 'log_duration', 'log_min_duration_statement', 'log_min_duration_sample', 'log_min_error_statement') union all select 'pg_stat_statements', exists (select from pg_extension where extname = 'pg_stat_statements')::text order by 1" | psqlo -At`. It must show `log_statement` `none`, `log_duration` `off`, both `log_min_duration_*` `-1`, and `pg_stat_statements` `false`. Otherwise stop and use the API alternative below. `log_min_error_statement` (normally `error`) logs the statement only if it fails, so a failure means a new password.
       - `export RUNTIME_PW="$(openssl rand -hex 24)"`
-      - `printf '%s\n' '\getenv pw RUNTIME_PW' "alter role app_runtime login password :'pw';" | psqlo -q -f -`
+      - `printf '%s\n' '\getenv pw RUNTIME_PW' "alter role app_runtime login password :'pw';" | psqlo -q`. If it reports any error, `unset RUNTIME_PW` and start this step again with a new password.
    3. **Identity check** as above.
    4. **Hyperdrive:**
       - `origin "$PGHOST" | jq '{name: "saas-runtime-check", caching: {disabled: true}, origin: .}' | hd "" -X POST --data-binary @- | jq '{success, id: .result.id, user: .result.origin.user}'`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access.
@@ -327,8 +338,7 @@ Expected:
 3. **Production password (after G1–G4):** `owner_env main $P_PROD`, then step 1.2's three commands, then the identity check.
 4. **Switch:**
    - `wrangler hyperdrive get $PROD_HD` for the current host.
-   - `origin <same host> | jq '{origin: ., caching: {disabled: true}}' | hd "/$PROD_HD" -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}'`
-   - Restart the pool: `hd "/$PROD_HD/restart" -X POST | jq .success`. An update doesn't close existing pooled connections.
+   - `owner_env main $P_PROD && hd_point app_runtime`, which also restarts the pool.
    - `wrangler hyperdrive get $PROD_HD` must show user `app_runtime`, caching disabled.
 5. **Confirm:**
    - `/api/health` answers 200;
@@ -342,7 +352,7 @@ Expected:
 
 ```sh
 BRANCH_ID="$(pnpm exec neon branches list --project-id <project> -o json </dev/null | jq -r --arg b <branch> '.[] | select(.name == $b) | .id')"
-psqlo -c 'alter role app_runtime login'   # reset_password sets a password, not LOGIN
+echo 'alter role app_runtime login' | psqlo   # reset_password sets a password, not LOGIN
 export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
   curl -fsS -H @- -X POST "https://console.neon.tech/api/v2/projects/<project>/branches/$BRANCH_ID/roles/app_runtime/reset_password" |
   jq -r .role.password)"
@@ -350,14 +360,14 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 
 **Rollback** (any time after step 4):
 
-- `owner_env main $P_PROD`, then `jq -n --arg h "$PGHOST" '{origin: {scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_owner", password: env.PGPASSWORD}, caching: {disabled: true}}' | hd "/$PROD_HD" -X PATCH --data-binary @-`, then `hd "/$PROD_HD/restart" -X POST`.
+- `owner_env main $P_PROD && hd_point app_owner`.
 - Check `/api/health`; `wrangler hyperdrive get $PROD_HD` shows `app_owner`.
-- To revoke the runtime credential as well: `psqlo -c 'alter role app_runtime nologin'`.
+- To revoke the runtime credential as well: `echo 'alter role app_runtime nologin' | psqlo`.
 - The role and its grants can stay; removing them is a contract migration.
 
 **After a restore or a promote:**
 
-- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo -f - < packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
+- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo < packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
 - Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
 
 **A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
