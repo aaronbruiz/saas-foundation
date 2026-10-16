@@ -246,7 +246,20 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
 
 The app is meant to connect as `app_runtime` (created by migration `0005_runtime_role` without a login; table grants in ADR-0038). **Production keeps `app_owner` until steps 1–4 are done and recorded here.** Migrations, backups and previews stay on `app_owner`.
 
-Passwords: set them only from the owner's terminal with `psql`'s `\password` (it sends a SCRAM verifier, not the password), and store them only in the Hyperdrive config. For `wrangler`, read the password into a variable at a hidden prompt (`read -rs RUNTIME_PW`) and pass `--origin-password="$RUNTIME_PW"`, then `unset RUNTIME_PW`. Never put a password in a file, a URL in history, or chat.
+Passwords: set them only from the owner's terminal with `psql`'s `\password` (it sends a SCRAM verifier, not the password), and store them only in the Hyperdrive config. Wrangler's `--origin-password` would put the password in process arguments, so send Hyperdrive configs through the API instead, as `scripts/preview/infra.sh` does: the password in an environment variable read at a hidden prompt, the body on stdin, the token in a header read from a file descriptor. Never put a password in a file, a URL in history, or chat.
+
+```sh
+read -rs RUNTIME_PW && export RUNTIME_PW   # the password just given to \password
+read -rs CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN   # Hyperdrive edit on the account
+ACCOUNT="$(grep -oE '"account_id": *"[0-9a-f]{32}"' apps/app/wrangler.jsonc | grep -oE '[0-9a-f]{32}')"
+# The token header comes from a file descriptor (not argv), so the body can use stdin.
+hd() { curl -fsS -H @<(printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN") -H 'Content-Type: application/json' \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/hyperdrive/configs$1" "${@:2}"; }
+origin() { jq -n --arg h "$1" '{scheme: "postgresql", host: $h, port: 5432, database: "app", user: "app_runtime", password: env.RUNTIME_PW}'; }
+# when done: unset RUNTIME_PW CLOUDFLARE_API_TOKEN
+```
+
+Config ids: `wrangler hyperdrive list` (Wrangler's `get`, `update` and `delete` take an id, not a name).
 
 **Identity check** (as `app_owner`, in the Neon SQL Editor or `psql`):
 
@@ -269,11 +282,11 @@ Expected:
 1. **Verify on a disposable preview-project branch**, before touching production:
    - `pnpm exec neon branches create --project-id withered-credit-11647832 --name runtime-check --parent preview-seed`, then migrate it as the owner: `DATABASE_URL="$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)" pnpm db:migrate`.
    - `docker run -it --rm postgres:17-alpine psql "$(pnpm exec neon connection-string runtime-check --project-id withered-credit-11647832 --database-name app --role-name app_owner)"`, then `alter role app_runtime login;`, `\password app_runtime`, and the identity check.
-   - `wrangler hyperdrive create saas-runtime-check --origin-scheme=postgres --origin-host=<branch host> --origin-port=5432 --database=app --origin-user=app_runtime --origin-password="$RUNTIME_PW" --caching-disabled`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access through Hyperdrive.
-   - The app through Hyperdrive as `app_runtime` (needs Actions): on the next PR preview, give that PR branch's `app_runtime` a login and password as above, run `wrangler hyperdrive update saas-pr-<N>` with the same origin flags, and re-run the preview's e2e job. Closing the PR deletes that config as usual (ADR-0021).
-   - Clean up: `wrangler hyperdrive delete saas-runtime-check` and `pnpm exec neon branches delete runtime-check --project-id withered-credit-11647832`. Record the results here.
+   - Create a temporary config: `origin <branch host> | jq '{name: "saas-runtime-check", caching: {disabled: true}, origin: .}' | hd "" -X POST --data-binary @- | jq '{success, id: .result.id}'`. Hyperdrive connects to the origin when it creates a config, so success proves the login, TLS and database access through Hyperdrive.
+   - The app through Hyperdrive as `app_runtime` (needs Actions): on the next PR preview, give that PR branch's `app_runtime` a login and password as above, then `origin <PR branch host> | jq '{origin: .}' | hd "/<id of saas-pr-N>" -X PATCH --data-binary @- | jq .success`, and re-run the preview's e2e job. Closing the PR deletes that config as usual (ADR-0021).
+   - Clean up: `hd "/<id of saas-runtime-check>" -X DELETE | jq .success` and `pnpm exec neon branches delete runtime-check --project-id withered-credit-11647832`. Record the results here.
 2. **Production password:** after the release that applied `0005_runtime_role`, open `psql` against production as `app_owner`, run `alter role app_runtime login;` and `\password app_runtime`, then the identity check.
-3. **Switch:** `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` for the current host, then `wrangler hyperdrive update e788b06678f1450eb89f8b52384ab3a3 --origin-scheme=postgres --origin-host=<same host> --origin-port=5432 --database=app --origin-user=app_runtime --origin-password="$RUNTIME_PW" --caching-disabled`. Then restart the pool as in "Full rollback" above. `wrangler hyperdrive get` must now show user `app_runtime`.
+3. **Switch:** `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` for the current host, then `origin <same host> | jq '{origin: ., caching: {disabled: true}}' | hd /e788b06678f1450eb89f8b52384ab3a3 -X PATCH --data-binary @- | jq '{success, user: .result.origin.user}'`. Then restart the pool as in "Full rollback" above. `wrangler hyperdrive get e788b06678f1450eb89f8b52384ab3a3` must now show user `app_runtime`.
 4. **Confirm:**
    - `/api/health` answers 200;
    - signing in, opening a tenant, and creating and deleting a project all work;

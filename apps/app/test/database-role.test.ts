@@ -81,7 +81,7 @@ describe('the database role the app connects as', () => {
     const { rows } = await query(
       `SELECT c.relname AS table, p.privilege
          FROM pg_class c
-         CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) AS p(privilege)
+         CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) AS p(privilege)
         WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
           AND has_table_privilege(current_user, c.oid, p.privilege)
         ORDER BY 1, 2`,
