@@ -295,9 +295,10 @@ Separate results, never merged into one "backup done": **snapshot created**, **d
    - `LOOKUP FAILED` (permission, network, timeout): stop.
 5. **Dump**, right after step 4 and still on the same UTC day (a later start would name keys step 4 never checked):
    ```
-   [ "$(date -u +%Y%m%d)" = "$DAY" ] && [ "$(date -u +%H%M)" -lt 2345 ] && echo "day ok" || echo "STOP: day changed or too close to midnight"
-   : >"$RUN/dump.out"
-   TMPDIR="$RUN" GITHUB_OUTPUT="$RUN/dump.out" timeout 15m scripts/backup/dump.sh 2>&1 | tee "$EV/dump.log"; echo "dump exit=${PIPESTATUS[0]}"
+   if [ "$(date -u +%Y%m%d)" = "$DAY" ] && [ "$(date -u +%H%M)" -lt 2345 ]; then
+     : >"$RUN/dump.out"
+     TMPDIR="$RUN" GITHUB_OUTPUT="$RUN/dump.out" timeout 15m scripts/backup/dump.sh 2>&1 | tee "$EV/dump.log"; echo "dump exit=${PIPESTATUS[0]}"
+   else echo "STOP: day changed or too close to midnight; dump not started"; fi
    ```
    - `TMPDIR="$RUN"` keeps the script's own temporary files (the dump and its database env file) on the file system step 0 checked; without it they go to `/tmp`.
    - `GITHUB_OUTPUT` is the file the script writes `uploaded=true` to once the checksum is uploaded (the signal CI's heartbeat step reads); don't set `GITHUB_ACTIONS`. `15m` is the CI job's limit. The log holds no credential or URL (tested); the database URL comes from the Neon login and is never printed.
