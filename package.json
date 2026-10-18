@@ -11,7 +11,7 @@
     "dev": "pnpm --filter app dev",
     "build": "pnpm --filter app build",
     "deploy": "pnpm --filter app run deploy",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && node --test scripts/backup/dump.test.mjs",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @saas-foundation/db db:generate",
