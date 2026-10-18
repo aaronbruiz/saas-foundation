@@ -162,7 +162,14 @@ export function createAuth({
   return betterAuth({
     secret,
     baseURL,
-    database: drizzleAdapter(rawDb(db), { provider: 'pg', schema }),
+    // `transaction: true`: Better Auth's multi-write operations (sign-up, accepting an invitation,
+    // consuming a verification token, removing a member, deleting an organization) run in one
+    // Postgres transaction on the request's single connection, so a database error rolls all of
+    // their writes back. Without it they auto-commit one by one: a failed organization delete left
+    // the organization without members. Hooks and checks that run before those operations (our
+    // middleware, permission checks, clearing the active organization, beforeDeleteOrganization and
+    // its Polar call) are outside the transaction and aren't undone by it.
+    database: drizzleAdapter(rawDb(db), { provider: 'pg', schema, transaction: true }),
     emailAndPassword: {
       enabled: true,
       // Our own page, token in the query string (Better Auth's default link has it in the path,
