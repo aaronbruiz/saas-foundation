@@ -9,6 +9,7 @@
     "deploy": "node ../../scripts/check-secrets.mjs --deployed && pnpm build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types --env-file .dev.vars.example",
+    "types:check": "wrangler types --env-file .dev.vars.example --check",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },
