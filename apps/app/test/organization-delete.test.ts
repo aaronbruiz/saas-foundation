@@ -152,42 +152,44 @@ const GONE = { organization: 0, member: 0, invitation: 0, project: 0, billing: 0
 
 /** Makes the next deletes from `table` fail for this organization (test-only trigger). */
 const failDeleteAt = (orgId: string, table: 'invitation' | 'organization') =>
-  asOwner('INSERT INTO test_delete_fault (organization_id, at_table) VALUES ($1, $2)', [
+  asOwner('INSERT INTO test_fault.delete_fault (organization_id, at_table) VALUES ($1, $2)', [
     orgId,
     table,
   ])
 const clearFaults = (orgId: string) =>
-  asOwner('DELETE FROM test_delete_fault WHERE organization_id = $1', [orgId])
+  asOwner('DELETE FROM test_fault.delete_fault WHERE organization_id = $1', [orgId])
 
 beforeAll(async () => {
-  // Owner-only objects; the trigger function runs as its owner, so the runtime role needs no grant.
+  // Owner-only objects in their own schema (database-role.test.ts lists every table in `public`);
+  // the trigger function runs as its owner, so the runtime role needs no grant.
   await asOwner(`
-    CREATE TABLE IF NOT EXISTS test_delete_fault (
+    CREATE SCHEMA IF NOT EXISTS test_fault;
+    REVOKE ALL ON SCHEMA test_fault FROM PUBLIC;
+    CREATE TABLE IF NOT EXISTS test_fault.delete_fault (
       organization_id text NOT NULL, at_table text NOT NULL, PRIMARY KEY (organization_id, at_table));
-    CREATE OR REPLACE FUNCTION test_delete_fault() RETURNS trigger
-      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+    CREATE OR REPLACE FUNCTION test_fault.fail_delete() RETURNS trigger
+      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
     BEGIN
-      IF EXISTS (SELECT 1 FROM public.test_delete_fault f WHERE f.at_table = TG_TABLE_NAME
+      IF EXISTS (SELECT 1 FROM test_fault.delete_fault f WHERE f.at_table = TG_TABLE_NAME
                    AND f.organization_id = coalesce(to_jsonb(OLD)->>'organization_id', to_jsonb(OLD)->>'id'))
       THEN RAISE EXCEPTION 'test fault: delete from % refused', TG_TABLE_NAME;
       END IF;
       RETURN OLD;
     END $$;
-    REVOKE ALL ON FUNCTION test_delete_fault() FROM PUBLIC;
-    DROP TRIGGER IF EXISTS test_delete_fault ON invitation;
-    CREATE TRIGGER test_delete_fault BEFORE DELETE ON invitation
-      FOR EACH ROW EXECUTE FUNCTION test_delete_fault();
-    DROP TRIGGER IF EXISTS test_delete_fault ON organization;
-    CREATE TRIGGER test_delete_fault BEFORE DELETE ON organization
-      FOR EACH ROW EXECUTE FUNCTION test_delete_fault();`)
+    REVOKE ALL ON FUNCTION test_fault.fail_delete() FROM PUBLIC;
+    DROP TRIGGER IF EXISTS test_delete_fault ON public.invitation;
+    CREATE TRIGGER test_delete_fault BEFORE DELETE ON public.invitation
+      FOR EACH ROW EXECUTE FUNCTION test_fault.fail_delete();
+    DROP TRIGGER IF EXISTS test_delete_fault ON public.organization;
+    CREATE TRIGGER test_delete_fault BEFORE DELETE ON public.organization
+      FOR EACH ROW EXECUTE FUNCTION test_fault.fail_delete();`)
 })
 
 afterAll(async () => {
   await asOwner(`
-    DROP TRIGGER IF EXISTS test_delete_fault ON invitation;
-    DROP TRIGGER IF EXISTS test_delete_fault ON organization;
-    DROP FUNCTION IF EXISTS test_delete_fault();
-    DROP TABLE IF EXISTS test_delete_fault;`)
+    DROP TRIGGER IF EXISTS test_delete_fault ON public.invitation;
+    DROP TRIGGER IF EXISTS test_delete_fault ON public.organization;
+    DROP SCHEMA IF EXISTS test_fault CASCADE;`)
 })
 
 describe.each([
