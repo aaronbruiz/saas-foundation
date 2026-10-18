@@ -185,7 +185,7 @@ Pre-filled (production): Worker `saas-foundation`, host `app.aaronlabr.dev`; Neo
 
 Credentials for a recovery by hand (all the owner's own logins, nothing from CI): `wrangler login` (Worker rollback, Hyperdrive update and restart; `wrangler auth token` gives `CLOUDFLARE_API_TOKEN` for the scripts), `neon auth` (branches, restore; `NEON_API_KEY` from `~/.config/neon/credentials.json` as in "Previews" → "By hand"), `gh auth login` (workflows), the Cloudflare dashboard (R2 download), the Neon console (SQL Editor).
 
-When GitHub Actions is unavailable (as from 2026-10-15 until the November reset), every row still works by hand: A with the manual fallback in "Rollback"; B–D need no workflow.
+When GitHub Actions is unavailable (as from 2026-10-15 until the November reset), every row still works by hand: A with the manual fallback in "Rollback"; B–D need no workflow. New backups then need a run by hand: "Database" → "Backups by hand".
 
 ## Database (ADR-0003, Neon Free)
 
@@ -240,6 +240,120 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
   - **Upgrade** (ADR-0026 option 3: production alone in its own organization on Launch, rotating `NEON_API_KEY` in the order given there) at the first of: CU-hours ≥ 50 before the 15th or ≥ 70 at any point; project storage or `main`'s logical size ≥ 256 MiB; egress ≥ 2.5 GB; any compute suspension or storage-cap write failure (at once); before Polar production mode or `SIGNUP_MODE=open`.
   - **Baseline:** ADR-0026 "First reading" (2026-10-13, CLI and console agree: 31.83 MB storage, 0.63 CU-hours, 7.67 MB egress). Whether the CLI counters reset each period is unverified, so the console's figures decide the triggers.
   - Free has no consumption API (403) and no usage notifications.
+
+### Backups by hand (Actions unavailable)
+
+When `db-backup.yml` can't run (as from 2026-10-15), the same two scripts run from an operator's machine. Each run needs the **owner's authorization** for that run (a production snapshot, a temporary R2 credential, a production data export, a local restore) and a named operator. Nothing here schedules a run; each one is started by hand. When Actions works, use `gh workflow run db-backup.yml` instead.
+
+How it differs from the scheduled run: Neon access is the operator's `neon auth` login (or a `NEON_API_KEY` they hold), not the `production` environment's key; R2 access is a temporary token deleted afterwards, not `r2-dump-backups`; `BACKUP_KEEP` is recomputed so nothing is pruned (step 2), while the scheduled runs keep pruning to `vars.BACKUP_KEEP` (default 3) once they resume; the heartbeat ping is sent by hand (step 8). `dump.sh` sets the AWS CLI's output format, pager and auto-prompt through environment variables, which beat the operator's `~/.aws/config` (its `output = no` broke the upload on 2026-10-18), so it behaves like CI's config-less runner; the rest of that file (CA bundle, proxy, retries, `AWS_PROFILE`, which must name an existing profile) still applies, and credentials come only from `AWS_*` variables. `scripts/backup/dump.test.mjs` (`node --test scripts/backup/dump.test.mjs`; a CI step; needs Docker and the AWS CLI) covers these cases and the failure paths below against a local endpoint.
+
+Separate results, never merged into one "backup done": **snapshot created**, **dump uploaded**, **checksum verified**, **restore tested**, **heartbeat confirmed**. A run can end with some and not others; record exactly which (step 10).
+
+0. **Session and preconditions** (bash; stop at the first failure). Use a terminal with no `DATABASE_URL` or `PG*` variables (`dump.sh` would dump that database instead of production).
+   ```
+   set -o pipefail; umask 077; unset DATABASE_URL PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+   export NEON_PROJECT_ID=flat-cherry-23373668 R2_BACKUP_BUCKET=saas-foundation-prod-db-dumps
+   export R2_BACKUP_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com   # account id: `wrangler whoami`
+   export AWS_DEFAULT_REGION=auto AWS_DEFAULT_OUTPUT=json AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off \
+     AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+   s3() { timeout 5m aws s3api --endpoint-url "$R2_BACKUP_ENDPOINT" "$@"; }   # every R2 call bounded
+   RUN="$(mktemp -d /dev/shm/backup-run.XXXXXX)" && findmnt -no FSTYPE -T "$RUN"   # 0700; for data and credentials
+   EV=<evidence directory outside the repo>; mkdir -p "$EV"                       # logs and metadata only
+   DAY="$(date -u +%Y%m%d)"; [ "$(date -u +%H)" -lt 22 ] && echo "start ok" || echo "STOP: after 22:00 UTC"
+   gh run list --workflow db-backup.yml -L5 --json status,createdAt | jq -r '.[] | "\(.createdAt) \(.status)"'
+   ```
+   - `findmnt` must print `tmpfs` (RAM-backed, though it can be swapped out); on any other file system, record that the dump and credentials touched that disk, or pick another tmpfs path. Don't call it RAM-backed without that check.
+   - Both scripts name their copies by the UTC day at the moment they run; starting before 22:00 UTC keeps the snapshot and the dump on the same `DAY`.
+   - No `db-backup.yml` run may be `queued`, `waiting` or `in_progress` (two writers on the same day's keys).
+   - Neon usage is inside ADR-0026's triggers (the "Watch" item above).
+1. **Verify the source and the destination.**
+   - `pnpm exec neon projects get "$NEON_PROJECT_ID" -o json | jq '{id, name, region_id}'` is the production project from the recovery card; `pnpm exec neon branches list --project-id "$NEON_PROJECT_ID" -o json | jq -r '(if type == "array" then . else .branches end)[] | [.name, .id, .default] | @tsv' | tee "$EV/branches-before.tsv"` shows `main` as the default.
+   - `R2_BACKUP_ENDPOINT`'s host is exactly `<this account's id>.r2.cloudflarestorage.com` and the bucket is exactly `saas-foundation-prod-db-dumps`; checked again with the token in step 3.
+2. **Snapshot, with the deletion set computed first.** `snapshot.sh` prunes to the newest `BACKUP_KEEP` and its dry run lists without today's branch, so compute the set by hand:
+   ```
+   cut -f1 "$EV/branches-before.tsv" >"$RUN/branches"
+   { grep -E '^backup-[0-9]{8}$' "$RUN/branches"; echo "backup-$DAY"; } | sort -ur >"$RUN/snapshots"
+   KEEP="$(wc -l <"$RUN/snapshots")"; echo "keep=$KEEP branches=$(wc -l <"$RUN/branches")"
+   tail -n +"$((KEEP + 1))" "$RUN/snapshots"   # the deletion set: must print nothing
+   ```
+   Stop if `KEEP` > 7 (`snapshot.sh` refuses; pruning would then need an owner decision) or if one more branch would pass Neon Free's 10. Then `BACKUP_KEEP=$KEEP DRY_RUN=1 scripts/backup/snapshot.sh` (no `pruning` line), and `BACKUP_KEEP=$KEEP timeout 5m scripts/backup/snapshot.sh 2>&1 | tee "$EV/snapshot.log"; echo "snapshot exit=${PIPESTATUS[0]}"`. **Snapshot created** = exit 0, `backup-$DAY` in its `snapshots now:` line, no `pruning` line; record `pnpm exec neon branches get "backup-$DAY" --project-id "$NEON_PROJECT_ID" -o json | jq '{id, name, created_at}'`. A snapshot isn't restore-tested by this. This doesn't change `vars.BACKUP_KEEP`: the next scheduled run prunes to it as usual.
+3. **Temporary R2 credential.**
+   - Owner, dashboard: R2 → Manage API tokens → create a token named `r2-dump-manual-<DAY>` with **Object Read & Write** on **specific bucket `saas-foundation-prod-db-dumps`** only, the shortest TTL offered that covers the run. Record its name and TTL, never its values.
+   - Handoff: in the shell that runs the backup, `read -rs AWS_ACCESS_KEY_ID; export AWS_ACCESS_KEY_ID; read -rs AWS_SECRET_ACCESS_KEY; export AWS_SECRET_ACCESS_KEY` (hidden prompts). Never on a command line, in a repo file, a chat or shell history. If the token's creator isn't the operator, the creator runs those two `read -rs` and `printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >"$RUN/r2.env"` (`printf` is a builtin: no argv; 0600 from the `umask`); the operator runs `set -a; . "$RUN/r2.env"; set +a; rm -f "$RUN/r2.env"`.
+   - Scope: `s3 list-buckets` is refused (`AccessDenied`: bucket-scoped), and `s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --prefix daily/ --query 'Contents[].[Key,Size,LastModified]' --output text | tee "$EV/r2-before.txt"` lists the existing history (exit 0). Any other result: stop, go to step 9.
+4. **Today's keys must be absent, and provably so.** A failed lookup is not an absent key:
+   ```
+   for k in "daily/app-$DAY.dump" "daily/app-$DAY.dump.sha256"; do
+     if err="$(s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" 2>&1 >/dev/null)"; then echo "EXISTS $k"
+     elif grep -Eq '\((404|NoSuchKey|Not Found)\)' <<<"$err"; then echo "absent $k"
+     else echo "LOOKUP FAILED $k"; fi
+   done | tee "$EV/keys-before.txt"
+   ```
+   - Both `absent`: continue.
+   - `EXISTS …dump.sha256`: today is already complete; `dump.sh` would make no new copy. Don't run it; no heartbeat ping.
+   - Only `EXISTS …dump`: an interrupted day. `dump.sh` redoes it by design, which **overwrites** that object, so stop and ask the owner; never delete it.
+   - `LOOKUP FAILED` (permission, network, timeout): stop.
+5. **Dump**, right after step 4 and still on the same UTC day (a later start would name keys step 4 never checked):
+   ```
+   if [ "$(date -u +%Y%m%d)" = "$DAY" ] && [ "$(date -u +%H%M)" -lt 2345 ]; then
+     : >"$RUN/dump.out"
+     TMPDIR="$RUN" GITHUB_OUTPUT="$RUN/dump.out" timeout 15m scripts/backup/dump.sh 2>&1 | tee "$EV/dump.log"; echo "dump exit=${PIPESTATUS[0]}"
+   else echo "STOP: day changed or too close to midnight; dump not started"; fi
+   ```
+   - `TMPDIR="$RUN"` keeps the script's own temporary files (the dump and its database env file) on the file system step 0 checked; without it they go to `/tmp`.
+   - `GITHUB_OUTPUT` is the file the script writes `uploaded=true` to once the checksum is uploaded (the signal CI's heartbeat step reads); don't set `GITHUB_ACTIONS`. `15m` is the CI job's limit. The log holds no credential or URL (tested); the database URL comes from the Neon login and is never printed.
+   - **Dump uploaded** = exit 0, the line `uploaded daily/app-<DAY>.dump (<bytes> bytes) and daily/app-<DAY>.dump.sha256`, and `grep -qx uploaded=true "$RUN/dump.out"`. Exit 0 with `already complete` = no new copy. A logged key whose day isn't `$DAY` wasn't collision-checked: record it as such and stop; don't delete or overwrite anything.
+   - The `dump ok:` line holds the **original checksum** (`sha256 <hex>`), computed from the local file before the upload; copy it to the record.
+   - Any other exit (124 = timeout): a failure. `timeout` signals the script's whole process group, which stops its client container and closes its database connection (tested), but check: `docker ps -a --filter ancestor=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d` must list no container started by this run (else `docker rm -f <id>`). A dump without its `.sha256` may be left in R2: leave it (step 4's rule applies on the next attempt).
+   - Production load: one read-only `pg_dump` (a snapshot transaction holding `ACCESS SHARE` locks; it waits behind DDL, and `timeout` bounds it), about 20–50 s for the current ~30 MiB database.
+6. **Checksum verification.**
+   ```
+   for k in "daily/app-$DAY.dump" "daily/app-$DAY.dump.sha256"; do
+     s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" --query '[ContentLength,ETag,LastModified]' --output text; done | tee "$EV/objects.txt"
+   mkdir "$RUN/dl" && for f in "app-$DAY.dump" "app-$DAY.dump.sha256"; do
+     s3 get-object --bucket "$R2_BACKUP_BUCKET" --key "daily/$f" "$RUN/dl/$f" >/dev/null || echo "DOWNLOAD FAILED $f"; done
+   (cd "$RUN/dl" && sha256sum -c "app-$DAY.dump.sha256") | tee "$EV/sha256-check.txt"
+   cut -d' ' -f1 "$RUN/dl/app-$DAY.dump.sha256"; md5sum "$RUN/dl/app-$DAY.dump"
+   ```
+   **Checksum verified** = `OK`, and the stored `.sha256` equals the original checksum from the `dump ok:` line (it proves the download is the bytes `dump.sh` produced, not that they restore). The MD5 matched the ETag on 2026-10-18 (a single-part upload to R2); an ETag isn't a checksum in general (multipart uploads, other providers), so it is supporting evidence only. Copy `app-$DAY.dump.sha256` (no data) to `$EV`.
+7. **Restore test** (local and isolated: no network, no published port, no host mount, no credential):
+   ```
+   C="restore-check-$DAY"
+   docker run -d --name "$C" --network none -e POSTGRES_PASSWORD=restore-only postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+   for i in $(seq 30); do docker exec "$C" psql -h 127.0.0.1 -U postgres -Atqc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+   docker exec "$C" createdb -U postgres app
+   docker exec -i "$C" pg_restore -U postgres --no-owner --no-acl --exit-on-error -d app <"$RUN/dl/app-$DAY.dump"; echo "restore exit=$?"
+   docker exec -i "$C" pg_restore --list <"$RUN/dl/app-$DAY.dump" | grep 'Archive created at' | tee "$EV/archive-time.txt"
+   docker exec "$C" psql -U postgres -d app -Atc "<the count query from 'Restore from an off-provider dump', step 3>" | tee "$EV/counts-restored.tsv"
+   ```
+   (The readiness loop queries over TCP because `pg_isready` already answers during the image's init phase.) Production counts: Neon console → SQL Editor, branch `main`, database `app`: `begin read only; set local statement_timeout = '30s';` the same query; `commit;`; note the UTC time it ran and save the result as `$EV/counts-production.tsv`. **Restore tested** = restore exit 0, every expected table present, `drizzle.__drizzle_migrations` equal to the migrations released to production, and counts equal or explained. The production read isn't the dump's snapshot: record both times ("restored counts as of the archive time A; production counts read at T") and accept differences only for writes between A and T. A mismatch, a restore error or a checksum failure: stop, leave R2 as it is, report. This doesn't cover roles and grants (`--no-acl`), Hyperdrive, Worker secrets or billing re-sync (see "Real recovery").
+8. **Heartbeat** (only if the owner chose to use it during the outage, ADR-0037). The CI rule applies unchanged: **success** only when step 2 created today's snapshot (exit 0) **and** step 5 uploaded a new copy (`uploaded=true`); **`/fail`** when either failed; **nothing** when step 4 or 5 found today already complete. The restore test neither allows nor blocks a ping. The URL never reaches argv or history:
+   ```
+   read -rs HC   # https://hc-ping.com/<uuid>
+   printf 'url = "%s"\n' "$HC" | curl -fsS -m 10 --retry 5 -o /dev/null -K -; echo "ping exit=$?"   # failure: "%s/fail"
+   unset HC
+   ```
+   `ping exit=0` means the ping was accepted, not that alerting works. **Heartbeat confirmed** only when the owner sees the check `up` with this ping in Healthchecks (and its email delivery was tested, "Backup heartbeat" → rollout check). A success ping starts a 32 h clock: without another new copy pinged the same way, the check goes down, which is the truthful state.
+9. **Cleanup, always** (success, failure, timeout or interruption; also after a stop in any step):
+   - `docker rm -fv "restore-check-$DAY"` (`-v`: its anonymous data volume), and the `docker ps -a` check of step 5 lists nothing from this run.
+   - Owner: **delete** the temporary token in the dashboard (rolling keeps the token and its bucket permission). Then, with the old pair still in the environment, `s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --max-keys 1` must be refused (`InvalidAccessKeyId`, `SignatureDoesNotMatch` or `Unauthorized`; deletion can take a moment to propagate); record the time.
+   - `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KEEP`, then `rm -rf "$RUN"` and any browser-download copy. On tmpfs this frees the memory; on a disk, deleting (even `shred -u`) isn't guaranteed erasure (journals, SSD remapping, copy-on-write, swap). The dump holds password hashes, sessions and reset tokens: no copies, sharing or syncing.
+   - Remote recovery artifacts are never deleted or overwritten in cleanup, including a partial upload from this run.
+10. **Record** under this section (and in the incident log if there is one): the date, operator, authorization, and per result its value and evidence:
+
+    | Result              | Record                                                                                        |
+    | ------------------- | --------------------------------------------------------------------------------------------- |
+    | snapshot created    | yes / no / not run; branch name, id, `created_at`; deletion set (empty)                       |
+    | dump uploaded       | yes / no / no new copy; key, bytes, original sha256, upload time; partial object left, if any |
+    | checksum verified   | yes / no / not run; `sha256sum -c` result                                                     |
+    | restore tested      | yes / no / not run; archive time, table count, counts (and when production was read)          |
+    | heartbeat confirmed | not used / ping sent (time, kind) / confirmed `up` by the owner                               |
+    | token deleted       | yes (refused at time) / pending (who)                                                         |
+    | cleanup             | containers removed, `$RUN` removed (file system type), anything left and why                  |
+
+    State partial failures as such ("snapshot created, dump failed at upload, nothing restored"). The next copy is due 24 h after this one's snapshot time; note who will run it, or that nobody is assigned.
+
+_First run 2026-10-18 (supervised, owner-authorized; before this section existed, with `AWS_CONFIG_FILE=/dev/null` instead of the script's fix): snapshot `backup-20261018` created 21:16:49Z (deletion set empty, `BACKUP_KEEP=4`); dump `daily/app-20261018.dump` uploaded (28,470 bytes, archive 21:26:41Z) with its `.sha256`; checksum verified on download (MD5 = ETag); restore tested: 12/12 tables, counts equal to production read 65 s after the archive time; heartbeat not pinged; token revocation by rolling (the old key pair was refused at 21:34Z), deletion and the token's identity unconfirmed. Details: the owner's run record._
 
 ### Runtime role (ADR-0038)
 
