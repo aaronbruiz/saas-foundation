@@ -245,7 +245,7 @@ When GitHub Actions is unavailable (as from 2026-10-15 until the November reset)
 
 When `db-backup.yml` can't run (as from 2026-10-15), the same two scripts run from an operator's machine. Each run needs the **owner's authorization** for that run (a production snapshot, a temporary R2 credential, a production data export, a local restore) and a named operator. Nothing here schedules a run; each one is started by hand. When Actions works, use `gh workflow run db-backup.yml` instead.
 
-How it differs from the scheduled run: Neon access is the operator's `neon auth` login (or a `NEON_API_KEY` they hold), not the `production` environment's key; R2 access is a temporary token deleted afterwards, not `r2-dump-backups`; `BACKUP_KEEP` is recomputed so nothing is pruned (step 2), while the scheduled runs keep pruning to `vars.BACKUP_KEEP` (default 3) once they resume; the heartbeat ping is sent by hand (step 8). `dump.sh` sets the AWS CLI's output format, pager and auto-prompt through environment variables, which beat the operator's `~/.aws/config` (its `output = no` broke the upload on 2026-10-18), so it behaves like CI's config-less runner; the rest of that file (CA bundle, proxy, retries, `AWS_PROFILE`, which must name an existing profile) still applies, and credentials come only from `AWS_*` variables. `scripts/backup/dump.test.mjs` (part of `pnpm test`) covers these cases and the failure paths below against a local endpoint.
+How it differs from the scheduled run: Neon access is the operator's `neon auth` login (or a `NEON_API_KEY` they hold), not the `production` environment's key; R2 access is a temporary token deleted afterwards, not `r2-dump-backups`; `BACKUP_KEEP` is recomputed so nothing is pruned (step 2), while the scheduled runs keep pruning to `vars.BACKUP_KEEP` (default 3) once they resume; the heartbeat ping is sent by hand (step 8). `dump.sh` sets the AWS CLI's output format, pager and auto-prompt through environment variables, which beat the operator's `~/.aws/config` (its `output = no` broke the upload on 2026-10-18), so it behaves like CI's config-less runner; the rest of that file (CA bundle, proxy, retries, `AWS_PROFILE`, which must name an existing profile) still applies, and credentials come only from `AWS_*` variables. `scripts/backup/dump.test.mjs` (`node --test scripts/backup/dump.test.mjs`; a CI step; needs Docker and the AWS CLI) covers these cases and the failure paths below against a local endpoint.
 
 Separate results, never merged into one "backup done": **snapshot created**, **dump uploaded**, **checksum verified**, **restore tested**, **heartbeat confirmed**. A run can end with some and not others; record exactly which (step 10).
 
@@ -256,7 +256,7 @@ Separate results, never merged into one "backup done": **snapshot created**, **d
    export R2_BACKUP_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com   # account id: `wrangler whoami`
    export AWS_DEFAULT_REGION=auto AWS_DEFAULT_OUTPUT=json AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off \
      AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
-   s3() { aws s3api --endpoint-url "$R2_BACKUP_ENDPOINT" "$@"; }
+   s3() { timeout 5m aws s3api --endpoint-url "$R2_BACKUP_ENDPOINT" "$@"; }   # every R2 call bounded
    RUN="$(mktemp -d /dev/shm/backup-run.XXXXXX)" && findmnt -no FSTYPE -T "$RUN"   # 0700; for data and credentials
    EV=<evidence directory outside the repo>; mkdir -p "$EV"                       # logs and metadata only
    DAY="$(date -u +%Y%m%d)"; [ "$(date -u +%H)" -lt 22 ] && echo "start ok" || echo "STOP: after 22:00 UTC"
@@ -280,11 +280,11 @@ Separate results, never merged into one "backup done": **snapshot created**, **d
 3. **Temporary R2 credential.**
    - Owner, dashboard: R2 → Manage API tokens → create a token named `r2-dump-manual-<DAY>` with **Object Read & Write** on **specific bucket `saas-foundation-prod-db-dumps`** only, the shortest TTL offered that covers the run. Record its name and TTL, never its values.
    - Handoff: in the shell that runs the backup, `read -rs AWS_ACCESS_KEY_ID; export AWS_ACCESS_KEY_ID; read -rs AWS_SECRET_ACCESS_KEY; export AWS_SECRET_ACCESS_KEY` (hidden prompts). Never on a command line, in a repo file, a chat or shell history. If the token's creator isn't the operator, the creator runs those two `read -rs` and `printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >"$RUN/r2.env"` (`printf` is a builtin: no argv; 0600 from the `umask`); the operator runs `set -a; . "$RUN/r2.env"; set +a; rm -f "$RUN/r2.env"`.
-   - Scope: `timeout 60 s3 list-buckets` is refused (`AccessDenied`: bucket-scoped), and `timeout 60 s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --prefix daily/ --query 'Contents[].[Key,Size,LastModified]' --output text | tee "$EV/r2-before.txt"` lists the existing history (exit 0). Any other result: stop, go to step 9.
+   - Scope: `s3 list-buckets` is refused (`AccessDenied`: bucket-scoped), and `s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --prefix daily/ --query 'Contents[].[Key,Size,LastModified]' --output text | tee "$EV/r2-before.txt"` lists the existing history (exit 0). Any other result: stop, go to step 9.
 4. **Today's keys must be absent, and provably so.** A failed lookup is not an absent key:
    ```
    for k in "daily/app-$DAY.dump" "daily/app-$DAY.dump.sha256"; do
-     if err="$(timeout 60 s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" 2>&1 >/dev/null)"; then echo "EXISTS $k"
+     if err="$(s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" 2>&1 >/dev/null)"; then echo "EXISTS $k"
      elif grep -Eq '\((404|NoSuchKey|Not Found)\)' <<<"$err"; then echo "absent $k"
      else echo "LOOKUP FAILED $k"; fi
    done | tee "$EV/keys-before.txt"
@@ -293,22 +293,24 @@ Separate results, never merged into one "backup done": **snapshot created**, **d
    - `EXISTS …dump.sha256`: today is already complete; `dump.sh` would make no new copy. Don't run it; no heartbeat ping.
    - Only `EXISTS …dump`: an interrupted day. `dump.sh` redoes it by design, which **overwrites** that object, so stop and ask the owner; never delete it.
    - `LOOKUP FAILED` (permission, network, timeout): stop.
-5. **Dump.**
+5. **Dump**, right after step 4 and still on the same UTC day (a later start would name keys step 4 never checked):
    ```
+   [ "$(date -u +%Y%m%d)" = "$DAY" ] && [ "$(date -u +%H%M)" -lt 2345 ] && echo "day ok" || echo "STOP: day changed or too close to midnight"
    : >"$RUN/dump.out"
-   GITHUB_OUTPUT="$RUN/dump.out" timeout 15m scripts/backup/dump.sh 2>&1 | tee "$EV/dump.log"; echo "dump exit=${PIPESTATUS[0]}"
+   TMPDIR="$RUN" GITHUB_OUTPUT="$RUN/dump.out" timeout 15m scripts/backup/dump.sh 2>&1 | tee "$EV/dump.log"; echo "dump exit=${PIPESTATUS[0]}"
    ```
+   - `TMPDIR="$RUN"` keeps the script's own temporary files (the dump and its database env file) on the file system step 0 checked; without it they go to `/tmp`.
    - `GITHUB_OUTPUT` is the file the script writes `uploaded=true` to once the checksum is uploaded (the signal CI's heartbeat step reads); don't set `GITHUB_ACTIONS`. `15m` is the CI job's limit. The log holds no credential or URL (tested); the database URL comes from the Neon login and is never printed.
-   - **Dump uploaded** = exit 0, the line `uploaded daily/app-<DAY>.dump (<bytes> bytes) and daily/app-<DAY>.dump.sha256`, and `grep -qx uploaded=true "$RUN/dump.out"`. Exit 0 with `already complete` = no new copy. A key whose day isn't `$DAY` (the clock passed midnight): record the actual key and use it below.
+   - **Dump uploaded** = exit 0, the line `uploaded daily/app-<DAY>.dump (<bytes> bytes) and daily/app-<DAY>.dump.sha256`, and `grep -qx uploaded=true "$RUN/dump.out"`. Exit 0 with `already complete` = no new copy. A logged key whose day isn't `$DAY` wasn't collision-checked: record it as such and stop; don't delete or overwrite anything.
    - The `dump ok:` line holds the **original checksum** (`sha256 <hex>`), computed from the local file before the upload; copy it to the record.
    - Any other exit (124 = timeout): a failure. `timeout` signals the script's whole process group, which stops its client container and closes its database connection (tested), but check: `docker ps -a --filter ancestor=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d` must list no container started by this run (else `docker rm -f <id>`). A dump without its `.sha256` may be left in R2: leave it (step 4's rule applies on the next attempt).
    - Production load: one read-only `pg_dump` (a snapshot transaction holding `ACCESS SHARE` locks; it waits behind DDL, and `timeout` bounds it), about 20–50 s for the current ~30 MiB database.
 6. **Checksum verification.**
    ```
    for k in "daily/app-$DAY.dump" "daily/app-$DAY.dump.sha256"; do
-     timeout 60 s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" --query '[ContentLength,ETag,LastModified]' --output text; done | tee "$EV/objects.txt"
+     s3 head-object --bucket "$R2_BACKUP_BUCKET" --key "$k" --query '[ContentLength,ETag,LastModified]' --output text; done | tee "$EV/objects.txt"
    mkdir "$RUN/dl" && for f in "app-$DAY.dump" "app-$DAY.dump.sha256"; do
-     timeout 5m s3 get-object --bucket "$R2_BACKUP_BUCKET" --key "daily/$f" "$RUN/dl/$f" >/dev/null || echo "DOWNLOAD FAILED $f"; done
+     s3 get-object --bucket "$R2_BACKUP_BUCKET" --key "daily/$f" "$RUN/dl/$f" >/dev/null || echo "DOWNLOAD FAILED $f"; done
    (cd "$RUN/dl" && sha256sum -c "app-$DAY.dump.sha256") | tee "$EV/sha256-check.txt"
    cut -d' ' -f1 "$RUN/dl/app-$DAY.dump.sha256"; md5sum "$RUN/dl/app-$DAY.dump"
    ```
@@ -333,7 +335,7 @@ Separate results, never merged into one "backup done": **snapshot created**, **d
    `ping exit=0` means the ping was accepted, not that alerting works. **Heartbeat confirmed** only when the owner sees the check `up` with this ping in Healthchecks (and its email delivery was tested, "Backup heartbeat" → rollout check). A success ping starts a 32 h clock: without another new copy pinged the same way, the check goes down, which is the truthful state.
 9. **Cleanup, always** (success, failure, timeout or interruption; also after a stop in any step):
    - `docker rm -fv "restore-check-$DAY"` (`-v`: its anonymous data volume), and the `docker ps -a` check of step 5 lists nothing from this run.
-   - Owner: **delete** the temporary token in the dashboard (rolling keeps the token and its bucket permission). Then, with the old pair still in the environment, `timeout 60 s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --max-keys 1` must be refused (`InvalidAccessKeyId`, `SignatureDoesNotMatch` or `Unauthorized`; deletion can take a moment to propagate); record the time.
+   - Owner: **delete** the temporary token in the dashboard (rolling keeps the token and its bucket permission). Then, with the old pair still in the environment, `s3 list-objects-v2 --bucket "$R2_BACKUP_BUCKET" --max-keys 1` must be refused (`InvalidAccessKeyId`, `SignatureDoesNotMatch` or `Unauthorized`; deletion can take a moment to propagate); record the time.
    - `unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KEEP`, then `rm -rf "$RUN"` and any browser-download copy. On tmpfs this frees the memory; on a disk, deleting (even `shred -u`) isn't guaranteed erasure (journals, SSD remapping, copy-on-write, swap). The dump holds password hashes, sessions and reset tokens: no copies, sharing or syncing.
    - Remote recovery artifacts are never deleted or overwritten in cleanup, including a partial upload from this run.
 10. **Record** under this section (and in the incident log if there is one): the date, operator, authorization, and per result its value and evidence:

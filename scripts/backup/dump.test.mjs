@@ -26,7 +26,9 @@ const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).t
 const psql = (db, sql) => docker('exec', CONTAINER, 'psql', '-U', 'postgres', '-d', db, '-Atc', sql)
 const clientContainers = () => docker('ps', '-aq', '--filter', `ancestor=${PG_IMAGE}`)
 const day = () => new Date().toISOString().slice(0, 10).replaceAll('-', '')
-const keyOf = () => `daily/app-${day()}.dump`
+// The UTC day a test's run is expected to use (set before each test; see run()).
+let today
+const keyOf = () => `daily/app-${today}.dump`
 const COUNTS = `select table_schema||'.'||table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text::int from information_schema.tables where table_schema in ('public','drizzle') and table_type='BASE TABLE' order by 1`
 
 // --- a minimal S3 endpoint: path-style PUT/HEAD, with injectable failures ---
@@ -113,6 +115,7 @@ after(() => {
 })
 
 beforeEach(() => {
+  today = day()
   store.clear()
   requests = []
   faults = {}
@@ -161,6 +164,8 @@ function run({ aws = null, env = {}, timeout = null } = {}) {
       }),
     )
   }).then((r) => {
+    // dump.sh names keys by its own clock: a run across UTC midnight can't be judged, so say so.
+    if (day() !== today) throw new Error('the run crossed UTC midnight; rerun the test')
     // No dummy credential, connection URL or endpoint may appear in what the run printed. The
     // Actions mask command is the exception: the runner hides the value and never prints that line.
     const printed = r.output.replace(/^::add-mask::.*$/gm, '')
@@ -178,7 +183,7 @@ function assertUploaded(r) {
   const key = keyOf()
   assert.deepEqual(puts(), [`PUT ${key}`, `PUT ${key}.sha256`])
   const sha = createHash('sha256').update(store.get(key)).digest('hex')
-  assert.equal(store.get(`${key}.sha256`).toString(), `${sha}  app-${day()}.dump\n`)
+  assert.equal(store.get(`${key}.sha256`).toString(), `${sha}  app-${today}.dump\n`)
   // The creation checksum is in the log too, so a run's record doesn't depend on the stored copy.
   assert.match(r.output, new RegExp(`dump ok: .*, sha256 ${sha}\n`))
   assert.ok(r.uploaded, 'uploaded=true missing')
@@ -319,7 +324,18 @@ test('a timed-out run removes its client container, connection and temporary fil
       assert.ok(i < 30, 'lock not taken')
       await new Promise((r) => setTimeout(r, 200))
     }
-    const r = await run({ timeout: 20 })
+    const running = run({ timeout: 20 })
+    // The timeout must hit pg_dump itself: connected, and waiting for the lock.
+    let waiting = '0'
+    for (let i = 0; i < 60 && waiting === '0'; i++) {
+      await new Promise((r) => setTimeout(r, 250))
+      waiting = psql(
+        'app',
+        "select count(*) from pg_stat_activity where application_name = 'pg_dump' and wait_event_type = 'Lock'",
+      )
+    }
+    const r = await running
+    assert.equal(waiting, '1', `pg_dump never waited on the lock:\n${r.output}`)
     assert.equal(r.status, 124, r.output)
     assert.match(r.output, /dumping main/)
     assert.deepEqual(puts(), [])
