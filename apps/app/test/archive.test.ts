@@ -208,8 +208,13 @@ describe('deleted rows are archived', () => {
       expect(row!.row_data).not.toHaveProperty(key)
   })
 
-  it('an organization deleted through the app can be restored from the archive, parents first', async () => {
+  it('an organization deleted through the app can be restored from that deletion, without members removed earlier', async () => {
     const { owner, slug, orgId } = await orgWithProjects()
+    // An admin removed before the deletion must not regain access on restore.
+    const removed = await joinAs(owner, slug, 'admin')
+    await asRuntime((q) =>
+      q('DELETE FROM member WHERE organization_id = $1 AND user_id = $2', [orgId, removed.userId]),
+    )
     const snapshot = () =>
       asOwner(
         `SELECT (SELECT to_jsonb(o) FROM organization o WHERE id = $1) AS org,
@@ -223,7 +228,12 @@ describe('deleted rows are archived', () => {
     ).toBe(200)
     expect(await withDb((db) => findOrganizationBySlug(db, slug))).toBeNull()
 
-    // The runbook's restore ("Database → Archive and audit"), one transaction, parents first.
+    // The runbook's restore ("Database → Archive and audit"): the deletion's txid, one
+    // transaction, parents first.
+    const [{ txid }] = (await asOwner(
+      `SELECT txid::text FROM archive.deleted_row WHERE organization_id = $1 AND table_name = 'organization'`,
+      [orgId],
+    )) as [{ txid: string }]
     const { db, close } = await createDb(OWNER_URL)
     try {
       const q = clientOf(db)
@@ -238,8 +248,8 @@ describe('deleted rows are archived', () => {
         await q.query(
           `INSERT INTO public.${table}
              SELECT r.* FROM archive.deleted_row a, jsonb_populate_record(NULL::public.${table}, a.row_data) r
-              WHERE a.organization_id = $1 AND a.table_name = '${table}'`,
-          [orgId],
+              WHERE a.txid = $2 AND a.organization_id = $1 AND a.table_name = '${table}'`,
+          [orgId, txid],
         )
       await q.query('COMMIT')
     } finally {
@@ -430,5 +440,23 @@ describe('auth writes are audited', () => {
     expect(event).toMatchObject({ user_id: user.userId, detail: { kind: 'reset-password' } })
     const resetToken = (row!.identifier as string).slice('reset-password:'.length)
     expect(JSON.stringify(event)).not.toContain(resetToken)
+  })
+
+  it('reviving an expired password-reset row by moving its expiry is recorded', async () => {
+    const user = await signUp()
+    const id = crypto.randomUUID()
+    await asOwner(
+      `INSERT INTO verification (id, identifier, value, expires_at)
+         VALUES ($1, $2, $3, now() - interval '1 hour')`,
+      [id, `reset-password:${crypto.randomUUID()}`, user.userId],
+    )
+    await asRuntime((q) =>
+      q(`UPDATE verification SET expires_at = now() + interval '1 hour' WHERE id = $1`, [id]),
+    )
+    expect((await eventsOf(user.userId)).at(-1)).toMatchObject({
+      event: 'verification.update',
+      db_user: 'app_runtime',
+      detail: { verification_id: id, kind: 'reset-password' },
+    })
   })
 })

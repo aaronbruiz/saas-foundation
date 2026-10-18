@@ -70,7 +70,8 @@ BEGIN
     WHEN 'verification' THEN jsonb_build_object(
       'kind', 'reset-password',
       'verification_id', r->>'id',
-      'expires_at', r->>'expires_at')
+      'expires_at', r->>'expires_at',
+      'previous_expires_at', p->>'expires_at')
   END;
   INSERT INTO archive.auth_event (event, user_id, previous_user_id, organization_id, detail)
   VALUES (TG_TABLE_NAME || '.' || lower(TG_OP), r->>owner_key, p->>owner_key, r->>'organization_id',
@@ -108,5 +109,6 @@ CREATE OR REPLACE TRIGGER audit_insert AFTER INSERT ON public.verification FOR E
   EXECUTE FUNCTION archive.audit_auth();--> statement-breakpoint
 CREATE OR REPLACE TRIGGER audit_update AFTER UPDATE ON public.verification FOR EACH ROW
   WHEN (NEW.identifier LIKE 'reset-password:%'
-        AND (OLD.identifier IS DISTINCT FROM NEW.identifier OR OLD.value IS DISTINCT FROM NEW.value))
+        AND (OLD.identifier IS DISTINCT FROM NEW.identifier OR OLD.value IS DISTINCT FROM NEW.value
+             OR OLD.expires_at IS DISTINCT FROM NEW.expires_at))
   EXECUTE FUNCTION archive.audit_auth();

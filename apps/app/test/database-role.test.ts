@@ -70,8 +70,9 @@ describe('the database role the app connects as', () => {
     )
     expect(memberships).toEqual([])
     const { rows: owned } = await query(
-      `SELECT relname FROM pg_class WHERE relowner = current_user::regrole
+      `SELECT relname FROM pg_class WHERE relowner = current_user::regrole AND relpersistence <> 't'
        UNION ALL SELECT nspname FROM pg_namespace WHERE nspowner = current_user::regrole
+         AND nspname NOT LIKE 'pg_temp_%' AND nspname NOT LIKE 'pg_toast_temp_%'
        UNION ALL SELECT proname FROM pg_proc WHERE proowner = current_user::regrole`,
     )
     expect(owned).toEqual([])
