@@ -20,7 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --parallel typecheck",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check && pnpm --filter app types:check",
     "plans:export": "node apps/app/scripts/export-plans.ts",
     "plans:check": "node apps/app/scripts/export-plans.ts --check",
     "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate",

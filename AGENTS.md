@@ -28,7 +28,7 @@ The import boundaries above are enforced by `eslint.config.js`, along with raw d
 ```
 pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
 pnpm dev           # local Worker on http://localhost:3000 (strict port); DB via Hyperdrive localConnectionString
-pnpm check         # lint (ESLint v10) + format:check (Prettier) + typecheck (tsc --noEmit)
+pnpm check         # lint (ESLint v10) + format:check (Prettier) + typecheck (tsc --noEmit) + plans and Worker types drift checks
 pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
 pnpm format        # apply Prettier
 pnpm build         # production build
