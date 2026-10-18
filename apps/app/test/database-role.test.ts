@@ -111,4 +111,34 @@ describe('the database role the app connects as', () => {
     // 42501 insufficient_privilege for every one.
     expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
   })
+
+  it("can't read, change or call the archive, or turn off, replace or remove its triggers (ADR-0039)", async () => {
+    const refused = {
+      readDeleted: await attempt('SELECT 1 FROM archive.deleted_row'),
+      readEvents: await attempt('SELECT 1 FROM archive.auth_event'),
+      insertEvent: await attempt(
+        "INSERT INTO archive.auth_event (event, detail) VALUES ('x', '{}')",
+      ),
+      deleteArchive: await attempt('DELETE FROM archive.deleted_row'),
+      truncateArchive: await attempt('TRUNCATE archive.auth_event'),
+      callCapture: await attempt('SELECT archive.capture_delete()'),
+      replaceFunction: await attempt(
+        'CREATE OR REPLACE FUNCTION archive.audit_auth() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$',
+      ),
+      disableTrigger: await attempt('ALTER TABLE organization DISABLE TRIGGER archive_delete'),
+      disableAll: await attempt('ALTER TABLE session DISABLE TRIGGER ALL'),
+      dropTrigger: await attempt('DROP TRIGGER archive_delete ON project'),
+      replaceTrigger: await attempt(
+        'CREATE OR REPLACE TRIGGER audit_insert AFTER INSERT ON member FOR EACH ROW EXECUTE FUNCTION suppress_redundant_updates_trigger()',
+      ),
+      replicationRole: await attempt("SET session_replication_role = 'replica'"),
+      dropSchema: await attempt('DROP SCHEMA archive CASCADE'),
+    }
+    expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+    const { rows } = await query(
+      `SELECT has_schema_privilege('archive', 'USAGE') AS usage,
+              has_schema_privilege('archive', 'CREATE') AS create`,
+    )
+    expect(rows).toEqual([{ usage: false, create: false }])
+  })
 })

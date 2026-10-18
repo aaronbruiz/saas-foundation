@@ -150,6 +150,26 @@ async function rowsOf(orgId: string) {
 const WHOLE = { organization: 1, member: 2, invitation: 2, project: 2, billing: 1 }
 const GONE = { organization: 0, member: 0, invitation: 0, project: 0, billing: 0 }
 
+/** What the archive triggers (ADR-0039) copied for the organization: rows per table, logins, transactions. */
+async function archiveOf(orgId: string) {
+  const { rows } = await asOwner(
+    `SELECT table_name, db_user, txid FROM archive.deleted_row WHERE organization_id = $1`,
+    [orgId],
+  )
+  const count = (t: string) => rows.filter((r) => r.table_name === t).length
+  return {
+    rows: {
+      organization: count('organization'),
+      member: count('member'),
+      invitation: count('invitation'),
+      project: count('project'),
+      billing: count('billing_subscription'),
+    },
+    users: [...new Set(rows.map((r) => r.db_user))],
+    transactions: new Set(rows.map((r) => r.txid)).size,
+  }
+}
+
 /** Makes the next deletes from `table` fail for this organization (test-only trigger). */
 const failDeleteAt = (orgId: string, table: 'invitation' | 'organization') =>
   asOwner('INSERT INTO test_fault.delete_fault (organization_id, at_table) VALUES ($1, $2)', [
@@ -193,14 +213,15 @@ afterAll(async () => {
 })
 
 describe.each([
-  ['the runtime role', asRuntime],
-  ['the owner', asOwnerRole],
-])('organization deletion as %s is atomic', (_label, connect) => {
-  it('an owner deletes the organization with its members, invitations, projects and billing record', async () => {
+  ['the runtime role', asRuntime, 'app_runtime'],
+  ['the owner', asOwnerRole, 'app'],
+])('organization deletion as %s is atomic', (_label, connect, login) => {
+  it('an owner deletes the organization with its members, invitations, projects and billing record, all archived in that transaction', async () => {
     const { owner, orgId } = await populatedOrg()
     expect(await rowsOf(orgId)).toEqual(WHOLE)
     expect((await deleteOrg(connect, owner, orgId)).status).toBe(200)
     expect(await rowsOf(orgId)).toEqual(GONE)
+    expect(await archiveOf(orgId)).toEqual({ rows: WHOLE, users: [login], transactions: 1 })
   })
 
   for (const table of ['invitation', 'organization'] as const)
@@ -210,6 +231,7 @@ describe.each([
       const res = await deleteOrg(connect, owner, orgId)
       expect(res.ok).toBe(false)
       expect(await rowsOf(orgId)).toEqual(WHOLE)
+      expect((await archiveOf(orgId)).rows).toEqual(GONE)
       // Once the fault is gone, the same request deletes everything.
       await clearFaults(orgId)
       expect((await deleteOrg(connect, owner, orgId)).status).toBe(200)
