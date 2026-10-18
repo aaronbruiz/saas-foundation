@@ -3,7 +3,7 @@ import { createAuth, type BotProtection } from '@saas-foundation/auth'
 import { billing, listOwners, type Db } from '@saas-foundation/db'
 import { configuredMembers } from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
-import { mailerFor, render, type EmailConfig } from './email'
+import { mailerFor, render } from './email'
 import { logBetterAuth, logWarn } from './log'
 
 /**
@@ -72,13 +72,9 @@ export function botProtectionFor(
   return 'unavailable'
 }
 
-const vars = env as unknown as {
-  SIGNUP_MODE?: string
-  SIGNUP_ALLOWLIST?: string
-  EMAIL_VERIFICATION?: string
-  TURNSTILE_SECRET_KEY?: string
-  TURNSTILE_SITE_KEY?: string
-}
+// Partial: SIGNUP_MODE and the Turnstile keys are typed present (generated from .dev.vars.example),
+// but production leaves SIGNUP_MODE unset by design and a missing Turnstile key must refuse.
+const vars: Partial<Cloudflare.Env> = env
 
 /** The Turnstile site key the auth pages render with, or null while bot protection is unavailable. */
 export const turnstileSiteKey = () =>
@@ -88,7 +84,7 @@ export const turnstileSiteKey = () =>
     : vars.TURNSTILE_SITE_KEY!
 
 export function authFor(db: Db) {
-  const mailer = mailerFor(env as unknown as EmailConfig)
+  const mailer = mailerFor(env)
   const members = configuredMembers()
   return createAuth({
     db,

@@ -16,24 +16,18 @@ import {
 // server/auth.ts can wire the member sync without importing the service (which imports the tenant
 // context, which imports auth).
 
-const vars = env as unknown as {
-  BILLING_PROVIDER?: string
-  POLAR_ACCESS_TOKEN?: string
-  POLAR_SERVER?: string
-}
-
 /**
  * ADR-0022: Polar mode is explicit (`BILLING_PROVIDER=polar`), never inferred from a token, so a
  * missing token can't silently turn off the member sync for customers that already exist.
  */
-const polarMode = () => vars.BILLING_PROVIDER === 'polar'
+const polarMode = () => env.BILLING_PROVIDER === 'polar'
 
 /** `POLAR_SERVER` defaults to the sandbox. */
 const polarConfig = (): PolarConfig | null =>
-  vars.POLAR_ACCESS_TOKEN
+  env.POLAR_ACCESS_TOKEN
     ? {
-        accessToken: vars.POLAR_ACCESS_TOKEN,
-        server: vars.POLAR_SERVER === 'production' ? 'production' : 'sandbox',
+        accessToken: env.POLAR_ACCESS_TOKEN,
+        server: env.POLAR_SERVER === 'production' ? 'production' : 'sandbox',
       }
     : null
 
