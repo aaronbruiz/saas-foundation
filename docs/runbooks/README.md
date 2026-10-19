@@ -484,7 +484,7 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 
 **After a restore or a promote:**
 
-- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo < packages/db/drizzle/0005_runtime_role.sql` and `psqlo < packages/db/drizzle/0006_archive_audit.sql` (both idempotent; 0006 brings back the archive's `REVOKE`s), plus any later grant migration.
+- A dump restored with `--no-acl` has no grants. Re-apply them as the owner, in this order: `psqlo < packages/db/drizzle/0005_runtime_role.sql`, `psqlo < packages/db/drizzle/0006_archive_audit.sql` and `psqlo < packages/db/drizzle/0007_hashed_verification.sql` (all idempotent; 0006 brings back the archive's `REVOKE`s), plus any later grant migration. Order matters: 0005 grants `DELETE` on `account` and 0006 installs the older `verification` audit; 0007 revokes and replaces them.
 - Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
 
 **A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
@@ -498,7 +498,7 @@ Owner only: Neon console → SQL Editor, production project, branch `main`, data
   `select table_name, db_user, count(*) from archive.deleted_row where at > now() - interval '1 day' group by 1, 2 order by 1;`
 - **Auth writes** for a user, or recent ones of a kind (`session.insert|update|delete`, `account.insert|update`, `user.update`, `member.insert|update`, `verification.insert|update`):
   `select at, event, db_user, user_id, previous_user_id, organization_id, detail from archive.auth_event where user_id = '<user id>' or previous_user_id = '<user id>' order by id;`
-  Signs of a takeover: a `session.update` whose `user_id` differs from `previous_user_id`; a `session.delete` and `session.insert` with the same `detail->>'token_sha256'` but different users; `account.update` with `password_changed` that the user didn't make (the app's own change and reset flows also record one); `user.update` (the app never changes emails); `member.insert`/`member.update` granting `owner` or `admin`, or moving `user_id`/`organization_id`; `verification.insert` (a password reset) the user didn't request.
+  Signs of a takeover: a `session.update` whose `user_id` differs from `previous_user_id`; a `session.delete` and `session.insert` with the same `detail->>'token_sha256'` but different users; `account.update` with `password_changed` that the user didn't make (the app's own change and reset flows also record one); `user.update` (the app never changes emails); `member.insert`/`member.update` granting `owner` or `admin`, or moving `user_id`/`organization_id`; `verification.insert` for a user who didn't request a password reset (every `verification` write is recorded, whatever its identifier; `identifier_changed` on an update means a different token was put on an existing row).
 - **Restore an organization** deleted by mistake or by misuse. First find the deletion's transaction: `select txid, at, db_user from archive.deleted_row where organization_id = '<org id>' and table_name = 'organization' order by id;`. Restore only that `txid`'s rows: the archive also holds members, invitations and projects removed earlier, which must not come back (a former owner or admin would regain access). One transaction, parents first; a slug or id taken again since then makes it fail and roll back:
 
   ```sql
@@ -597,7 +597,7 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
 - **D. Public sign-up (`SIGNUP_MODE=open`):** its own ADR, after C, covering a bot-protection decision (Turnstile, ADR-0005), the WAF rule live, legal pages (privacy, terms, subprocessors), and Neon Free's capacity limits (ADR-0003) explicitly accepted or the plan upgraded (accepted 2026-10-13 with an upgrade trigger, ADR-0026).
 - Polar production mode (section "Polar") needs C first, since paying customers are real data, and its sandbox checks passed.
 
-**Smoke-test users removal (ADR-0032 Rollout step 3, owner, once).** After step 2 has deleted every smoke-test organization through Better Auth. No user-deletion endpoint is enabled, so it's SQL, in the Neon console (production project → SQL Editor, branch `main`, database `app`). In both statements, replace the `VALUES` list with **every** smoke-test address ever allowlisted (four by the records: section "Data gate" above and runbook "Email" steps 2 and 5), typed in the editor only: never commit or paste the addresses anywhere else (the SQL Editor keeps them in its query history; they are the owner's own plus-addresses). Deleting a user cascades to its sessions and accounts (passwords); the statement also deletes its password-reset tokens (`verification` rows keyed by user id).
+**Smoke-test users removal (ADR-0032 Rollout step 3, owner, once).** After step 2 has deleted every smoke-test organization through Better Auth. No user-deletion endpoint is enabled, so it's SQL, in the Neon console (production project → SQL Editor, branch `main`, database `app`). In both statements, replace the `VALUES` list with **every** smoke-test address ever allowlisted (four by the records: section "Data gate" above and runbook "Email" steps 2 and 5), typed in the editor only: never commit or paste the addresses anywhere else (the SQL Editor keeps them in its query history; they are the owner's own plus-addresses). Deleting a user cascades to its sessions and accounts (passwords); the statement also deletes its password-reset tokens (`verification` rows whose `value` is the user id; their identifiers may be plaintext or hashed, so they're matched by `value` only).
 
 - Check first:
 
@@ -609,7 +609,7 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
     (SELECT count(*) FROM targets) AS smoke_users,
     (SELECT count(*) FROM session WHERE user_id IN (SELECT id FROM targets)) AS sessions,
     (SELECT count(*) FROM account WHERE user_id IN (SELECT id FROM targets)) AS accounts,
-    (SELECT count(*) FROM verification WHERE identifier LIKE 'reset-password:%' AND value IN (SELECT id FROM targets)) AS reset_tokens,
+    (SELECT count(*) FROM verification WHERE value IN (SELECT id FROM targets)) AS reset_tokens,
     (SELECT count(*) FROM organization) AS organizations,
     (SELECT count(*) FROM member WHERE user_id IN (SELECT id FROM targets)) AS memberships,
     (SELECT count(*) FROM invitation WHERE inviter_id IN (SELECT id FROM targets) OR lower(email) IN (SELECT lower(email) FROM smoke)) AS invitations,
@@ -625,7 +625,7 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
   targets AS (SELECT id FROM "user" u WHERE email IN (SELECT lower(email) FROM smoke)
     AND NOT EXISTS (SELECT 1 FROM member m WHERE m.user_id = u.id)
     AND NOT EXISTS (SELECT 1 FROM invitation i WHERE i.inviter_id = u.id)),
-  reset_tokens AS (DELETE FROM verification WHERE identifier LIKE 'reset-password:%' AND value IN (SELECT id FROM targets) RETURNING 1),
+  reset_tokens AS (DELETE FROM verification WHERE value IN (SELECT id FROM targets) RETURNING 1),
   users AS (DELETE FROM "user" WHERE id IN (SELECT id FROM targets) RETURNING 1)
   SELECT (SELECT count(*) FROM users) AS users_deleted, (SELECT count(*) FROM reset_tokens) AS reset_tokens_deleted;
   ```

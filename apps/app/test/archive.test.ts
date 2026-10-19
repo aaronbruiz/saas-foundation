@@ -196,13 +196,14 @@ describe('deleted rows are archived', () => {
 
   it('an account delete is archived without its password hash or tokens', async () => {
     const user = await signUp()
-    await asRuntime((q) => q('DELETE FROM account WHERE user_id = $1', [user.userId]))
+    // The runtime role has no DELETE on account (ADR-0038); the owner, or a user delete's cascade, does.
+    await asOwner('DELETE FROM account WHERE user_id = $1', [user.userId])
     const [row] = await asOwner(
       `SELECT db_user, row_data FROM archive.deleted_row
         WHERE table_name = 'account' AND row_data->>'user_id' = $1`,
       [user.userId],
     )
-    expect(row!.db_user).toBe('app_runtime')
+    expect(row!.db_user).toBe('app')
     expect(row!.row_data).toMatchObject({ user_id: user.userId, provider_id: 'credential' })
     for (const key of ['password', 'access_token', 'refresh_token', 'id_token'])
       expect(row!.row_data).not.toHaveProperty(key)
@@ -429,26 +430,62 @@ describe('auth writes are audited', () => {
     })
   })
 
-  it('a password-reset request is recorded for the user without the reset token', async () => {
+  it('a password-reset request is recorded for the user without its stored identifier', async () => {
     const user = await signUp()
     await authPost('/request-password-reset', { email: user.email, redirectTo: '/reset-password' })
-    const [row] = await asOwner(
-      `SELECT identifier FROM verification WHERE value = $1 AND identifier LIKE 'reset-password:%'`,
-      [user.userId],
-    )
+    const [row] = await asOwner(`SELECT id, identifier FROM verification WHERE value = $1`, [
+      user.userId,
+    ])
     const event = (await eventsOf(user.userId)).find((e) => e.event === 'verification.insert')
-    expect(event).toMatchObject({ user_id: user.userId, detail: { kind: 'reset-password' } })
-    const resetToken = (row!.identifier as string).slice('reset-password:'.length)
-    expect(JSON.stringify(event)).not.toContain(resetToken)
+    expect(event).toMatchObject({ user_id: user.userId, previous_user_id: null })
+    expect(Object.keys(event!.detail as object).sort()).toEqual(['expires_at', 'verification_id'])
+    expect((event!.detail as Row).verification_id).toBe(row!.id)
+    expect(JSON.stringify(event)).not.toContain(row!.identifier as string)
   })
 
-  it('reviving an expired password-reset row by moving its expiry is recorded', async () => {
+  it('a verification row written directly with any identifier is recorded for the user it names', async () => {
+    const user = await signUp()
+    const id = crypto.randomUUID()
+    await asRuntime((q) =>
+      q(
+        `INSERT INTO verification (id, identifier, value, expires_at)
+           VALUES ($1, $2, $3, now() + interval '1 hour')`,
+        [id, `planted-${crypto.randomUUID()}`, user.userId],
+      ),
+    )
+    expect((await eventsOf(user.userId)).at(-1)).toMatchObject({
+      event: 'verification.insert',
+      db_user: 'app_runtime',
+      user_id: user.userId,
+      detail: { verification_id: id },
+    })
+  })
+
+  it("a verification row whose value isn't a user id is recorded without that value", async () => {
+    const id = crypto.randomUUID()
+    const secret = `otp-${crypto.randomUUID()}`
+    await asRuntime((q) =>
+      q(
+        `INSERT INTO verification (id, identifier, value, expires_at)
+           VALUES ($1, $2, $3, now() + interval '1 hour')`,
+        [id, `sign-in-otp-${crypto.randomUUID()}`, secret],
+      ),
+    )
+    const events = await asOwner(
+      `SELECT event, user_id, detail FROM archive.auth_event WHERE detail->>'verification_id' = $1`,
+      [id],
+    )
+    expect(events).toMatchObject([{ event: 'verification.insert', user_id: null }])
+    expect(JSON.stringify(events)).not.toContain(secret)
+  })
+
+  it('reviving an expired verification row or swapping its identifier is recorded', async () => {
     const user = await signUp()
     const id = crypto.randomUUID()
     await asOwner(
       `INSERT INTO verification (id, identifier, value, expires_at)
          VALUES ($1, $2, $3, now() - interval '1 hour')`,
-      [id, `reset-password:${crypto.randomUUID()}`, user.userId],
+      [id, crypto.randomUUID(), user.userId],
     )
     await asRuntime((q) =>
       q(`UPDATE verification SET expires_at = now() + interval '1 hour' WHERE id = $1`, [id]),
@@ -456,7 +493,19 @@ describe('auth writes are audited', () => {
     expect((await eventsOf(user.userId)).at(-1)).toMatchObject({
       event: 'verification.update',
       db_user: 'app_runtime',
-      detail: { verification_id: id, kind: 'reset-password' },
+      user_id: user.userId,
+      previous_user_id: user.userId,
+      detail: { verification_id: id, identifier_changed: false, value_changed: false },
     })
+    const planted = crypto.randomUUID()
+    await asRuntime((q) =>
+      q(`UPDATE verification SET identifier = $1 WHERE id = $2`, [planted, id]),
+    )
+    const event = (await eventsOf(user.userId)).at(-1)
+    expect(event).toMatchObject({
+      event: 'verification.update',
+      detail: { verification_id: id, identifier_changed: true, value_changed: false },
+    })
+    expect(JSON.stringify(event)).not.toContain(planted)
   })
 })

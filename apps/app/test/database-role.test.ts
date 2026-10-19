@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { createDb } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { authPost, signUp } from './helpers'
 
 // ADR-0038: the app connects as `app_runtime`, a role that owns nothing and holds only the table
 // privileges below. A new table gets no privileges until a migration grants them (no default
@@ -9,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 const GRANTS: Record<string, string[]> = {
   user: ['INSERT', 'SELECT', 'UPDATE'],
   session: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
-  account: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
+  account: ['INSERT', 'SELECT', 'UPDATE'],
   verification: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   organization: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   member: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
@@ -105,6 +106,7 @@ describe('the database role the app connects as', () => {
       updateWebhookEvents: await attempt("UPDATE billing_webhook_event SET type = 'x'"),
       deleteSubscriptions: await attempt('DELETE FROM billing_subscription'),
       deleteUsers: await attempt('DELETE FROM "user"'),
+      deleteAccounts: await attempt('DELETE FROM account'),
       readMigrations: await attempt('SELECT 1 FROM drizzle.__drizzle_migrations'),
       createRole: await attempt('CREATE ROLE not_allowed'),
       createSchema: await attempt('CREATE SCHEMA not_allowed'),
@@ -141,5 +143,18 @@ describe('the database role the app connects as', () => {
               has_schema_privilege('archive', 'CREATE') AS create`,
     )
     expect(rows).toEqual([{ usage: false, create: false }])
+  })
+})
+
+describe('auth flows without DELETE on account', () => {
+  it('unlinking the only account is a clean 400 and keeps the account', async () => {
+    const user = await signUp()
+    const { rows } = await query(`SELECT id FROM account WHERE user_id = $1`, [user.userId])
+    const res = await authPost('/unlink-account', { accountId: rows[0]!.id }, undefined, user)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: 'FAILED_TO_UNLINK_LAST_ACCOUNT' })
+    expect((await query(`SELECT id FROM account WHERE user_id = $1`, [user.userId])).rows).toEqual(
+      rows,
+    )
   })
 })
