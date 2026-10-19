@@ -484,10 +484,38 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 
 **After a restore or a promote:**
 
-- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo < packages/db/drizzle/0005_runtime_role.sql` (idempotent), plus any later grant migration.
+- A dump restored with `--no-acl` has no grants. Re-apply them as the owner: `psqlo < packages/db/drizzle/0005_runtime_role.sql` and `psqlo < packages/db/drizzle/0006_archive_audit.sql` (both idempotent; 0006 brings back the archive's `REVOKE`s), plus any later grant migration.
 - Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
 
 **A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
+
+### Archive and audit (ADR-0039)
+
+Owner only: Neon console → SQL Editor, production project, branch `main`, database `app` (runs as `app_owner`). `app_runtime` can't read the `archive` schema. The rows hold personal data (ADR-0015): read them there, never paste them into logs, tickets or chat, and record only counts and ids in incident notes. `db_user` is the database login (`app_owner` until the runtime-role switch above), not a person.
+
+- **What was deleted** (an organization, or everything in a time window):
+  `select at, txid, db_user, table_name, organization_id from archive.deleted_row where organization_id = '<org id>' order by id;`
+  `select table_name, db_user, count(*) from archive.deleted_row where at > now() - interval '1 day' group by 1, 2 order by 1;`
+- **Auth writes** for a user, or recent ones of a kind (`session.insert|update|delete`, `account.insert|update`, `user.update`, `member.insert|update`, `verification.insert|update`):
+  `select at, event, db_user, user_id, previous_user_id, organization_id, detail from archive.auth_event where user_id = '<user id>' or previous_user_id = '<user id>' order by id;`
+  Signs of a takeover: a `session.update` whose `user_id` differs from `previous_user_id`; a `session.delete` and `session.insert` with the same `detail->>'token_sha256'` but different users; `account.update` with `password_changed` that the user didn't make (the app's own change and reset flows also record one); `user.update` (the app never changes emails); `member.insert`/`member.update` granting `owner` or `admin`, or moving `user_id`/`organization_id`; `verification.insert` (a password reset) the user didn't request.
+- **Restore an organization** deleted by mistake or by misuse. First find the deletion's transaction: `select txid, at, db_user from archive.deleted_row where organization_id = '<org id>' and table_name = 'organization' order by id;`. Restore only that `txid`'s rows: the archive also holds members, invitations and projects removed earlier, which must not come back (a former owner or admin would regain access). One transaction, parents first; a slug or id taken again since then makes it fail and roll back:
+
+  ```sql
+  begin;
+  insert into public.organization select r.* from archive.deleted_row a, jsonb_populate_record(null::public.organization, a.row_data) r where a.txid = <txid> and a.organization_id = '<org id>' and a.table_name = 'organization';
+  insert into public.member select r.* from archive.deleted_row a, jsonb_populate_record(null::public.member, a.row_data) r where a.txid = <txid> and a.organization_id = '<org id>' and a.table_name = 'member';
+  insert into public.invitation select r.* from archive.deleted_row a, jsonb_populate_record(null::public.invitation, a.row_data) r where a.txid = <txid> and a.organization_id = '<org id>' and a.table_name = 'invitation';
+  insert into public.project select r.* from archive.deleted_row a, jsonb_populate_record(null::public.project, a.row_data) r where a.txid = <txid> and a.organization_id = '<org id>' and a.table_name = 'project';
+  insert into public.billing_subscription select r.* from archive.deleted_row a, jsonb_populate_record(null::public.billing_subscription, a.row_data) r where a.txid = <txid> and a.organization_id = '<org id>' and a.table_name = 'billing_subscription';
+  commit;
+  ```
+
+  Then check its subscription against Polar ("Polar" → "Re-sync one subscription from Polar"): an app deletion removed the Polar customer's members (ADR-0022), a raw delete didn't. Members whose `user` was deleted too need that user restored first (`table_name = 'user'`, then `account`; a restored account has no password, so the user resets it). The restore itself records `member.insert` events (expected).
+
+- **Purge** (monthly, 90-day retention; note the date and counts here):
+  `begin; delete from archive.deleted_row where at < now() - interval '90 days'; delete from archive.auth_event where at < now() - interval '90 days'; commit;`
+- **Data-deletion request** for a user (also covers the dumps, ADR-0023): after the app-side deletion, remove their archived rows, the invitations they sent, and their id from archived projects they created: `begin; delete from archive.deleted_row where row_data->>'email' = '<email>' or row_data->>'user_id' = '<user id>' or (table_name = 'user' and row_data->>'id' = '<user id>'); delete from archive.deleted_row where table_name = 'invitation' and row_data->>'inviter_id' = '<user id>'; update archive.deleted_row set row_data = jsonb_set(row_data, '{created_by}', 'null') where row_data->>'created_by' = '<user id>'; delete from archive.auth_event where user_id = '<user id>' or previous_user_id = '<user id>' or detail->>'email' = '<email>' or detail->>'previous_email' = '<email>'; commit;` Invitations they sent go (the live ones are cascaded when their user is deleted). `project.created_by` is `NOT NULL`, so restoring a project with a cleared creator needs an existing user in its place: in the restore's project statement use `jsonb_populate_record(null::public.project, a.row_data || jsonb_build_object('created_by', coalesce(a.row_data->>'created_by', '<owner user id>')))`. For a deleted organization, `delete from archive.deleted_row where organization_id = '<org id>';`.
 
 ## Releases (ADR-0029)
 
