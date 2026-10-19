@@ -3,6 +3,7 @@ import { createAuth, type AuthEmail } from '@saas-foundation/auth'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mailerFor, render, type EmailMessage } from '../src/server/email'
 import { withDb } from '../src/server/db'
+import { rawDb } from '@saas-foundation/db/internal'
 import { emailVerificationRequired } from '../src/server/auth'
 import { PASSWORD, randomIp } from './helpers'
 import { captchaHeader, testBotProtection } from './turnstile-fake'
@@ -184,6 +185,47 @@ describe('auth email flows through the real handler', () => {
       } | null
     )?.user ?? null
 
+  const sql = (text: string, params: unknown[] = []) =>
+    withDb(async (db) => {
+      const client = (
+        rawDb(db) as unknown as {
+          $client: {
+            query: (t: string, p: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
+          }
+        }
+      ).$client
+      return (await client.query(text, params)).rows
+    })
+  /** The `verification` rows that name this user (password resets). */
+  const resetRowsOf = (email: string) =>
+    sql(
+      `SELECT identifier FROM verification WHERE value = (SELECT id FROM "user" WHERE email = $1)`,
+      [email],
+    )
+  const insertResetRow = (email: string, identifier: string, expiresAt: Date) =>
+    sql(
+      `INSERT INTO verification (id, identifier, value, expires_at)
+         SELECT $1, $2, id, $3 FROM "user" WHERE email = $4`,
+      [crypto.randomUUID(), identifier, expiresAt, email],
+    )
+  /** Better Auth's `storeIdentifier: 'hashed'`: unpadded base64url of SHA-256. */
+  const hashedIdentifier = async (identifier: string) =>
+    btoa(
+      String.fromCharCode(
+        ...new Uint8Array(
+          await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identifier)),
+        ),
+      ),
+    )
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+  const resetTokenTo = async (email: string) => {
+    const mail = await lastTo(email, 'password-reset')
+    if (mail.kind !== 'password-reset') throw new Error('unreachable')
+    return new URL(mail.url).searchParams.get('token')!
+  }
+
   const verificationTo = async (email: string) => {
     const mail = await lastTo(email, 'verification')
     if (mail.kind !== 'verification') throw new Error('unreachable')
@@ -281,6 +323,10 @@ describe('auth email flows through the real handler', () => {
     expect(`${url.origin}${url.pathname}`).toBe(`${env.BETTER_AUTH_URL}/reset-password`)
     const token = url.searchParams.get('token')!
     expect(token).toBeTruthy()
+    // Stored as Better Auth's hashed identifier, never the token itself.
+    expect(await resetRowsOf(email)).toEqual([
+      { identifier: await hashedIdentifier(`reset-password:${token}`) },
+    ])
 
     const next = 'another-correct-horse-battery'
     expect((await post('/reset-password', { newPassword: next, token })).status).toBe(200)
@@ -291,6 +337,52 @@ describe('auth email flows through the real handler', () => {
     expect(
       (await post('/reset-password', { newPassword: 'third-password-123', token })).status,
     ).toBe(400)
+  })
+
+  it('refuses a stored reset identifier used as the token, and the emailed token still works', async () => {
+    const email = `r-${crypto.randomUUID()}@test.local`
+    await verifiedSession(email)
+    await post('/request-password-reset', { email, redirectTo: '/reset-password' })
+    const token = await resetTokenTo(email)
+    const identifier = (await resetRowsOf(email))[0]!.identifier as string
+    const next = 'another-correct-horse-battery'
+    expect((await post('/reset-password', { newPassword: next, token: identifier })).status).toBe(
+      400,
+    )
+    expect((await post('/sign-in/email', { email, password: PASSWORD })).status).toBe(200)
+    expect((await post('/reset-password', { newPassword: next, token })).status).toBe(200)
+    expect((await post('/sign-in/email', { email, password: next })).status).toBe(200)
+  })
+
+  it('accepts a reset token stored in plaintext before hashing, once', async () => {
+    const email = `r-${crypto.randomUUID()}@test.local`
+    await verifiedSession(email)
+    const token = crypto.randomUUID()
+    await insertResetRow(email, `reset-password:${token}`, new Date(Date.now() + 3_600_000))
+    const next = 'another-correct-horse-battery'
+    expect((await post('/reset-password', { newPassword: next, token })).status).toBe(200)
+    expect((await post('/sign-in/email', { email, password: next })).status).toBe(200)
+    expect(
+      (await post('/reset-password', { newPassword: 'third-password-123', token })).status,
+    ).toBe(400)
+    expect(await resetRowsOf(email)).toEqual([])
+  })
+
+  it('refuses an expired reset token, hashed or plaintext', async () => {
+    const email = `r-${crypto.randomUUID()}@test.local`
+    await verifiedSession(email)
+    await post('/request-password-reset', { email, redirectTo: '/reset-password' })
+    const hashed = await resetTokenTo(email)
+    await sql(
+      `UPDATE verification SET expires_at = $1 WHERE value = (SELECT id FROM "user" WHERE email = $2)`,
+      [new Date(Date.now() - 60_000), email],
+    )
+    const plain = crypto.randomUUID()
+    await insertResetRow(email, `reset-password:${plain}`, new Date(Date.now() - 60_000))
+    const next = 'another-correct-horse-battery'
+    for (const token of [hashed, plain])
+      expect((await post('/reset-password', { newPassword: next, token })).status).toBe(400)
+    expect((await post('/sign-in/email', { email, password: PASSWORD })).status).toBe(200)
   })
 
   it('sends reset emails in the background when a runner is given (no timing oracle)', async () => {

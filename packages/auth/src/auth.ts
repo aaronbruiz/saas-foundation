@@ -170,6 +170,11 @@ export function createAuth({
     // middleware, permission checks, clearing the active organization, beforeDeleteOrganization and
     // its Polar call) are outside the transaction and aren't undone by it.
     database: drizzleAdapter(rawDb(db), { provider: 'pg', schema, transaction: true }),
+    // `verification.identifier` holds a SHA-256 of `reset-password:<token>`, so reading the table
+    // yields no usable reset link. Rows stored in plaintext before this keep working until they
+    // expire (Better Auth also looks the plaintext identifier up). ADR-0039 audits every
+    // `verification` write, since a hashed row can't be told apart by its identifier.
+    verification: { storeIdentifier: 'hashed' },
     emailAndPassword: {
       enabled: true,
       // Our own page, token in the query string (Better Auth's default link has it in the path,

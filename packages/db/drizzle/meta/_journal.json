@@ -50,6 +50,13 @@
       "when": 1792363724395,
       "tag": "0006_archive_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792450781808,
+      "tag": "0007_hashed_verification",
+      "breakpoints": true
     }
   ]
 }
