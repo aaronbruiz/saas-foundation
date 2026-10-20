@@ -2,12 +2,15 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { billing, createDb, findOrganizationBySlug, projects, type Db } from '@saas-foundation/db'
 import { inTenant, rawDb, schema, TenantTransactionError } from '@saas-foundation/db/internal'
 import { env } from 'cloudflare:workers'
+import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { createProject } from '../src/modules/projects/service'
-import { createOrg, signUp } from './helpers'
+import { createOrg, PASSWORD, randomIp, signUp } from './helpers'
+import { captchaHeader } from './turnstile-fake'
 
 // ADR-0040 phase 1: every tenant-scoped repository call runs in its own transaction with the
-// tenant set transaction-locally, and refuses to start while the client is already in one.
+// tenant set transaction-locally, refuses to start while the client is already in one, and owns
+// the connection until it ends: nothing outside it can run a statement on that client meanwhile.
 
 let orgA: string
 let orgB: string
@@ -17,8 +20,10 @@ const orgId = async (slug: string) => (await withDb((db) => findOrganizationBySl
 
 // Direct SQL for assertions only (apps/app doesn't depend on drizzle-orm).
 type Client = {
-  query: (sql: string) => Promise<{ rows: { v: string | null }[] }>
+  query: ((sql: string) => Promise<{ rows: { v: string | null }[] }>) &
+    ((sql: string, cb: (err: Error | null) => void) => void)
   getTransactionStatus: () => string | null
+  on: (event: 'error', listener: (err: Error) => void) => void
 }
 const client = (db: Db) => (rawDb(db) as unknown as { $client: Client }).$client
 
@@ -30,6 +35,54 @@ const context = async (db: Db) =>
   (await client(db).query(`select current_setting('app.org_id', true) as v`)).rows[0]!.v || null
 
 const status = (db: Db) => client(db).getTransactionStatus()
+
+/** A refusal by the guard, directly or wrapped by Drizzle's query error. */
+const isRefusal = (e: unknown) =>
+  e instanceof TenantTransactionError ||
+  (e as { cause?: unknown } | null)?.cause instanceof TenantTransactionError
+
+async function expectRefused(attempt: Promise<unknown> | (() => Promise<unknown>), what?: string) {
+  const error = await (typeof attempt === 'function' ? attempt() : attempt).then(
+    () => new Error(`${what ?? 'attempt'} was not refused`),
+    (e: unknown) => e,
+  )
+  expect(isRefusal(error), `${what ?? ''} ${String(error)}`).toBe(true)
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((r) => (resolve = r))
+  return { promise, resolve }
+}
+
+const names = async (db: Db, orgId: string) =>
+  (await projects(db, { orgId }).list()).map((p) => p.name)
+
+/**
+ * Starts a tenant transaction for `orgId` that inserts a project named `name`, then waits at a
+ * barrier: `inside` resolves once it holds the connection mid-transaction; `finish(ok)` lets it
+ * commit (ok) or fail. The test body stays outside its async context, like another caller.
+ */
+async function heldTenantTransaction(db: Db, orgId: string, name: string) {
+  const inside = deferred()
+  const proceed = deferred()
+  let ok = false
+  const done = inTenant(db, { orgId }, async (tx) => {
+    await tx.insert(schema.project).values({ organizationId: orgId, name, createdBy: creator })
+    inside.resolve()
+    await proceed.promise
+    if (!ok) throw new Error('tenant failure')
+  })
+  await inside.promise
+  return {
+    done,
+    finish: (commit: boolean) => {
+      ok = commit
+      proceed.resolve()
+      return done
+    },
+  }
+}
 
 beforeAll(async () => {
   const [alice, bob] = await Promise.all([signUp(), signUp()])
@@ -47,10 +100,8 @@ describe('tenant transactions refuse to run inside another transaction', () => {
       // Shaped like Better Auth's adapter transaction (#155) calling one of our hooks.
       const outer = rawDb(db).transaction(async (tx) => {
         await tx.insert(schema.project).values({ organizationId: orgA, name, createdBy: creator })
-        await expect(billing(db, { orgId: orgA }).subscription()).rejects.toThrow(
-          TenantTransactionError,
-        )
-        await expect(projects(db, { orgId: orgA }).list()).rejects.toThrow(TenantTransactionError)
+        await expectRefused(billing(db, { orgId: orgA }).subscription())
+        await expectRefused(projects(db, { orgId: orgA }).list())
         throw new Error('outer failure')
       })
       await expect(outer).rejects.toThrow('outer failure')
@@ -63,10 +114,8 @@ describe('tenant transactions refuse to run inside another transaction', () => {
   it('a tenant call inside another tenant call is refused', async () => {
     await withDb((db) =>
       inTenant(db, { orgId: orgA }, async () => {
-        await expect(inTenant(db, { orgId: orgB }, async () => null)).rejects.toThrow(
-          TenantTransactionError,
-        )
-        await expect(projects(db, { orgId: orgB }).count()).rejects.toThrow(TenantTransactionError)
+        await expectRefused(inTenant(db, { orgId: orgB }, async () => null))
+        await expectRefused(projects(db, { orgId: orgB }).count())
       }),
     )
   })
@@ -80,7 +129,7 @@ describe('tenant transactions refuse to run inside another transaction', () => {
       ])
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
       const refused = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
-      expect(refused.reason).toBeInstanceOf(TenantTransactionError)
+      expect(isRefusal(refused.reason)).toBe(true)
       expect(seen).toHaveLength(1)
       expect(status(db)).toBe('I')
     })
@@ -89,11 +138,193 @@ describe('tenant transactions refuse to run inside another transaction', () => {
   it("a tenant call while another transaction's BEGIN is still in flight on the client is refused", async () => {
     await withDb(async (db) => {
       const begin = client(db).query('BEGIN')
-      await expect(projects(db, { orgId: orgA }).list()).rejects.toThrow(TenantTransactionError)
+      await expectRefused(projects(db, { orgId: orgA }).list())
       await begin
       await client(db).query('ROLLBACK')
       expect(status(db)).toBe('I')
     })
+  })
+})
+
+describe('a tenant transaction owns its connection until it ends', () => {
+  it('a raw transaction started during it is refused before BEGIN is sent, and the tenant transaction still rolls back', async () => {
+    const name = `held-${crypto.randomUUID()}`
+    const rawName = `raw-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      const held = await heldTenantTransaction(db, orgA, name)
+      const raw = rawDb(db).transaction(async (tx) => {
+        await tx
+          .insert(schema.project)
+          .values({ organizationId: orgA, name: rawName, createdBy: creator })
+      })
+      await expectRefused(raw)
+      await expect(held.finish(false)).rejects.toThrow('tenant failure')
+      expect(status(db)).toBe('I')
+      const left = await names(db, orgA)
+      expect(left).not.toContain(name)
+      expect(left).not.toContain(rawName)
+    })
+  })
+
+  it('a raw transaction started during it is refused, and the tenant transaction commits exactly its own work', async () => {
+    const name = `held-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      const held = await heldTenantTransaction(db, orgA, name)
+      await expectRefused(rawDb(db).transaction(async () => 'raw'))
+      await held.finish(true)
+      expect((await names(db, orgA)).filter((n) => n === name)).toHaveLength(1)
+    })
+  })
+
+  it('raw COMMIT, ROLLBACK and plain statements from outside are refused while it runs', async () => {
+    await withDb(async (db) => {
+      const held = await heldTenantTransaction(db, orgA, `held-${crypto.randomUUID()}`)
+      for (const statement of ['COMMIT', 'ROLLBACK', 'select 1']) {
+        await expectRefused(async () => client(db).query(statement))
+      }
+      await expect(held.finish(false)).rejects.toThrow('tenant failure')
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('a Better Auth sign-up on the same connection during it fails without touching the tenant transaction', async () => {
+    const name = `held-${crypto.randomUUID()}`
+    const email = `u-${crypto.randomUUID()}@test.local`
+    await withDb(async (db) => {
+      const held = await heldTenantTransaction(db, orgA, name)
+      const outcome = await authFor(db)
+        .handler(
+          new Request(`${env.BETTER_AUTH_URL}/api/auth/sign-up/email`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              origin: env.BETTER_AUTH_URL,
+              'cf-connecting-ip': randomIp(),
+              ...captchaHeader,
+            },
+            body: JSON.stringify({ email, password: PASSWORD, name: email }),
+          }),
+        )
+        .then(
+          (res) => (res.ok ? 'signed up' : 'failed'),
+          (e: unknown) => (isRefusal(e) ? 'refused' : e),
+        )
+      expect(['failed', 'refused']).toContain(outcome)
+      await expect(held.finish(false)).rejects.toThrow('tenant failure')
+      expect(await names(db, orgA)).not.toContain(name)
+      const { rows } = await client(db).query(
+        `select count(*)::int as v from "user" where email = '${email}'`,
+      )
+      expect(Number(rows[0]!.v)).toBe(0)
+    })
+  })
+
+  it('a raw transaction and a tenant call started together: exactly one runs, the other is refused, and the connection recovers', async () => {
+    await withDb(async (db) => {
+      const results = await Promise.allSettled([
+        rawDb(db).transaction(async (tx) => tx.select().from(schema.project).limit(1)),
+        projects(db, { orgId: orgA }).list(),
+      ])
+      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+      const refused = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+      expect(isRefusal(refused.reason)).toBe(true)
+      expect(status(db)).toBe('I')
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('a tenant call while a raw transaction is open is refused; once it ends, tenant calls work', async () => {
+    await withDb(async (db) => {
+      await client(db).query('BEGIN')
+      await expectRefused(projects(db, { orgId: orgA }).list())
+      await client(db).query('ROLLBACK')
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('a tenant call between a failed statement and the server reporting ready is refused', async () => {
+    await withDb(async (db) => {
+      // One message: BEGIN, then an error. pg runs the callback on the ErrorResponse, while its cached
+      // status still says idle ('I'); only ReadyForQuery (status 'E') follows.
+      const seen = await new Promise<{ status: string | null; attempt: Promise<unknown> }>(
+        (resolve) =>
+          client(db).query('BEGIN; select 1/0', () =>
+            resolve({ status: status(db), attempt: projects(db, { orgId: orgA }).list() }),
+          ),
+      )
+      expect(seen.status).toBe('I')
+      await expectRefused(seen.attempt)
+      await client(db).query('ROLLBACK')
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('inside it, statements that would end it, nest it or change its tenant are refused, and the tenant stays set', async () => {
+    const refused = [
+      'COMMIT',
+      'end',
+      'ROLLBACK',
+      'abort',
+      'BEGIN',
+      'start transaction',
+      'SAVEPOINT s',
+      'release savepoint s',
+      'prepare transaction $$x$$',
+      // eslint-disable-next-line no-restricted-syntax -- the runtime guard is what's under test
+      "select set_config('app.org_id', 'other', false)",
+      // eslint-disable-next-line no-restricted-syntax -- the runtime guard is what's under test
+      "SET app.org_id = 'other'",
+      // eslint-disable-next-line no-restricted-syntax -- the runtime guard is what's under test
+      "set local app.org_id to 'other'",
+      'reset all',
+      'discard all',
+      'select 1; commit',
+      '/* hidden */ commit',
+      '-- hidden\ncommit',
+    ]
+    await withDb(async (db) => {
+      const seen = await inTenant(db, { orgId: orgA }, async (tx) => {
+        for (const statement of refused) {
+          await expectRefused(async () => client(db).query(statement), statement)
+        }
+        await expectRefused(tx.transaction(async () => null))
+        await expectRefused(rawDb(db).transaction(async () => null))
+        return context(db)
+      })
+      expect(seen).toBe(orgA)
+      expect(status(db)).toBe('I')
+      expect(await context(db)).toBeNull()
+    })
+  })
+
+  it('a callback left behind by a finished tenant transaction cannot use the connection', async () => {
+    await withDb(async (db) => {
+      const later = deferred()
+      let stale!: Promise<unknown>
+      await inTenant(db, { orgId: orgA }, async () => {
+        stale = (async () => {
+          await later.promise
+          return client(db).query('select 1')
+        })()
+      })
+      later.resolve()
+      await expectRefused(stale)
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('a connection lost mid-transaction commits nothing and refuses further tenant calls', async () => {
+    const name = `lost-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      client(db).on('error', () => {})
+      const lost = inTenant(db, { orgId: orgA }, async (tx) => {
+        await tx.insert(schema.project).values({ organizationId: orgA, name, createdBy: creator })
+        await client(db).query('select pg_terminate_backend(pg_backend_pid())')
+      })
+      await expect(lost).rejects.toThrow()
+      await expect(projects(db, { orgId: orgA }).list()).rejects.toThrow()
+    })
+    expect(await withDb((db) => names(db, orgA))).not.toContain(name)
   })
 })
 
@@ -107,11 +338,11 @@ describe('tenant context', () => {
   it('is refused when missing (no organization id), before anything runs', async () => {
     await withDb(async (db) => {
       let ran = false
-      await expect(
+      await expectRefused(
         inTenant(db, { orgId: '' }, async () => {
           ran = true
         }),
-      ).rejects.toThrow(TenantTransactionError)
+      )
       expect(ran).toBe(false)
       expect(status(db)).toBe('I')
     })

@@ -105,13 +105,46 @@ const noDynamicRawDb = [
   },
 ]
 
-// ADR-0040: only the tenant-transaction helper sets the tenant context, always transaction-locally.
-const tenantHelper = 'packages/db/src/tenant-transaction.ts'
+// ADR-0040: SQL that could set the tenant context or end a tenant transaction stays checkable.
+// Only packages/db/src/connection.ts sets the context, always transaction-locally; its runtime
+// guard refuses the same statements, so these rules are the first line, not the only one.
+const tenantConnection = 'packages/db/src/connection.ts'
+const setsContext = String.raw`set_config|\b(set|reset)\b[\s\S]*\bapp\b["\s]*\.`
 const noSetConfig = {
-  selector:
-    ':matches(Literal[value=/set_config/i], TemplateElement[value.raw=/set_config/i], TemplateElement[value.cooked=/set_config/i])',
-  message: `Only ${tenantHelper} calls set_config, so the tenant context is always transaction-local (ADR-0040).`,
+  selector: `:matches(Literal[value=/${setsContext}/i], TemplateElement[value.raw=/${setsContext}/i], TemplateElement[value.cooked=/${setsContext}/i])`,
+  message: `Only ${tenantConnection} sets the tenant context (set_config, SET/RESET app.*), always transaction-locally (ADR-0040).`,
 }
+const noSplitLiterals = {
+  // A string split into literals ('set_' + 'config', `${'set_'}config`) hides it from every rule.
+  selector:
+    "BinaryExpression[operator='+'][left.type='Literal'][right.type='Literal'], TemplateLiteral > Literal",
+  message: 'Write string literals whole; split literals hide SQL from lint (ADR-0040).',
+}
+const noRawSql = {
+  selector:
+    "MemberExpression[object.name='sql']:matches([property.name='raw'], [property.value='raw']), VariableDeclarator[init.name='sql'] > ObjectPattern",
+  message:
+    'No sql.raw: SQL built at runtime cannot be checked (ADR-0040). Use the sql tag; values become parameters.',
+}
+const noDynamicQueryText = {
+  selector:
+    "CallExpression[callee.property.name=/^(execute|query)$/]:not([arguments.0.type='TaggedTemplateExpression']):not([arguments.0.type='Literal'])",
+  message:
+    'Pass SQL as the sql tag or a string literal, never as a value built at runtime (ADR-0040).',
+}
+const noClientAccess = {
+  selector: ":matches(Identifier[name='$client'], Literal[value='$client'])",
+  message: `The pg client stays inside packages/db: every statement goes through ${tenantConnection}'s guard (ADR-0040).`,
+}
+const noPgImport = {
+  selector:
+    'ImportDeclaration[source.value=/^pg($|\\x2F)/], ImportExpression[source.value=/^pg($|\\x2F)/]',
+  message: 'Only packages/db talks to pg directly; use createDb (ADR-0040).',
+}
+// Everywhere unless a block below narrows it.
+const sqlGuards = [noSetConfig, noSplitLiterals, noRawSql, noClientAccess, noPgImport]
+// Application and package source (not tests or owner scripts).
+const sourceSqlGuards = [...sqlGuards, noDynamicQueryText]
 
 const noDynamicServerDbInUi = {
   selector: 'ImportExpression[source.value=/(^|\\x2F)server\\x2Fdb(\\.[cm]?[jt]sx?)?$/]',
@@ -175,7 +208,7 @@ export default defineConfig([
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdksOnlyInProviders] }],
-      'no-restricted-syntax': ['error', noSetConfig],
+      'no-restricted-syntax': ['error', ...sqlGuards],
     },
   },
   {
@@ -197,7 +230,7 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb],
+      'no-restricted-syntax': ['error', ...sourceSqlGuards, ...noDynamicRawDb],
     },
   },
   ...moduleNames.map((name) => ({
@@ -219,7 +252,7 @@ export default defineConfig([
       ],
       'no-restricted-syntax': [
         'error',
-        noSetConfig,
+        ...sourceSqlGuards,
         ...noDynamicRawDb,
         moduleBoundary(name).selector,
       ],
@@ -240,7 +273,12 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb, noDynamicServerDbInUi],
+      'no-restricted-syntax': [
+        'error',
+        ...sourceSqlGuards,
+        ...noDynamicRawDb,
+        noDynamicServerDbInUi,
+      ],
     },
   },
   {
@@ -261,7 +299,7 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb],
+      'no-restricted-syntax': ['error', ...sourceSqlGuards, ...noDynamicRawDb],
     },
   },
   {
@@ -292,8 +330,36 @@ export default defineConfig([
     },
   },
   {
-    // The helper, and the rule's own definition and fixtures.
-    files: [tenantHelper, 'eslint.config.js', 'scripts/lint-boundaries.test.mjs'],
+    files: ['packages/**/*.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...sourceSqlGuards] },
+  },
+  {
+    // The database package owns the pg client.
+    files: ['packages/db/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', noSetConfig, noSplitLiterals, noRawSql, noDynamicQueryText],
+    },
+  },
+  {
+    // The one place that sets the tenant context.
+    files: [tenantConnection],
+    rules: { 'no-restricted-syntax': ['error', noSplitLiterals, noRawSql, noDynamicQueryText] },
+  },
+  {
+    // Owner-run migration scripts (not the app's connection).
+    files: ['packages/db/scripts/**'],
+    rules: { 'no-restricted-syntax': ['error', noSetConfig, noSplitLiterals, noRawSql] },
+  },
+  {
+    // Tests reach the guarded client to prove its guard; they never set the context.
+    files: ['apps/app/test/**', 'apps/app/e2e/**'],
+    rules: {
+      'no-restricted-syntax': ['error', noSetConfig, noSplitLiterals, noRawSql, noPgImport],
+    },
+  },
+  {
+    // The rules' own definitions and fixtures.
+    files: ['eslint.config.js', 'scripts/lint-boundaries.test.mjs'],
     rules: { 'no-restricted-syntax': 'off' },
   },
   {

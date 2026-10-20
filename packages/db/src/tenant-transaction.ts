@@ -1,62 +1,38 @@
-import { sql } from 'drizzle-orm'
-import type { Client } from 'pg'
 import { rawDb, type Db, type RawDb } from './client.ts'
+import { GuardedClient, TenantTransactionError } from './connection.ts'
 import type { TenantScope } from './tenancy.ts'
 
-export type Tx = Parameters<Parameters<RawDb['transaction']>[0]>[0]
+export { TenantTransactionError }
 
-/** A tenant transaction was asked to start where it can't own its transaction, or without a tenant. */
-export class TenantTransactionError extends Error {
-  override name = 'TenantTransactionError'
+/** What a tenant transaction's body queries through: the request's client, owned by it meanwhile. */
+export type Tx = RawDb
+
+function guarded(db: Db | RawDb): { raw: RawDb; client: GuardedClient } {
+  const raw = 'select' in db ? db : rawDb(db)
+  const { $client } = raw as unknown as { $client: unknown }
+  if (!($client instanceof GuardedClient)) {
+    throw new TenantTransactionError('not a guarded connection (use createDb)')
+  }
+  return { raw, client: $client }
 }
-
-/** pg's own queue (pg 8; not public API). Missing fields mean an unknown client: refused. */
-type PgClient = Partial<Pick<Client, 'getTransactionStatus'>> & {
-  _queryQueue?: unknown[]
-  _getActiveQuery?: () => unknown
-}
-
-/** Clients with a tenant transaction in progress, claimed before the first await. */
-const owned = new WeakSet<object>()
 
 /**
- * Runs `fn` in a transaction this call owns (ADR-0040). Refuses unless the client is idle with
- * nothing queued or running and no tenant transaction already claimed it: a nested top-level
- * transaction would commit the outer one early, a savepoint would leak the tenant context into
- * it, and a concurrent one would share it. The status comes from the last ReadyForQuery and the
- * queue is local, so the check costs no round trip.
+ * Runs `fn` in a transaction that owns the request's connection until it ends (ADR-0040). Refused
+ * when the connection is busy or in another transaction; while it runs, anything outside it on the
+ * same connection is refused, and inside it nothing may end, nest or reconfigure it.
  */
 export async function ownTransaction<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const raw = rawDb(db)
-  // A Pool has none of these (and no single connection to own): refused.
-  const client = (raw as unknown as { $client: PgClient }).$client
-  const status = client.getTransactionStatus?.()
-  const busy =
-    !Array.isArray(client._queryQueue) ||
-    client._queryQueue.length > 0 ||
-    typeof client._getActiveQuery !== 'function' ||
-    client._getActiveQuery() != null
-  if (status !== 'I' || busy || owned.has(client)) {
-    throw new TenantTransactionError(`a tenant transaction can't start here (status ${status})`)
-  }
-  owned.add(client)
-  try {
-    return await raw.transaction(fn)
-  } finally {
-    owned.delete(client)
-  }
+  const { raw, client } = guarded(db)
+  return client.runOwned(() => fn(raw))
 }
 
-/**
- * Sets the transaction's tenant (`app.org_id`, transaction-local: gone at COMMIT or ROLLBACK).
- * The only place that calls `set_config` (lint-enforced).
- */
+/** Sets the running tenant transaction's tenant, once (the webhook, after its organization lock). */
 export async function enterTenant(tx: Tx, orgId: string): Promise<void> {
   if (!orgId) throw new TenantTransactionError('no tenant')
-  await tx.execute(sql`select set_config('app.org_id', ${orgId}, true)`)
+  await guarded(tx).client.setTenant(orgId)
 }
 
-/** Runs `fn` in its own transaction with `scope`'s tenant set. Every tenant-table statement goes here. */
+/** Runs `fn` in its own tenant transaction with `scope`'s tenant set. Every tenant-table statement goes here. */
 export function inTenant<T>(db: Db, scope: TenantScope, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (!scope.orgId) return Promise.reject(new TenantTransactionError('no tenant'))
   return ownTransaction(db, async (tx) => {

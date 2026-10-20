@@ -1,5 +1,5 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { Client } from 'pg'
+import { GuardedClient } from './connection.ts'
 import * as schema from './schema/index.ts'
 
 /** The Drizzle client. Only this package's repositories, packages/auth and tests use it. */
@@ -34,7 +34,7 @@ export function rawDb(db: Db): RawDb {
 export async function createDb(
   connectionString: string,
 ): Promise<{ db: Db; close: () => Promise<void> }> {
-  const client = new Client({ connectionString })
+  const client = new GuardedClient({ connectionString })
   await client.connect()
   return { db: asDb(drizzle(client, { schema })), close: () => client.end() }
 }

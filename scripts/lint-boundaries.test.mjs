@@ -38,7 +38,12 @@ const PROVIDER = 'billing provider SDK'
 const NO_PACKAGES = 'must not import other workspace packages'
 const ONLY_DB = 'may import only @saas-foundation/db'
 const REQUIRE = 'require()'
-const SET_CONFIG = 'calls set_config'
+const SET_CONFIG = 'sets the tenant context'
+const SPLIT = 'Write string literals whole'
+const RAW_SQL = 'No sql.raw'
+const QUERY_TEXT = 'Pass SQL as the sql tag'
+const CLIENT = 'The pg client stays inside packages/db'
+const PG = 'Only packages/db talks to pg'
 
 /** [file, code, fragment of the expected message, or null when the import is allowed] */
 const cases = [
@@ -59,11 +64,12 @@ const cases = [
     `import { authFor } from '@saas-foundation/auth'`,
     null,
   ],
-  // Only the tenant-transaction helper sets the tenant context (ADR-0040).
+  // SQL that could set the tenant context or end a tenant transaction stays checkable (ADR-0040).
+  ['packages/db/src/connection.ts', "const q = `select set_config('app.org_id', $1, true)`", null],
   [
     'packages/db/src/tenant-transaction.ts',
     "const q = sql`select set_config('app.org_id', ${id}, true)`",
-    null,
+    SET_CONFIG,
   ],
   [
     'packages/db/src/tenancy.ts',
@@ -83,9 +89,37 @@ const cases = [
   [server, "const q = sql`select set_config('app.org_id', ${id}, true)`", SET_CONFIG],
   [projects, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   [route, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  ['apps/app/test/fixture.test.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   [server, "const q = sql`select set_\\u0063onfig('app.org_id', ${id}, false)`", SET_CONFIG],
   [server, `const q = 'select set_\\u0063onfig($1, $2, false)'`, SET_CONFIG],
-  ['apps/app/test/fixture.test.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  ['packages/db/src/tenancy.ts', `const q = "SET app.org_id = 'other'"`, SET_CONFIG],
+  ['packages/db/src/tenancy.ts', 'const q = `set local "app".org_id to ${x}`', SET_CONFIG],
+  ['packages/db/src/tenancy.ts', `const q = 'RESET app.org_id'`, SET_CONFIG],
+  ['apps/app/test/fixture.test.ts', `const q = 'set session app.org_id = 1'`, SET_CONFIG],
+  ['packages/db/src/tenancy.ts', `const q = "update project set name = 'x'"`, null],
+  ['packages/db/src/tenancy.ts', `const q = 'select set_' + 'config($1, $2, false)'`, SPLIT],
+  ['packages/db/src/tenancy.ts', "const q = `select ${'set_'}config($1, $2, false)`", SPLIT],
+  ['apps/app/test/fixture.test.ts', `const q = 'set_' + 'config'`, SPLIT],
+  ['packages/db/src/tenancy.ts', `const q = sql.raw(text)`, RAW_SQL],
+  ['packages/db/src/tenancy.ts', "const q = sql.raw('select 1')", RAW_SQL],
+  ['packages/db/src/tenancy.ts', `const q = sql['raw'](text)`, RAW_SQL],
+  ['packages/db/src/tenancy.ts', `const r = sql.raw`, RAW_SQL],
+  ['packages/db/src/tenancy.ts', `const { raw } = sql`, RAW_SQL],
+  ['packages/db/src/tenancy.ts', `await tx.execute(text)`, QUERY_TEXT],
+  ['packages/db/src/tenancy.ts', 'await tx.execute(`select ${x}`)', QUERY_TEXT],
+  ['packages/db/src/tenancy.ts', `await client.query('select ' + x)`, QUERY_TEXT],
+  ['packages/db/src/tenancy.ts', 'await tx.execute(sql`select ${x}`)', null],
+  ['packages/db/src/tenancy.ts', `await client.query('select 1')`, null],
+  ['packages/auth/src/fixture.ts', `const c = rawDb(db).$client`, CLIENT],
+  ['packages/auth/src/fixture.ts', `const { $client } = rawDb(db)`, CLIENT],
+  ['packages/auth/src/fixture.ts', `const c = rawDb(db)['$client']`, CLIENT],
+  [server, `const c = x.$client`, CLIENT],
+  ['packages/db/src/tenancy.ts', `const c = rawDb(db).$client`, null],
+  ['apps/app/test/fixture.test.ts', `const c = rawDb(db).$client`, null],
+  ['packages/auth/src/fixture.ts', `import { Client } from 'pg'`, PG],
+  [server, `const pg = await import('pg')`, PG],
+  ['apps/app/test/fixture.test.ts', `import pg from 'pg'`, PG],
+  ['packages/db/src/connection.ts', `import { Client } from 'pg'`, null],
   // Raw database access stays in packages/db.
   [projects, `import { eq } from 'drizzle-orm/sql'`, DRIZZLE],
   [server, `import { eq } from 'drizzle-orm'`, DRIZZLE],
