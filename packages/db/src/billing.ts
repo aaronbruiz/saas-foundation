@@ -68,17 +68,14 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
     await enterTenant(tx, org.id)
 
     // A subscription belongs to the organization it was first linked to; moving it is not supported.
-    // The one cross-tenant read on a tenant table (ADR-0040's reviewed webhook bypass).
-    const [holder] = await tx
-      .select({ organizationId: billingSubscription.organizationId })
-      .from(billingSubscription)
-      .where(
-        and(
-          eq(billingSubscription.provider, event.provider),
-          eq(billingSubscription.providerSubscriptionId, sub.providerSubscriptionId),
-        ),
-      )
-    if (holder && holder.organizationId !== org.id) return 'conflict'
+    // The one cross-tenant read on a tenant table (ADR-0040's reviewed webhook bypass): an
+    // owner-owned definer function that answers only yes or no, for the tenant just entered.
+    const { rows } = await tx.execute<{ held: boolean }>(
+      sql`select public.billing_subscription_held_elsewhere(${event.provider}, ${sub.providerSubscriptionId}) as held`,
+    )
+    const held = rows[0]?.held
+    if (held === true) return 'conflict'
+    if (held !== false) throw new Error('subscription holder check gave no answer')
 
     const [current] = await tx
       .select()

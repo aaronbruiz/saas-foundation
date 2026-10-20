@@ -20,6 +20,8 @@ const GRANTS: Record<string, string[]> = {
   billing_subscription: ['INSERT', 'SELECT', 'UPDATE'],
   billing_webhook_event: ['INSERT', 'SELECT'],
 }
+// The only functions of ours it may call (ADR-0040's webhook bypass), owner-owned definers.
+const FUNCTIONS = ['billing_subscription_held_elsewhere(text,text)']
 
 type Query = (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
 let query: Query
@@ -143,6 +145,63 @@ describe('the database role the app connects as', () => {
               has_schema_privilege('archive', 'CREATE') AS create`,
     )
     expect(rows).toEqual([{ usage: false, create: false }])
+  })
+
+  it('may call only the reviewed functions, each an owner-owned definer with a pinned search_path', async () => {
+    const { rows } = await query(
+      `SELECT p.oid::regprocedure::text AS fn, p.prosecdef, p.provolatile, p.proconfig,
+              p.proowner = c.relowner AS owned_like_tables,
+              ARRAY(SELECT CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
+                           || ':' || a.privilege_type
+                           || CASE WHEN a.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                      FROM aclexplode(p.proacl) a WHERE a.grantee <> p.proowner ORDER BY 1) AS grants
+         FROM pg_proc p, pg_class c
+        WHERE c.oid = 'public.billing_subscription'::regclass
+          AND p.pronamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+          AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
+                            AND d.objid = p.oid AND d.deptype = 'e')
+          AND has_function_privilege(current_user, p.oid, 'EXECUTE')
+        ORDER BY 1`,
+    )
+    expect(rows.map((r) => r.fn)).toEqual(FUNCTIONS)
+    for (const r of rows) {
+      expect(r).toMatchObject({
+        prosecdef: true,
+        provolatile: 's',
+        proconfig: ['search_path=pg_catalog, pg_temp'],
+        owned_like_tables: true,
+        grants: ['app_runtime:EXECUTE'],
+      })
+    }
+  })
+
+  it("can't replace, reconfigure, re-own, drop or share the webhook's definer function (ADR-0040)", async () => {
+    const fn = 'public.billing_subscription_held_elsewhere(text, text)'
+    const refused = {
+      replace: await attempt(
+        `CREATE OR REPLACE FUNCTION ${fn} RETURNS boolean LANGUAGE sql AS 'SELECT false'`,
+      ),
+      invoker: await attempt(`ALTER FUNCTION ${fn} SECURITY INVOKER`),
+      searchPath: await attempt(`ALTER FUNCTION ${fn} SET search_path = pg_temp, public`),
+      owner: await attempt(`ALTER FUNCTION ${fn} OWNER TO app_runtime`),
+      rename: await attempt(`ALTER FUNCTION ${fn} RENAME TO not_allowed`),
+      drop: await attempt(`DROP FUNCTION ${fn}`),
+      overload: await attempt(
+        `CREATE FUNCTION public.billing_subscription_held_elsewhere(varchar, varchar) RETURNS boolean LANGUAGE sql AS 'SELECT false'`,
+      ),
+    }
+    expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+    // Without the grant option a GRANT only warns; checked inside its transaction, before rollback.
+    await query('BEGIN')
+    try {
+      await query(`GRANT EXECUTE ON FUNCTION ${fn} TO PUBLIC`)
+      const { rows } = await query(
+        `SELECT has_function_privilege('public', '${fn}', 'EXECUTE') AS public_execute`,
+      )
+      expect(rows).toEqual([{ public_execute: false }])
+    } finally {
+      await query('ROLLBACK')
+    }
   })
 })
 

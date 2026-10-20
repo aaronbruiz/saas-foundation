@@ -1,4 +1,11 @@
-import { billing, findOrganizationBySlug, type Db } from '@saas-foundation/db'
+import {
+  applyBillingEvent,
+  billing,
+  createDb,
+  findOrganizationBySlug,
+  type BillingEvent,
+  type Db,
+} from '@saas-foundation/db'
 import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -25,7 +32,7 @@ import { acceptInvitation, inviteMember } from '../src/modules/organizations/ser
 import { createProject, listProjects } from '../src/modules/projects/service'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
-import { rawDb } from '@saas-foundation/db/internal'
+import { inTenant, rawDb } from '@saas-foundation/db/internal'
 import {
   authPost,
   createOrg,
@@ -237,6 +244,176 @@ describe('billing webhook: replacing a subscription', () => {
     expect(results.map((r) => r.status)).toEqual([200, 200, 200])
     expect(results.filter((r) => r.outcome === 'duplicate')).toHaveLength(1)
     expect((await subscriptionOf(orgId))?.providerSubscriptionId).toBe(newer.data.id)
+  })
+})
+
+describe('the subscription holder check (ADR-0040 webhook bypass)', () => {
+  type Q = (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
+  const HELD = 'select public.billing_subscription_held_elsewhere($1, $2) as held'
+  // Direct connections (docker-compose's known credentials, as in global-setup.ts); test-only.
+  // `options` sets a session-level setting at connection start, which no statement guard sees:
+  // what trusted SQL with the runtime credential could do.
+  const RUNTIME_URL = 'postgres://app_runtime:app_runtime@localhost:5432/app_test'
+  const OWNER_URL = 'postgres://app:app@localhost:5432/app_test'
+  const withSessionOrg = (url: string, org: string) =>
+    `${url}?options=${encodeURIComponent(`-c app.org_id=${org}`)}`
+  const queryOf = (db: Db | object): Q => {
+    const c = ('$client' in db ? db : rawDb(db as Db)) as unknown as { $client: { query: Q } }
+    return c.$client.query.bind(c.$client) as Q
+  }
+  const codeOf = (p: Promise<unknown>) =>
+    p.then(
+      () => null,
+      (e: { code?: string; cause?: { code?: string } }) => e.code ?? e.cause?.code ?? String(e),
+    )
+  async function on<T>(url: string, fn: (q: Q, db: Db) => Promise<T>) {
+    const { db, close } = await createDb(url)
+    try {
+      return await fn(queryOf(db), db)
+    } finally {
+      await close()
+    }
+  }
+  /** The check as the webhook runs it: in a tenant transaction for `orgId`. */
+  const heldFor = (orgId: string, provider: string, subId: string) =>
+    withDb((db) =>
+      inTenant(db, { orgId }, async (tx) => (await queryOf(tx)(HELD, [provider, subId])).rows),
+    )
+
+  const provider = 'polar'
+  const eventFor = (organizationId: string, providerSubscriptionId: string): BillingEvent => ({
+    provider,
+    eventId: `evt_${crypto.randomUUID()}`,
+    type: 'subscription.updated',
+    createdAt: new Date(),
+    subscription: {
+      organizationId,
+      providerCustomerId: 'polar-customer-test',
+      providerSubscriptionId,
+      providerPriceId: null,
+      planKey: null,
+      status: 'active',
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    },
+  })
+  const apply = (e: BillingEvent) => withDb((db) => applyBillingEvent(db, e))
+
+  let holder: string
+  let other: string
+  let subId: string
+  beforeAll(async () => {
+    const [a, b] = await Promise.all([freshOrg(), freshOrg()])
+    holder = a.orgId
+    other = b.orgId
+    subId = `sub_held_${crypto.randomUUID()}`
+    expect(await apply(eventFor(holder, subId))).toBe('applied')
+  })
+
+  it("answers only yes or no for the tenant's own transaction, never who holds it", async () => {
+    expect(await heldFor(other, provider, subId)).toEqual([{ held: true }])
+    expect(await heldFor(holder, provider, subId)).toEqual([{ held: false }])
+    expect(await heldFor(other, provider, `sub_unknown_${crypto.randomUUID()}`)).toEqual([
+      { held: false },
+    ])
+    expect(await heldFor(other, 'another-provider', subId)).toEqual([{ held: false }])
+  })
+
+  it('links one subscription applied for two organizations at once to exactly one of them', async () => {
+    // Directly on the repository: Polar has one truth per subscription, so the stub can't race this.
+    const [c, d] = await Promise.all([freshOrg(), freshOrg()])
+    const raced = `sub_race_${crypto.randomUUID()}`
+    const events = [c.orgId, d.orgId].map((o) => eventFor(o, raced))
+    const first = await Promise.allSettled(events.map(apply))
+    // The loser sees the winner (conflict) or hits the unique constraint (an error: nothing is
+    // recorded, the provider retries), and its retry then answers conflict.
+    const outcomes = await Promise.all(
+      first.map((r, i) => (r.status === 'fulfilled' ? r.value : apply(events[i]!))),
+    )
+    expect(outcomes.sort()).toEqual(['applied', 'conflict'])
+    const holders = await Promise.all(
+      [c, d].map(async (o) => (await subscriptionOf(o.orgId))?.providerSubscriptionId),
+    )
+    expect(holders.filter((s) => s === raced)).toHaveLength(1)
+  })
+
+  it('fails closed (42501) without a tenant, with an empty, unknown or malformed one, or null input', async () => {
+    const refused = {
+      noTenant: await on(RUNTIME_URL, (q) => codeOf(q(HELD, [provider, subId]))),
+      emptyTenant: await on(withSessionOrg(RUNTIME_URL, ''), (q) =>
+        codeOf(q(HELD, [provider, subId])),
+      ),
+      malformedTenant: await on(withSessionOrg(RUNTIME_URL, "x'OR'1'='1"), (q) =>
+        codeOf(q(HELD, [provider, subId])),
+      ),
+      unknownTenant: await codeOf(heldFor(`org_${crypto.randomUUID()}`, provider, subId)),
+      nullProvider: await codeOf(heldFor(other, null as unknown as string, subId)),
+      nullSubscription: await codeOf(heldFor(other, provider, null as unknown as string)),
+    }
+    expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+  })
+
+  it('rolls back the whole tenant transaction when it refuses', async () => {
+    const eventId = `evt_${crypto.randomUUID()}`
+    const failed = withDb((db) =>
+      inTenant(db, { orgId: other }, async (tx) => {
+        await queryOf(tx)(
+          'insert into billing_webhook_event (provider, event_id, type) values ($1, $2, $3)',
+          [provider, eventId, 'test'],
+        )
+        return queryOf(tx)(HELD, [null, subId])
+      }),
+    )
+    expect(await codeOf(failed)).toBe('42501')
+    expect(await eventRecorded(eventId)).toBe(false)
+  })
+
+  it("can't be redirected by temporary tables, functions or the caller's search_path", async () => {
+    const fake = `sub_fake_${crypto.randomUUID()}`
+    const answers = await withDb(async (db) => {
+      const q = queryOf(db)
+      await q(
+        'create temp table billing_subscription (provider text, provider_subscription_id text, organization_id text)',
+      )
+      await q('insert into billing_subscription values ($1, $2, $3)', [provider, fake, holder])
+      await q('create temp table organization (id text)')
+      await q(
+        `create function pg_temp.current_setting(text, boolean) returns text language sql as 'select ''nobody'''`,
+      )
+      await q('set search_path = pg_temp, public')
+      return inTenant(db, { orgId: other }, async (tx) => [
+        (await queryOf(tx)(HELD, [provider, fake])).rows,
+        (await queryOf(tx)(HELD, [provider, subId])).rows,
+      ])
+    })
+    expect(answers).toEqual([[{ held: false }], [{ held: true }]])
+  })
+
+  it("still sees other tenants' holders once row-level security hides their rows from the runtime role", async () => {
+    // Phase 3's policy shape, enabled only inside this rolled-back transaction (ADR-0040 decision 5).
+    const seen = await on(withSessionOrg(OWNER_URL, other), async (q) => {
+      await q('BEGIN')
+      try {
+        await q('ALTER TABLE public.billing_subscription ENABLE ROW LEVEL SECURITY')
+        await q(
+          `CREATE POLICY tenant ON public.billing_subscription TO app_runtime
+             USING (organization_id = NULLIF(current_setting('app.org_id', true), ''))`,
+        )
+        await q('SET LOCAL ROLE app_runtime')
+        return {
+          direct: (
+            await q(
+              'select organization_id from billing_subscription where provider = $1 and provider_subscription_id = $2',
+              [provider, subId],
+            )
+          ).rows,
+          held: (await q(HELD, [provider, subId])).rows,
+        }
+      } finally {
+        await q('ROLLBACK')
+      }
+    })
+    expect(seen).toEqual({ direct: [], held: [{ held: true }] })
   })
 })
 
