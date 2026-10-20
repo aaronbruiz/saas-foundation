@@ -57,6 +57,13 @@
       "when": 1792450781808,
       "tag": "0007_hashed_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792460056024,
+      "tag": "0008_billing_conflict_definer",
+      "breakpoints": true
     }
   ]
 }
