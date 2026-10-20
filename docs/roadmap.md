@@ -68,7 +68,7 @@ Merged, validated, deployed and operational are different states. Report each on
 - **Before it starts:**
   - M1 and M2 done.
   - The pilot's use case and success criteria written down before anyone is admitted.
-  - ADR-0032 step 1's Polar date checks, both of them: the check after 2026-10-21 06:19 UTC and the check after 2026-10-30 06:08 UTC. The first alone doesn't make the pilot ready.
+  - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal is still open; it's due after 2026-10-21 06:19 UTC. Ticking it completes step 1 but doesn't make the pilot ready on its own.
 - **Done when:**
   - ADR-0032 rollout steps 2–7 are recorded.
   - The admitted users have exercised the defined use case.
