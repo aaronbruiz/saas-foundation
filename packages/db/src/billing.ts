@@ -8,6 +8,7 @@ import {
   type SubscriptionStatus,
 } from './schema/billing.ts'
 import type { TenantScope } from './tenancy.ts'
+import { enterTenant, inTenant, ownTransaction } from './tenant-transaction.ts'
 
 /** A provider's subscription, already verified and mapped to our model by the provider adapter. */
 export type SubscriptionSnapshot = {
@@ -45,7 +46,7 @@ const TERMINAL: SubscriptionStatus[] = ['canceled']
  * database error is final (the delivery is acknowledged), so no verified event can loop forever.
  */
 export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<BillingEventOutcome> {
-  return rawDb(db).transaction(async (tx) => {
+  return ownTransaction(db, async (tx) => {
     const recorded = await tx
       .insert(billingWebhookEvent)
       .values({ provider: event.provider, eventId: event.eventId, type: event.type })
@@ -64,8 +65,10 @@ export async function applyBillingEvent(db: Db, event: BillingEvent): Promise<Bi
       .where(eq(organization.id, sub.organizationId))
       .for('no key update')
     if (!org) return 'unlinked'
+    await enterTenant(tx, org.id)
 
     // A subscription belongs to the organization it was first linked to; moving it is not supported.
+    // The one cross-tenant read on a tenant table (ADR-0040's reviewed webhook bypass).
     const [holder] = await tx
       .select({ organizationId: billingSubscription.organizationId })
       .from(billingSubscription)
@@ -137,16 +140,21 @@ function supersedes(
   return TERMINAL.includes(current.status) || at > current.providerEventAt
 }
 
-/** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2). */
+/** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2, ADR-0040). */
 export function billing(db: Db, scope: TenantScope) {
   return {
-    subscription: async (): Promise<BillingSubscription | null> =>
-      (
-        await rawDb(db)
-          .select()
-          .from(billingSubscription)
-          .where(eq(billingSubscription.organizationId, scope.orgId))
-          .limit(1)
-      )[0] ?? null,
+    subscription: (): Promise<BillingSubscription | null> =>
+      inTenant(
+        db,
+        scope,
+        async (tx) =>
+          (
+            await tx
+              .select()
+              .from(billingSubscription)
+              .where(eq(billingSubscription.organizationId, scope.orgId))
+              .limit(1)
+          )[0] ?? null,
+      ),
   }
 }
