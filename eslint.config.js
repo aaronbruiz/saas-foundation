@@ -105,6 +105,13 @@ const noDynamicRawDb = [
   },
 ]
 
+// ADR-0040: only the tenant-transaction helper sets the tenant context, always transaction-locally.
+const tenantHelper = 'packages/db/src/tenant-transaction.ts'
+const noSetConfig = {
+  selector: ':matches(Literal[value=/set_config/i], TemplateElement[value.raw=/set_config/i])',
+  message: `Only ${tenantHelper} calls set_config, so the tenant context is always transaction-local (ADR-0040).`,
+}
+
 const noDynamicServerDbInUi = {
   selector: 'ImportExpression[source.value=/(^|\\x2F)server\\x2Fdb(\\.[cm]?[jt]sx?)?$/]',
   message: noServerDbInUi.message,
@@ -167,6 +174,7 @@ export default defineConfig([
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
       'no-restricted-imports': ['error', { patterns: [providerSdksOnlyInProviders] }],
+      'no-restricted-syntax': ['error', noSetConfig],
     },
   },
   {
@@ -188,7 +196,7 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...noDynamicRawDb],
+      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb],
     },
   },
   ...moduleNames.map((name) => ({
@@ -208,7 +216,12 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...noDynamicRawDb, moduleBoundary(name).selector],
+      'no-restricted-syntax': [
+        'error',
+        noSetConfig,
+        ...noDynamicRawDb,
+        moduleBoundary(name).selector,
+      ],
     },
   })),
   {
@@ -226,7 +239,7 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...noDynamicRawDb, noDynamicServerDbInUi],
+      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb, noDynamicServerDbInUi],
     },
   },
   {
@@ -247,7 +260,7 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...noDynamicRawDb],
+      'no-restricted-syntax': ['error', noSetConfig, ...noDynamicRawDb],
     },
   },
   {
@@ -276,6 +289,11 @@ export default defineConfig([
         { patterns: [providerSdksOnlyInProviders, noInternalPackages] },
       ],
     },
+  },
+  {
+    // The helper, and the rule's own definition and fixtures.
+    files: [tenantHelper, 'eslint.config.js', 'scripts/lint-boundaries.test.mjs'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     files: ['packages/auth/**/*.ts'],

@@ -38,6 +38,7 @@ const PROVIDER = 'billing provider SDK'
 const NO_PACKAGES = 'must not import other workspace packages'
 const ONLY_DB = 'may import only @saas-foundation/db'
 const REQUIRE = 'require()'
+const SET_CONFIG = 'calls set_config'
 
 /** [file, code, fragment of the expected message, or null when the import is allowed] */
 const cases = [
@@ -58,6 +59,31 @@ const cases = [
     `import { authFor } from '@saas-foundation/auth'`,
     null,
   ],
+  // Only the tenant-transaction helper sets the tenant context (ADR-0040).
+  [
+    'packages/db/src/tenant-transaction.ts',
+    "const q = sql`select set_config('app.org_id', ${id}, true)`",
+    null,
+  ],
+  [
+    'packages/db/src/tenancy.ts',
+    "const q = sql`select set_config('app.org_id', ${id}, true)`",
+    SET_CONFIG,
+  ],
+  [
+    'packages/db/src/billing.ts',
+    `const q = "SELECT SET_CONFIG('app.org_id', $1, false)"`,
+    SET_CONFIG,
+  ],
+  [
+    'packages/auth/src/fixture.ts',
+    "const q = sql`select set_config('app.org_id', ${id}, true)`",
+    SET_CONFIG,
+  ],
+  [server, "const q = sql`select set_config('app.org_id', ${id}, true)`", SET_CONFIG],
+  [projects, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  [route, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  ['apps/app/test/fixture.test.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   // Raw database access stays in packages/db.
   [projects, `import { eq } from 'drizzle-orm/sql'`, DRIZZLE],
   [server, `import { eq } from 'drizzle-orm'`, DRIZZLE],
