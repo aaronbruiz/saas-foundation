@@ -81,6 +81,16 @@ describe('the database role the app connects as', () => {
     expect(owned).toEqual([])
   })
 
+  it('gets no privileges by default and has no role-level settings (ADR-0038)', async () => {
+    // Default privileges would grant every future table without a reviewed migration (invariant
+    // 7); role settings (e.g. search_path) are cluster-wide, outside check-schema-sql.sh.
+    expect(
+      (await query('SELECT defaclrole::regrole::text AS role FROM pg_default_acl')).rows,
+    ).toEqual([])
+    const { rows } = await query(`SELECT rolconfig FROM pg_roles WHERE rolname = current_user`)
+    expect(rows).toEqual([{ rolconfig: null }])
+  })
+
   it('holds exactly the reviewed privileges on every table, and none on an unlisted one', async () => {
     const { rows } = await query(
       `SELECT c.relname AS table, p.privilege
@@ -97,6 +107,60 @@ describe('the database role the app connects as', () => {
       `SELECT relname FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind IN ('r', 'p')`,
     )
     expect(tables.map((t) => t.relname).sort()).toEqual(Object.keys(GRANTS).sort())
+  })
+
+  it('is the only grantee besides the owner on any table, column, function or our schemas, with exactly the reviewed privileges', async () => {
+    // Its effective privileges above can't show a grant to PUBLIC or another role; this reads the
+    // ACLs themselves (check-schema-sql.sh leaves privileges to these tests).
+    const { rows } = await query(
+      `SELECT c.relnamespace::regnamespace::text || '.' || c.relname AS object,
+              CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END AS grantee,
+              a.privilege_type AS privilege, a.is_grantable AS grantable
+         FROM pg_class c, aclexplode(c.relacl) a
+        WHERE c.relnamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
+          AND a.grantee <> c.relowner
+       UNION ALL
+       SELECT c.relname || '.' || t.attname, 'column grant', '', false
+         FROM pg_attribute t JOIN pg_class c ON c.oid = t.attrelid
+        WHERE c.relnamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
+          AND t.attacl IS NOT NULL
+       UNION ALL
+       SELECT p.oid::regprocedure::text, CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END,
+              a.privilege_type, a.is_grantable
+         FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        WHERE p.pronamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
+          AND a.grantee <> p.proowner
+       UNION ALL
+       SELECT n.nspname, CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END,
+              a.privilege_type, a.is_grantable
+         FROM pg_namespace n, aclexplode(n.nspacl) a
+        WHERE n.nspname IN ('public', 'archive', 'drizzle') AND a.grantee <> n.nspowner
+          AND a.grantee <> 'pg_database_owner'::regrole
+        ORDER BY 1, 2, 3`,
+    )
+    const expected = [
+      ...Object.entries(GRANTS).flatMap(([table, privileges]) =>
+        privileges.map((privilege) => ({
+          object: `public.${table}`,
+          grantee: 'app_runtime',
+          privilege,
+          grantable: false,
+        })),
+      ),
+      ...FUNCTIONS.map((fn) => ({
+        object: fn,
+        grantee: 'app_runtime',
+        privilege: 'EXECUTE',
+        grantable: false,
+      })),
+      { object: 'public', grantee: 'PUBLIC', privilege: 'USAGE', grantable: false },
+      { object: 'public', grantee: 'app_runtime', privilege: 'USAGE', grantable: false },
+    ].sort((x, y) =>
+      `${x.object} ${x.grantee} ${x.privilege}` < `${y.object} ${y.grantee} ${y.privilege}`
+        ? -1
+        : 1,
+    )
+    expect(rows).toEqual(expected)
   })
 
   it('cannot change the schema, roles or migrations, or delete what it may only add', async () => {
