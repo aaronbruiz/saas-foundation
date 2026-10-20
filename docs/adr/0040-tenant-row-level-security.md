@@ -112,7 +112,7 @@ Preview checks before phase 4 (need Actions and an approved preview; ADR-0021): 
 
 ## Notes
 
-Regression tests (`apps/app/test/tenant-transaction.test.ts`, deterministic: competing work starts at a barrier while the tenant transaction holds the connection mid-transaction, or in pg's error callback):
+Regression tests (`apps/app/test/tenant-transaction.test.ts`, deterministic: competing work starts at a barrier while the tenant transaction holds the connection mid-transaction, in pg's error callback, or after polling microtasks until `COMMIT`/`ROLLBACK` is on the wire, which no server response can interrupt; the finalization tests fail with the admission closure removed):
 
 - **Before the claim:** a tenant read inside another transaction on the client is refused, and that transaction still rolls back everything (the Better Auth adapter shape). A tenant call inside a tenant call is refused. Of two tenant calls started together, one runs and the other is refused. A tenant call is refused while a raw `BEGIN` is queued or a raw transaction is open, and works once it ends. A tenant call between an ErrorResponse and ReadyForQuery is refused (fails without the `readyForQuery` check).
 - **During ownership:** a raw Drizzle transaction started during a tenant transaction is refused before `BEGIN` is sent, and the tenant transaction still rolls back, or commits exactly its own work. Raw `COMMIT`, `ROLLBACK` and plain statements from outside are refused. A Better Auth sign-up on the same connection fails without touching it (no user created). A raw transaction and a tenant call started together: exactly one runs and the connection recovers.

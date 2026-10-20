@@ -23,6 +23,8 @@ type Client = {
   query: ((sql: string) => Promise<{ rows: { v: string | null }[] }>) &
     ((sql: string, cb: (err: Error | null) => void) => void)
   getTransactionStatus: () => string | null
+  /** pg's own flag: false while a statement is in flight. */
+  readyForQuery: boolean
   on: (event: 'error', listener: (err: Error) => void) => void
 }
 const client = (db: Db) => (rawDb(db) as unknown as { $client: Client }).$client
@@ -302,10 +304,13 @@ describe('a tenant transaction owns its connection until it ends', () => {
       const name = `late-${crypto.randomUUID()}`
       await withDb(async (db) => {
         let late!: Promise<unknown> // settles with the insert's error, or 'ran'
+        let duringEnd: { status: string | null; inFlight: boolean } | undefined
         const done = inTenant(db, { orgId: orgA }, async (tx) => {
           late = (async () => {
-            // Resumes in a later task: while COMMIT or ROLLBACK is in flight, or after it.
-            await new Promise((r) => setTimeout(r, 0))
+            // Microtasks run in a fixed order, and no server response can arrive between them: poll
+            // until the body has settled and COMMIT or ROLLBACK is on the wire, then try to write.
+            for (let i = 0; i < 1000 && client(db).readyForQuery; i++) await null
+            duringEnd = { status: status(db), inFlight: !client(db).readyForQuery }
             return tx
               .insert(schema.project)
               .values({ organizationId: orgA, name, createdBy: creator })
@@ -318,6 +323,7 @@ describe('a tenant transaction owns its connection until it ends', () => {
         if (outcome === 'commits') await done
         else await expect(done).rejects.toThrow('body failure')
         expect(isRefusal(await late)).toBe(true)
+        expect(duringEnd).toEqual({ status: 'T', inFlight: true })
         expect(status(db)).toBe('I')
         expect(await names(db, orgA)).not.toContain(name)
       })
