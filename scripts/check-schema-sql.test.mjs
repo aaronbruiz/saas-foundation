@@ -61,12 +61,20 @@ const PROBES = [
     /only in the migrations: default_acl public\.app\.r/,
   ],
   [
+    `ALTER FUNCTION pg_catalog.pg_read_file(text) SECURITY DEFINER`,
+    /differs: function pg_catalog\.pg_read_file\(text\)/,
+  ],
+  [
+    `CREATE OPERATOR FAMILY pg_catalog.probe_family USING btree`,
+    /only in the migrations: opfamily pg_catalog\.probe_family USING btree/,
+  ],
+  [
     `CREATE FUNCTION pg_catalog.probe_sys() RETURNS int LANGUAGE sql AS 'SELECT 1'`,
-    /only in the migrations: system_object pg_proc pg_catalog\.probe_sys\(\)/,
+    /only in the migrations: function pg_catalog\.probe_sys\(\)/,
   ],
   [
     `CREATE TABLE information_schema.probe_sys (x int)`,
-    /only in the migrations: system_object pg_class information_schema\.probe_sys/,
+    /only in the migrations: relation information_schema\.probe_sys/,
   ],
   [
     `CREATE FOREIGN DATA WRAPPER probe_fdw`,

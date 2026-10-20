@@ -15,11 +15,13 @@
 # firing state, including the internal ones enforcing foreign keys); rules; statistics; policies;
 # views; event triggers; extensions; and by name operators, operator classes and families,
 # conversions and text-search objects; publications, subscriptions, foreign-data wrappers,
-# servers and user mappings, and casts, transforms, access methods and languages created after
-# initdb; large objects; default privileges and this database's settings; and any object created
-# after initdb in pg_catalog, information_schema or pg_toast (other than TOAST tables). Left out:
-# owners and privileges on existing objects (checked by apps/app/test/database-role.test.ts) and
-# cluster-wide state (roles and their settings: database-role.test.ts).
+# servers and user mappings; casts, transforms, access methods and languages; large objects;
+# default privileges and this database's settings. Every schema is compared, pg_catalog,
+# information_schema and pg_toast included (both databases come from the same template, so a
+# built-in object created, changed or dropped by a migration differs); only TOAST tables and their
+# indexes, whose names carry OIDs, are left out. Also left out: owners and privileges on existing
+# objects (checked by apps/app/test/database-role.test.ts) and cluster-wide state (roles and their
+# settings: database-role.test.ts).
 #
 # SCHEMA_CHECK_PROBE=<file.sql> applies extra SQL to the migrated database only, to prove the gate
 # fails (scripts/check-schema-sql.test.mjs); it can only add differences, never hide one.
@@ -70,8 +72,7 @@ cat "$work"/fresh/*.sql | docker exec -i "$container" psql -qX -1 -v ON_ERROR_ST
 catalog="$(cat <<'SQL'
 WITH ns AS (
   SELECT oid, nspname FROM pg_namespace
-  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-    AND nspname NOT LIKE 'pg\_temp\_%' AND nspname NOT LIKE 'pg\_toast\_temp\_%'
+  WHERE nspname NOT LIKE 'pg\_temp\_%' AND nspname NOT LIKE 'pg\_toast\_temp\_%'
 ), rel AS (
   SELECT c.*, ns.nspname || '.' || c.relname AS qname FROM pg_class c JOIN ns ON ns.oid = c.relnamespace
 )
@@ -97,6 +98,7 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     FROM pg_constraint k JOIN rel r ON r.oid = k.conrelid
   UNION ALL
   SELECT 'index', qname, to_json(pg_get_indexdef(oid))::text FROM rel WHERE relkind IN ('i', 'I')
+    AND NOT EXISTS (SELECT FROM pg_index x JOIN pg_class t ON t.oid = x.indrelid WHERE x.indexrelid = rel.oid AND t.relkind = 't')
   UNION ALL
   SELECT 'type', ns.nspname || '.' || t.typname, json_build_object('kind', t.typtype,
       'labels', (SELECT json_agg(enumlabel ORDER BY enumsortorder) FROM pg_enum WHERE enumtypid = t.oid),
@@ -106,7 +108,7 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     -- and implicit array types come with the relation or type they belong to
     WHERE t.typrelid = 0 AND NOT (t.typcategory = 'A' AND t.typelem <> 0)
   UNION ALL
-  SELECT 'collation', ns.nspname || '.' || c.collname, json_build_object('provider', c.collprovider,
+  SELECT 'collation', ns.nspname || '.' || c.collname || ' ' || c.collencoding, json_build_object('provider', c.collprovider,
       'deterministic', c.collisdeterministic, 'collate', c.collcollate, 'ctype', c.collctype,
       'locale', c.colllocale, 'rules', c.collicurules)::text
     FROM pg_collation c JOIN ns ON ns.oid = c.collnamespace
@@ -116,9 +118,12 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
       json_build_object('function', o.oprcode::regproc::text)::text
     FROM pg_operator o JOIN ns ON ns.oid = o.oprnamespace
   UNION ALL
-  SELECT 'opclass', ns.nspname || '.' || c.opcname, '' FROM pg_opclass c JOIN ns ON ns.oid = c.opcnamespace
+  SELECT 'opclass', ns.nspname || '.' || c.opcname || ' USING ' || (SELECT amname FROM pg_am WHERE oid = c.opcmethod),
+      json_build_object('family', c.opcfamily::regclass::text, 'type', c.opcintype::regtype::text, 'default', c.opcdefault)::text
+    FROM pg_opclass c JOIN ns ON ns.oid = c.opcnamespace
   UNION ALL
-  SELECT 'opfamily', ns.nspname || '.' || f.opfname, '' FROM pg_opfamily f JOIN ns ON ns.oid = f.opfnamespace
+  SELECT 'opfamily', ns.nspname || '.' || f.opfname || ' USING ' || (SELECT amname FROM pg_am WHERE oid = f.opfmethod), ''
+    FROM pg_opfamily f JOIN ns ON ns.oid = f.opfnamespace
   UNION ALL
   SELECT 'conversion', ns.nspname || '.' || c.conname, '' FROM pg_conversion c JOIN ns ON ns.oid = c.connamespace
   UNION ALL
@@ -190,38 +195,18 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   UNION ALL
   SELECT 'user_mapping', srvname || '.' || usename, '' FROM pg_user_mappings
   UNION ALL
-  -- Objects with OIDs below 16384 (FirstNormalObjectId) come from initdb.
   SELECT 'cast', castsource::regtype::text || '->' || casttarget::regtype::text,
       json_build_object('function', castfunc::regprocedure::text, 'context', castcontext, 'method', castmethod)::text
-    FROM pg_cast WHERE oid >= 16384
+    FROM pg_cast
   UNION ALL
   SELECT 'transform', trftype::regtype::text || '.' || (SELECT lanname FROM pg_language WHERE oid = trflang), ''
     FROM pg_transform
   UNION ALL
-  SELECT 'access_method', amname, to_json(amtype::text)::text FROM pg_am WHERE oid >= 16384
+  SELECT 'access_method', amname, to_json(amtype::text)::text FROM pg_am
   UNION ALL
-  SELECT 'language', lanname, '' FROM pg_language WHERE oid >= 16384
+  SELECT 'language', lanname, json_build_object('trusted', lanpltrusted, 'handler', lanplcallfoid::regproc::text, 'validator', lanvalidator::regproc::text)::text FROM pg_language
   UNION ALL
   SELECT 'large_objects', 'count', count(*)::text FROM pg_largeobject_metadata HAVING count(*) > 0
-  UNION ALL
-  -- Anything created after initdb in the schemas left out above, except TOAST tables and indexes.
-  SELECT 'system_object', 'pg_class ' || n.nspname || '.' || c.relname, to_json(c.relkind::text)::text
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE c.oid >= 16384 AND (n.nspname IN ('pg_catalog', 'information_schema')
-      OR (n.nspname = 'pg_toast' AND c.relkind NOT IN ('t', 'i')))
-  UNION ALL
-  SELECT 'system_object', 'pg_proc ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
-      to_json(pg_get_functiondef(p.oid))::text
-    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE p.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
-  UNION ALL
-  SELECT 'system_object', 'pg_type ' || n.nspname || '.' || t.typname, ''
-    FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
-    WHERE t.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
-  UNION ALL
-  SELECT 'system_object', 'pg_operator ' || n.nspname || '.' || o.oprname, ''
-    FROM pg_operator o JOIN pg_namespace n ON n.oid = o.oprnamespace
-    WHERE o.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
 ) objects ORDER BY 1
 SQL
 )"
