@@ -145,7 +145,10 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   UNION ALL
   SELECT 'relation', qname, json_build_object('kind', relkind, 'persistence', relpersistence,
       'rls', relrowsecurity, 'force_rls', relforcerowsecurity, 'replica_identity', relreplident,
-      'options', (SELECT json_agg(o ORDER BY o) FROM unnest(reloptions) o))::text
+      'options', (SELECT json_agg(o ORDER BY o) FROM unnest(reloptions) o),
+      'inherits', (SELECT json_agg(i.inhparent::regclass::text ORDER BY i.inhseqno) FROM pg_inherits i WHERE i.inhrelid = rel.oid),
+      'partition_bound', pg_get_expr(relpartbound, oid),
+      'tablespace', (SELECT spcname FROM pg_tablespace WHERE oid = reltablespace))::text
     FROM rel WHERE relkind IN ('r', 'p', 'v', 'm', 'S', 'f', 'c')
   UNION ALL
   SELECT 'column', r.qname || '.' || a.attname, json_build_object(
@@ -161,7 +164,9 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   SELECT 'constraint', r.qname || '.' || k.conname, to_json(pg_get_constraintdef(k.oid))::text
     FROM pg_constraint k JOIN rel r ON r.oid = k.conrelid
   UNION ALL
-  SELECT 'index', qname, to_json(pg_get_indexdef(oid))::text FROM rel WHERE relkind IN ('i', 'I')
+  SELECT 'index', qname, (SELECT json_build_object('def', pg_get_indexdef(rel.oid), 'valid', x.indisvalid,
+      'ready', x.indisready, 'clustered', x.indisclustered, 'replica_identity', x.indisreplident)::text
+      FROM pg_index x WHERE x.indexrelid = rel.oid) FROM rel WHERE relkind IN ('i', 'I')
     AND NOT EXISTS (SELECT FROM pg_index x JOIN pg_class t ON t.oid = x.indrelid WHERE x.indexrelid = rel.oid AND t.relkind = 't')
   UNION ALL
   SELECT 'type', ns.nspname || '.' || t.typname, json_build_object('kind', t.typtype,
@@ -201,7 +206,11 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   UNION ALL
   SELECT 'sequence', schemaname || '.' || sequencename, json_build_object('type', data_type::text,
       'start', start_value, 'min', min_value, 'max', max_value, 'increment', increment_by,
-      'cycle', cycle, 'cache', cache_size)::text
+      'cycle', cycle, 'cache', cache_size,
+      'owned_by', (SELECT d.refobjid::regclass::text || '.' || a.attname FROM pg_depend d
+                     JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+                    WHERE d.classid = 'pg_class'::regclass AND d.objid = (schemaname || '.' || sequencename)::regclass
+                      AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')))::text
     FROM pg_sequences WHERE schemaname IN (SELECT nspname FROM ns)
   UNION ALL
   SELECT 'function', ns.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
@@ -220,8 +229,9 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     JOIN pg_proc f ON f.oid = g.tgfoid WHERE g.tgisinternal
     GROUP BY r.qname, k.conname, f.proname
   UNION ALL
-  SELECT 'rule', schemaname || '.' || tablename || '.' || rulename, to_json(definition)::text
-    FROM pg_rules WHERE schemaname IN (SELECT nspname FROM ns)
+  SELECT 'rule', r.qname || '.' || w.rulename,
+      json_build_object('def', pg_get_ruledef(w.oid), 'enabled', w.ev_enabled)::text
+    FROM pg_rewrite w JOIN rel r ON r.oid = w.ev_class
   UNION ALL
   SELECT 'statistics', ns.nspname || '.' || x.stxname, json_build_object('def', pg_get_statisticsobjdef(x.oid),
       'target', x.stxstattarget)::text

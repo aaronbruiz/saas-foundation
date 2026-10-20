@@ -109,7 +109,7 @@ describe('the database role the app connects as', () => {
     expect(tables.map((t) => t.relname).sort()).toEqual(Object.keys(GRANTS).sort())
   })
 
-  it('is the only grantee besides the owner on any table, column or our schemas, with exactly the reviewed privileges', async () => {
+  it('is the only grantee besides the owner on any table, column, function or our schemas, with exactly the reviewed privileges', async () => {
     // Its effective privileges above can't show a grant to PUBLIC or another role; this reads the
     // ACLs themselves (check-schema-sql.sh leaves privileges to these tests).
     const { rows } = await query(
@@ -124,6 +124,12 @@ describe('the database role the app connects as', () => {
          FROM pg_attribute t JOIN pg_class c ON c.oid = t.attrelid
         WHERE c.relnamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
           AND t.attacl IS NOT NULL
+       UNION ALL
+       SELECT p.oid::regprocedure::text, CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END,
+              a.privilege_type, a.is_grantable
+         FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        WHERE p.pronamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
+          AND a.grantee <> p.proowner
        UNION ALL
        SELECT n.nspname, CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END,
               a.privilege_type, a.is_grantable
@@ -141,6 +147,12 @@ describe('the database role the app connects as', () => {
           grantable: false,
         })),
       ),
+      ...FUNCTIONS.map((fn) => ({
+        object: fn,
+        grantee: 'app_runtime',
+        privilege: 'EXECUTE',
+        grantable: false,
+      })),
       { object: 'public', grantee: 'PUBLIC', privilege: 'USAGE', grantable: false },
       { object: 'public', grantee: 'app_runtime', privilege: 'USAGE', grantable: false },
     ].sort((x, y) =>
