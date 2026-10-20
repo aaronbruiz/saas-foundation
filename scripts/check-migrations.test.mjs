@@ -126,7 +126,10 @@ test('a removed journal entry is refused', () => {
 test('a new migration dated before the last applied one is refused', () => {
   const { cwd, base } = repo()
   addMigration(cwd, lastEntry(cwd).when)
-  fails(check(cwd, base), /entry 6 \(0099_new_migration\) has `when` .* the migrator would skip it/)
+  fails(
+    check(cwd, base),
+    /entry \d+ \(0099_new_migration\) has `when` .* the migrator would skip it/,
+  )
 })
 
 test('a base commit missing from the checkout fails instead of passing', () => {
@@ -204,7 +207,7 @@ test('a new journal entry whose tag points outside the migrations folder is refu
   const j = journal(cwd)
   j.entries.at(-1).tag = '../outside'
   writeJournal(cwd, j)
-  fails(check(cwd, base), /entry 6 has tag "\.\.\/outside", not a plain file name/)
+  fails(check(cwd, base), /entry \d+ has tag "\.\.\/outside", not a plain file name/)
 })
 
 test('a new migration whose SQL is a symlink is refused', () => {

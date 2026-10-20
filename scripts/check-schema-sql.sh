@@ -18,6 +18,11 @@
 # migrated database has it), owners and privileges (grants are checked by
 # apps/app/test/database-role.test.ts).
 #
+# Objects that custom migrations create on purpose and the Drizzle schema can't express (the
+# archive schema, triggers, functions: ADR-0039, ADR-0040) are listed one by one, with a hash of
+# their definition, in packages/db/sql-only-objects.tsv. scripts/compare-catalogs.mjs checks each
+# registered object exists exactly as registered and compares everything else exactly.
+#
 # Uses the Postgres container serving localhost:5432 (POSTGRES_CONTAINER, default: the one
 # publishing that port, which also works from a worktree) and creates and drops two databases in
 # it. Run by ci.yml and `pnpm db:check`.
@@ -61,8 +66,8 @@ WITH ns AS (
 ), rel AS (
   SELECT c.*, ns.nspname || '.' || c.relname AS qname FROM pg_class c JOIN ns ON ns.oid = c.relnamespace
 )
-SELECT kind || ' ' || name || ' ' || detail FROM (
-  SELECT 'schema' AS kind, nspname AS name, '' AS detail FROM ns
+SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
+  SELECT 'schema' AS kind, nspname::text AS name, '' AS detail FROM ns
   UNION ALL
   SELECT 'relation', qname, json_build_object('kind', relkind, 'persistence', relpersistence,
       'rls', relrowsecurity, 'force_rls', relforcerowsecurity, 'replica_identity', relreplident,
@@ -152,14 +157,10 @@ SELECT kind || ' ' || name || ' ' || detail FROM (
   UNION ALL
   SELECT 'view', qname, to_json(pg_get_viewdef(oid))::text FROM rel WHERE relkind IN ('v', 'm')
   UNION ALL
-  SELECT 'extension', extname, extversion FROM pg_extension
+  SELECT 'extension', extname, to_json(extversion)::text FROM pg_extension
 ) objects ORDER BY 1
 SQL
 )"
 psql_in "$migrated" "$catalog" >"$work/$migrated.txt"
 psql_in "$fresh" "$catalog" >"$work/$fresh.txt"
-if ! diff -u --label "migrations (drizzle-kit migrate)" --label "schema (generated from scratch)" "$work/$migrated.txt" "$work/$fresh.txt"; then
-  echo "check-schema-sql: the migrations' SQL doesn't build packages/db/src/schema (diff above); fix it with a new migration" >&2
-  exit 1
-fi
-echo "check-schema-sql: migrations build the schema ($(wc -l <"$work/$migrated.txt") catalog objects compared)"
+node scripts/compare-catalogs.mjs "$work/$migrated.txt" "$work/$fresh.txt" packages/db/sql-only-objects.tsv

@@ -34,7 +34,7 @@ pnpm format        # apply Prettier
 pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
-pnpm db:check      # migrations: applied ones unchanged vs origin/main, no collision, none missing, schema/auth.ts current, SQL builds the schema (CI runs it)
+pnpm db:check      # migrations: applied ones unchanged vs origin/main, no collision, none missing, schema/auth.ts current, SQL builds the schema plus the registered SQL-only objects (CI runs it)
 pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
@@ -74,7 +74,7 @@ kill -9 $(lsof -t -i:3000)
 
 ## Recipes
 
-**Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → add repository functions in `packages/db/src/<table>.ts` that run through `inTenant` (ADR-0040) and filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL → grant `app_runtime` only the privileges it needs in a `drizzle-kit generate --custom` migration and add the table to `GRANTS` in `apps/app/test/database-role.test.ts` (ADR-0038) → in the same custom migration, add its `archive_delete` trigger (`AFTER DELETE … FOR EACH ROW EXECUTE FUNCTION archive.capture_delete()`, ADR-0039; the catalog test in `test/archive.test.ts` fails without it).
+**Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → add repository functions in `packages/db/src/<table>.ts` that run through `inTenant` (ADR-0040) and filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL → grant `app_runtime` only the privileges it needs in a `drizzle-kit generate --custom` migration and add the table to `GRANTS` in `apps/app/test/database-role.test.ts` (ADR-0038) → in the same custom migration, add its `archive_delete` trigger (`AFTER DELETE … FOR EACH ROW EXECUTE FUNCTION archive.capture_delete()`, ADR-0039; the catalog test in `test/archive.test.ts` fails without it) → register the trigger in `packages/db/sql-only-objects.tsv` (the line `pnpm db:check` prints, after reviewing it).
 
 **Add a plan limit or feature (ADR-0020):** add it to `Entitlements` and every plan in `modules/billing/policy.ts` → enforce it where the resource is created, asking `entitlementsIn(db, ctx.orgId)` (a count-then-insert needs the organization row lock, like `projects.createWithinLimit`) → tests for the cap, upgrade, downgrade (nothing deleted) and concurrency.
 
@@ -111,7 +111,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Any server function or route touching tenant data **without** calling `getTenantContext`, or that trusts a slug, `organizationId` or `activeOrganizationId` from the client.
 - Responses that return 403 (instead of 404) or distinguish "exists but forbidden" for another tenant's resources. (403 for a member with an insufficient role in their own tenant is intended.)
 - Authorization or feature gating that reads subscription status or Polar/provider objects instead of entitlements; `@polar-sh/*` imported outside `modules/billing/providers/**`.
-- Migrations that drop, rename or retype columns in one step; edits to already-applied migrations.
+- Migrations that drop, rename or retype columns in one step; edits to already-applied migrations; an entry added to or a hash changed in `packages/db/sql-only-objects.tsv` without the custom migration that creates or changes that object, or registering an object the Drizzle schema could declare.
 - Database privileges (ADR-0038): `ALTER DEFAULT PRIVILEGES`, a grant to `app_runtime` beyond what the code needs, a new table without its grant migration and `GRANTS` entry, or app code connecting as the owner.
 - Archive and audit (ADR-0039): any grant on the `archive` schema, its tables or functions; a tenant table without its `archive_delete` trigger; a trigger function that isn't `SECURITY DEFINER` with a pinned `search_path` or uses unqualified names; a secret (password hash, OAuth or session token, reset identifier) written to the archive; a new access-granting auth column without an audit decision.
 - Code or configuration contradicting an Accepted ADR, flagged with the relevant `ADR-NNNN`. Significant architectural decisions without an ADR, flagged for documentation and approval before the change is accepted.
