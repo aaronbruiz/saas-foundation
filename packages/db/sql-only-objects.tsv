@@ -1,5 +1,6 @@
 # SQL-only objects: created on purpose by custom migrations, not expressible in the Drizzle
-# schema (ADR-0039 archive and audit, ADR-0040 webhook definer). scripts/check-schema-sql.sh
+# schema (ADR-0039 archive and audit, ADR-0040 webhook definer), and drizzle's own migration
+# bookkeeping (the `drizzle` schema, created by the migrator). scripts/check-schema-sql.sh
 # requires each to exist in the migrated database with exactly this definition hash, and compares
 # everything else with the schema. One object per line: <kind>\t<name>\t<sha256 of definition>.
 # A new or changed object: review its migration, then copy the line the gate prints.
@@ -54,3 +55,12 @@ trigger	public.user.archive_delete	1361933e6656e3f52ba4105f4a20a162268470612fc75
 trigger	public.user.audit_update	8473461382fe6cfb2b6f66fe4633e994c344bef3de74f427783f5cd6687aaf3c
 trigger	public.verification.audit_insert	17408bbed79b7d4cf523c98c92d29604d2c072aea6eaf9b3cb2af464b8105e81
 trigger	public.verification.audit_update	1b04669a21e781733ccc2e0d706ea53270885314e874270e001a0abd09b64018
+column	drizzle.__drizzle_migrations.created_at	484685ad15ddea7a1408acb08044e163042dc1d4a4c85f1bf657bd682bdf2899
+column	drizzle.__drizzle_migrations.hash	114947494bac2b66d2a93c0f8eacde72ed4109ed0e266c6c3308f889d94de188
+column	drizzle.__drizzle_migrations.id	15bdc02b5d7203b0b8f9313f333ede1c23eb2f102d1caf5da4fbfb0b5639f532
+constraint	drizzle.__drizzle_migrations.__drizzle_migrations_pkey	940d70786d38edaad7f9a314c94f3ce9c5b65599f36204c7d45328bfefdcd8ed
+index	drizzle.__drizzle_migrations_pkey	d3d28add68c9e54edbe50159fdf3c6ba02833b1abaf7242657f7573970dddc04
+relation	drizzle.__drizzle_migrations	b1e5dfacc8deaaa026207436f99924f070f61e810d61a44bcfc1b651accf4768
+relation	drizzle.__drizzle_migrations_id_seq	1168ee8226d923f79da56361a10897538a8d7b17c398e6197ba9cf9fb997d05f
+schema	drizzle	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sequence	drizzle.__drizzle_migrations_id_seq	17ab545ea9237467ec82da6ca23bddd5e7175b2fb13e2f268e6a17c8abd883c6

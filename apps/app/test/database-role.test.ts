@@ -81,6 +81,16 @@ describe('the database role the app connects as', () => {
     expect(owned).toEqual([])
   })
 
+  it('gets no privileges by default and has no role-level settings (ADR-0038)', async () => {
+    // Default privileges would grant every future table without a reviewed migration (invariant
+    // 7); role settings (e.g. search_path) are cluster-wide, outside check-schema-sql.sh.
+    expect(
+      (await query('SELECT defaclrole::regrole::text AS role FROM pg_default_acl')).rows,
+    ).toEqual([])
+    const { rows } = await query(`SELECT rolconfig FROM pg_roles WHERE rolname = current_user`)
+    expect(rows).toEqual([{ rolconfig: null }])
+  })
+
   it('holds exactly the reviewed privileges on every table, and none on an unlisted one', async () => {
     const { rows } = await query(
       `SELECT c.relname AS table, p.privilege

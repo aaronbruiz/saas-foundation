@@ -14,9 +14,15 @@
 # (enums, domains, ranges...); collations; sequences; functions and aggregates; triggers (with
 # firing state, including the internal ones enforcing foreign keys); rules; statistics; policies;
 # views; event triggers; extensions; and by name operators, operator classes and families,
-# conversions and text-search objects. Left out: drizzle's own `drizzle` schema (only the
-# migrated database has it), owners and privileges (grants are checked by
-# apps/app/test/database-role.test.ts).
+# conversions and text-search objects; publications, subscriptions, foreign-data wrappers,
+# servers and user mappings, and casts, transforms, access methods and languages created after
+# initdb; large objects; default privileges and this database's settings; and any object created
+# after initdb in pg_catalog, information_schema or pg_toast (other than TOAST tables). Left out:
+# owners and privileges on existing objects (checked by apps/app/test/database-role.test.ts) and
+# cluster-wide state (roles and their settings: database-role.test.ts).
+#
+# SCHEMA_CHECK_PROBE=<file.sql> applies extra SQL to the migrated database only, to prove the gate
+# fails (scripts/check-schema-sql.test.mjs); it can only add differences, never hide one.
 #
 # Objects that custom migrations create on purpose and the Drizzle schema can't express (the
 # archive schema, triggers, functions: ADR-0039, ADR-0040) are listed one by one, with a hash of
@@ -51,6 +57,9 @@ kit() {
     || { cat "$work/$1.log" >&2; echo "check-schema-sql: drizzle-kit ${*:2} failed" >&2; exit 1; }
 }
 kit "$migrated" migrate
+if [ -n "${SCHEMA_CHECK_PROBE:-}" ]; then
+  docker exec -i "$container" psql -qX -v ON_ERROR_STOP=1 -U app -d "$migrated" <"$SCHEMA_CHECK_PROBE" >/dev/null
+fi
 # The reference: the whole schema generated from scratch by the same generator the migrations come
 # from, applied in one transaction (`drizzle-kit push` 0.31 drops policies' USING/WITH CHECK).
 pnpm --filter @saas-foundation/db exec drizzle-kit generate --dialect postgresql \
@@ -61,7 +70,7 @@ cat "$work"/fresh/*.sql | docker exec -i "$container" psql -qX -1 -v ON_ERROR_ST
 catalog="$(cat <<'SQL'
 WITH ns AS (
   SELECT oid, nspname FROM pg_namespace
-  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast', 'drizzle')
+  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
     AND nspname NOT LIKE 'pg\_temp\_%' AND nspname NOT LIKE 'pg\_toast\_temp\_%'
 ), rel AS (
   SELECT c.*, ns.nspname || '.' || c.relname AS qname FROM pg_class c JOIN ns ON ns.oid = c.relnamespace
@@ -158,6 +167,61 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   SELECT 'view', qname, to_json(pg_get_viewdef(oid))::text FROM rel WHERE relkind IN ('v', 'm')
   UNION ALL
   SELECT 'extension', extname, to_json(extversion)::text FROM pg_extension
+  UNION ALL
+  SELECT 'default_acl', CASE defaclnamespace WHEN 0 THEN '*' ELSE defaclnamespace::regnamespace::text END || '.'
+      || defaclrole::regrole::text || '.' || defaclobjtype::text, to_json(defaclacl::text)::text
+    FROM pg_default_acl
+  UNION ALL
+  SELECT 'database_setting', CASE setrole WHEN 0 THEN '*' ELSE setrole::regrole::text END, to_json(setconfig::text)::text
+    FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+  UNION ALL
+  SELECT 'publication', p.pubname, json_build_object('all_tables', p.puballtables,
+      'insert', p.pubinsert, 'update', p.pubupdate, 'delete', p.pubdelete, 'truncate', p.pubtruncate,
+      'tables', (SELECT json_agg(t.schemaname || '.' || t.tablename ORDER BY 1)
+                   FROM pg_publication_tables t WHERE t.pubname = p.pubname))::text
+    FROM pg_publication p
+  UNION ALL
+  SELECT 'subscription', subname, '' FROM pg_subscription
+    WHERE subdbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+  UNION ALL
+  SELECT 'foreign_data_wrapper', fdwname, '' FROM pg_foreign_data_wrapper
+  UNION ALL
+  SELECT 'foreign_server', srvname, '' FROM pg_foreign_server
+  UNION ALL
+  SELECT 'user_mapping', srvname || '.' || usename, '' FROM pg_user_mappings
+  UNION ALL
+  -- Objects with OIDs below 16384 (FirstNormalObjectId) come from initdb.
+  SELECT 'cast', castsource::regtype::text || '->' || casttarget::regtype::text,
+      json_build_object('function', castfunc::regprocedure::text, 'context', castcontext, 'method', castmethod)::text
+    FROM pg_cast WHERE oid >= 16384
+  UNION ALL
+  SELECT 'transform', trftype::regtype::text || '.' || (SELECT lanname FROM pg_language WHERE oid = trflang), ''
+    FROM pg_transform
+  UNION ALL
+  SELECT 'access_method', amname, to_json(amtype::text)::text FROM pg_am WHERE oid >= 16384
+  UNION ALL
+  SELECT 'language', lanname, '' FROM pg_language WHERE oid >= 16384
+  UNION ALL
+  SELECT 'large_objects', 'count', count(*)::text FROM pg_largeobject_metadata HAVING count(*) > 0
+  UNION ALL
+  -- Anything created after initdb in the schemas left out above, except TOAST tables and indexes.
+  SELECT 'system_object', 'pg_class ' || n.nspname || '.' || c.relname, to_json(c.relkind::text)::text
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.oid >= 16384 AND (n.nspname IN ('pg_catalog', 'information_schema')
+      OR (n.nspname = 'pg_toast' AND c.relkind NOT IN ('t', 'i')))
+  UNION ALL
+  SELECT 'system_object', 'pg_proc ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+      to_json(pg_get_functiondef(p.oid))::text
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE p.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
+  UNION ALL
+  SELECT 'system_object', 'pg_type ' || n.nspname || '.' || t.typname, ''
+    FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
+  UNION ALL
+  SELECT 'system_object', 'pg_operator ' || n.nspname || '.' || o.oprname, ''
+    FROM pg_operator o JOIN pg_namespace n ON n.oid = o.oprnamespace
+    WHERE o.oid >= 16384 AND n.nspname IN ('pg_catalog', 'information_schema', 'pg_toast')
 ) objects ORDER BY 1
 SQL
 )"
