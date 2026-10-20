@@ -153,6 +153,7 @@ describe('the database role the app connects as', () => {
               p.proowner = c.relowner AS owned_like_tables,
               ARRAY(SELECT CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
                            || ':' || a.privilege_type
+                           || CASE WHEN a.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
                       FROM aclexplode(p.proacl) a WHERE a.grantee <> p.proowner ORDER BY 1) AS grants
          FROM pg_proc p, pg_class c
         WHERE c.oid = 'public.billing_subscription'::regclass
@@ -190,12 +191,17 @@ describe('the database role the app connects as', () => {
       ),
     }
     expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
-    // Without the grant option a GRANT only warns; the function stays closed to everyone else.
-    await attempt(`GRANT EXECUTE ON FUNCTION ${fn} TO PUBLIC`)
-    const { rows } = await query(
-      `SELECT has_function_privilege('public', '${fn}', 'EXECUTE') AS public_execute`,
-    )
-    expect(rows).toEqual([{ public_execute: false }])
+    // Without the grant option a GRANT only warns; checked inside its transaction, before rollback.
+    await query('BEGIN')
+    try {
+      await query(`GRANT EXECUTE ON FUNCTION ${fn} TO PUBLIC`)
+      const { rows } = await query(
+        `SELECT has_function_privilege('public', '${fn}', 'EXECUTE') AS public_execute`,
+      )
+      expect(rows).toEqual([{ public_execute: false }])
+    } finally {
+      await query('ROLLBACK')
+    }
   })
 })
 
