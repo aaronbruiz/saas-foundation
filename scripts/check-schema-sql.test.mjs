@@ -65,7 +65,7 @@ const PROBES = [
   ],
   [
     `CREATE TYPE public.probe_t AS ENUM ('a'); CREATE CAST (public.probe_t AS text) WITH INOUT`,
-    /only in the migrations: cast probe_t->text/,
+    /only in the migrations: cast public\.probe_t->text/,
   ],
   [
     // Every database the login owns, as a migration could: the reference database doesn't exist yet.
@@ -158,29 +158,61 @@ test("a registered publication's columns and row filter, and a statistics object
   )
 })
 
+/** As the container's superuser, on the `app` database (outside anything the gate creates). */
+const asAdmin = (sql) => {
+  const container = execFileSync(
+    'docker',
+    ['ps', '-q', '--filter', `publish=${process.env.POSTGRES_PORT ?? 5432}`],
+    { encoding: 'utf8' },
+  ).trim()
+  return execFileSync(
+    'docker',
+    ['exec', container, 'psql', '-qAtX', '-U', 'app', '-d', 'app', '-c', sql],
+    {
+      encoding: 'utf8',
+    },
+  ).trim()
+}
+const randomName = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+
 test('a migration that creates a role fails the identity check', () => {
-  const role = `probe_role_${Math.random().toString(36).slice(2, 10)}`
+  const role = randomName('probe_role')
   try {
     const r = gate(`CREATE ROLE ${role};`)
     assert.equal(r.status, 2, r.stderr)
     assert.match(r.stderr, /isn't exactly the restricted role \(after migrating\)/)
   } finally {
-    const container = execFileSync(
-      'docker',
-      ['ps', '-q', '--filter', `publish=${process.env.POSTGRES_PORT ?? 5432}`],
-      { encoding: 'utf8' },
-    ).trim()
-    execFileSync('docker', [
-      'exec',
-      container,
-      'psql',
-      '-qAtX',
-      '-U',
-      'app',
-      '-d',
-      'app',
-      '-c',
-      `DROP ROLE IF EXISTS ${role}`,
-    ])
+    asAdmin(`DROP ROLE IF EXISTS ${role}`)
   }
+})
+
+test('code a migration plants in the migrated database never runs as a superuser', () => {
+  // The gate's own queries read what migrations created; a planted view calls this function.
+  const role = randomName('probe_backdoor')
+  const r = gate(`
+CREATE FUNCTION public.payload() RETURNS boolean LANGUAGE plpgsql AS $f$
+BEGIN
+  IF (SELECT rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user) THEN
+    EXECUTE 'CREATE ROLE ${role} SUPERUSER';
+  END IF;
+  RETURN true;
+END $f$;
+ALTER TABLE drizzle.__drizzle_migrations RENAME TO saved_migrations;
+CREATE VIEW drizzle.__drizzle_migrations AS SELECT * FROM drizzle.saved_migrations WHERE public.payload();`)
+  try {
+    assert.notEqual(r.status, 0, r.stdout)
+    assert.equal(asAdmin(`SELECT count(*) FROM pg_roles WHERE rolname = '${role}'`), '0')
+  } finally {
+    asAdmin(`DROP ROLE IF EXISTS ${role}`)
+  }
+})
+
+test("a registered constraint's local or inherited state is part of its definition", () => {
+  const parent = `CREATE TABLE archive.probe_p (x int, CONSTRAINT positive CHECK (x > 0));`
+  const inherited = gate(`${parent}\nCREATE TABLE archive.probe_c () INHERITS (archive.probe_p);`)
+  const local = gate(
+    `${parent}\nCREATE TABLE archive.probe_c (CONSTRAINT positive CHECK (x > 0)) INHERITS (archive.probe_p);`,
+  )
+  const key = 'constraint archive.probe_c.positive'
+  assert.notEqual(reported(inherited, key), reported(local, key))
 })

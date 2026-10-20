@@ -67,10 +67,15 @@ work="$(mktemp -d)"
 
 # $1 role (app: the container's superuser, for setup only), $2 database, $3 SQL.
 psql_as() {
-  docker exec -i -e PGOPTIONS='-c client_min_messages=warning' "$container" \
+  docker exec -i -e PGOPTIONS='-c client_min_messages=warning -c search_path=pg_catalog,pg_temp' "$container" \
     psql -qAtX -v ON_ERROR_STOP=1 -U "$1" -d "$2" -c "$3"
 }
 psql_in() { psql_as app "$@"; }
+# Every query on the migrated and reference databases runs as the restricted login: code a
+# migration planted there (a view, a function an expression calls) then runs with no more
+# privilege than the migrations had. `app` only touches the `app` database (setup and cleanup).
+# The pinned search_path keeps every unqualified name in these queries on PostgreSQL's own objects.
+psql_owner() { psql_as "$owner" "$@"; }
 drop() { for db in "$migrated" "$fresh"; do psql_in app "DROP DATABASE IF EXISTS $db" >/dev/null; done; }
 cleanup() { drop || true; psql_in app "DROP ROLE IF EXISTS $owner, $stand_in" >/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
@@ -115,10 +120,10 @@ if [ -n "${SCHEMA_CHECK_PROBE:-}" ]; then
   docker exec -i "$container" psql -qX -v ON_ERROR_STOP=1 -U "$owner" -d "$migrated" <"$SCHEMA_CHECK_PROBE" >/dev/null
 fi
 check_identity "after migrating"
-drizzle_seq="$(psql_in "$migrated" "SELECT last_value = (SELECT max(id) FROM drizzle.__drizzle_migrations) FROM drizzle.__drizzle_migrations_id_seq")"
+drizzle_seq="$(psql_owner "$migrated" "SELECT last_value = (SELECT max(id) FROM drizzle.__drizzle_migrations) FROM drizzle.__drizzle_migrations_id_seq")"
 [ "$drizzle_seq" = t ] || { echo "check-schema-sql: drizzle's migration counter doesn't match its applied migrations" >&2; exit 2; }
 # The migrations ran as that login: it owns everything they created.
-others="$(psql_in "$migrated" "
+others="$(psql_owner "$migrated" "
   SELECT count(*) FROM (
     SELECT relowner AS o FROM pg_class WHERE relnamespace IN ('public'::regnamespace, 'archive'::regnamespace, 'drizzle'::regnamespace)
     UNION ALL SELECT proowner FROM pg_proc WHERE pronamespace IN ('public'::regnamespace, 'archive'::regnamespace)
@@ -165,7 +170,8 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
     WHERE r.relkind IN ('r', 'p', 'v', 'm', 'f', 'c') AND a.attnum > 0 AND NOT a.attisdropped
   UNION ALL
-  SELECT 'constraint', r.qname || '.' || k.conname, to_json(pg_get_constraintdef(k.oid))::text
+  SELECT 'constraint', r.qname || '.' || k.conname, json_build_object('def', pg_get_constraintdef(k.oid),
+      'local', k.conislocal, 'inherited', k.coninhcount)::text
     FROM pg_constraint k JOIN rel r ON r.oid = k.conrelid
   UNION ALL
   SELECT 'index', qname, (SELECT json_build_object('def', pg_get_indexdef(rel.oid), 'valid', x.indisvalid,
@@ -313,6 +319,6 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
 ) objects ORDER BY 1
 SQL
 )"
-psql_in "$migrated" "$catalog" >"$work/$migrated.txt"
-psql_in "$fresh" "$catalog" >"$work/$fresh.txt"
+psql_owner "$migrated" "$catalog" >"$work/$migrated.txt"
+psql_owner "$fresh" "$catalog" >"$work/$fresh.txt"
 node scripts/compare-catalogs.mjs "$work/$migrated.txt" "$work/$fresh.txt" packages/db/sql-only-objects.tsv
