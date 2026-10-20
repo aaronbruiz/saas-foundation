@@ -61,7 +61,7 @@ jobs:
             git fetch --no-tags --depth=1 origin "$BASE"
           fi
           node scripts/check-migrations.mjs "$BASE"
-          scripts/check-schema-sql.sh
+          SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh
           node --test scripts/check-schema-sql.test.mjs
       - run: pnpm test
       # dump.sh against a disposable Postgres and a local S3 stand-in, with the runner's AWS CLI

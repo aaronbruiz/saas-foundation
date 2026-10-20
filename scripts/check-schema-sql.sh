@@ -24,7 +24,8 @@
 # settings: database-role.test.ts).
 #
 # SCHEMA_CHECK_PROBE=<file.sql> applies extra SQL to the migrated database only, as the migration
-# login, to prove the gate fails (scripts/check-schema-sql.test.mjs); it can only add differences, never hide one.
+# login. Trusted test input for scripts/check-schema-sql.test.mjs only (it could also repair drift):
+# ci.yml and `pnpm db:check` clear it for the gate itself.
 #
 # Objects that custom migrations create on purpose and the Drizzle schema can't express (the
 # archive schema, triggers, functions: ADR-0039, ADR-0040) are listed one by one, with a hash of
@@ -34,7 +35,8 @@
 # Migrations run as `schema_check_owner`, a login without superuser that mirrors production's
 # `app_owner` on Neon (ADR-0038; R06 role inspection 2026-10-15): BYPASSRLS, CREATEROLE, CREATEDB,
 # REPLICATION, owner of both databases, and a member (inherit, no SET) of a NOLOGIN stand-in for
-# `neon_superuser` holding pg_read_all_data and pg_write_all_data. It logs in itself (no SET ROLE
+# `neon_superuser` holding pg_read_all_data and pg_write_all_data, both created fresh for each run.
+# It logs in itself (no SET ROLE
 # from a superuser that RESET ROLE could undo), and its identity, attributes and memberships are
 # checked before migrating. So the gate covers what the production migration role can do: DDL only
 # a superuser may run (changing PostgreSQL's built-in objects, creating in pg_catalog) fails here,
@@ -52,8 +54,13 @@ cd "$(dirname "$0")/.."
 port="${POSTGRES_PORT:-5432}"
 container="${POSTGRES_CONTAINER:-$(docker ps -q --filter publish="$port")}"
 [ -n "$container" ] || { echo "check-schema-sql: no Postgres container (pnpm db:up)" >&2; exit 2; }
-owner=schema_check_owner
-owner_url="postgres://$owner:$owner@localhost:$port"
+# Fresh roles per run (cluster-wide names never reused, so nothing granted to an earlier role
+# carries over), dropped at exit; creating one that exists fails.
+run="$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+owner="schema_check_owner_$run"
+stand_in="schema_check_neon_$run"
+password="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+owner_url="postgres://$owner:$password@localhost:$port"
 migrated=schema_check_migrated
 fresh=schema_check_fresh
 work="$(mktemp -d)"
@@ -65,43 +72,49 @@ psql_as() {
 }
 psql_in() { psql_as app "$@"; }
 drop() { for db in "$migrated" "$fresh"; do psql_in app "DROP DATABASE IF EXISTS $db" >/dev/null; done; }
-cleanup() { drop || true; rm -rf "$work"; }
+cleanup() { drop || true; psql_in app "DROP ROLE IF EXISTS $owner, $stand_in" >/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
 
 drop
 psql_in app "
-  DO \$\$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'schema_check_neon_superuser') THEN
-      CREATE ROLE schema_check_neon_superuser;
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$owner') THEN CREATE ROLE $owner; END IF;
-  END \$\$;
-  ALTER ROLE schema_check_neon_superuser NOLOGIN NOSUPERUSER BYPASSRLS CREATEROLE CREATEDB REPLICATION INHERIT;
-  ALTER ROLE $owner LOGIN PASSWORD '$owner' NOSUPERUSER BYPASSRLS CREATEROLE CREATEDB REPLICATION INHERIT;
-  GRANT pg_read_all_data, pg_write_all_data TO schema_check_neon_superuser;
-  GRANT schema_check_neon_superuser TO $owner WITH INHERIT TRUE, SET FALSE;" >/dev/null
+  CREATE ROLE $stand_in NOLOGIN NOSUPERUSER BYPASSRLS CREATEROLE CREATEDB REPLICATION INHERIT;
+  CREATE ROLE $owner LOGIN PASSWORD '$password' NOSUPERUSER BYPASSRLS CREATEROLE CREATEDB REPLICATION INHERIT;
+  GRANT pg_read_all_data, pg_write_all_data TO $stand_in;
+  GRANT $stand_in TO $owner WITH INHERIT TRUE, SET FALSE;" >/dev/null
 for db in "$migrated" "$fresh"; do psql_in app "CREATE DATABASE $db OWNER $owner" >/dev/null; done
 # Fail closed unless the migration login is exactly the restricted role: not a superuser, no way to
-# become one, and only the memberships above, plus (once migration 0005 has created app_runtime
-# with it) the ADMIN-only grant PostgreSQL 16+ gives a role's creator, as production app_owner has.
-identity="$(psql_as "$owner" "$migrated" "
-  SELECT current_user = '$owner' AND session_user = '$owner'
-     AND NOT r.rolsuper AND r.rolbypassrls AND r.rolcreaterole AND r.rolcreatedb AND r.rolreplication
-     AND NOT EXISTS (SELECT FROM pg_roles s WHERE s.rolsuper AND pg_has_role(session_user, s.oid, 'MEMBER'))
-     AND (SELECT string_agg(m.roleid::regrole::text || ':' || m.inherit_option || m.set_option || m.admin_option, ',' ORDER BY m.roleid::regrole::text)
-            FROM pg_auth_members m WHERE m.member = r.oid)
-         IN ('schema_check_neon_superuser:truefalsefalse',
-             'app_runtime:falsefalsetrue,schema_check_neon_superuser:truefalsefalse')
-     AND (SELECT string_agg(m.roleid::regrole::text, ',' ORDER BY m.roleid::regrole::text) FROM pg_auth_members m
-            WHERE m.member = 'schema_check_neon_superuser'::regrole) = 'pg_read_all_data,pg_write_all_data'
-     AND (SELECT datdba FROM pg_database WHERE datname = current_database()) = r.oid
-  FROM pg_roles r WHERE r.rolname = current_user")"
-[ "$identity" = t ] || { echo "check-schema-sql: the migration login isn't the restricted $owner role" >&2; exit 2; }
+# become one, only the memberships above (plus, once migration 0005 has created app_runtime with
+# it, the ADMIN-only grant PostgreSQL 16+ gives a role's creator, as production app_owner has),
+# nothing it granted to anyone, and no parameter privileges. Checked before and after migrating,
+# so a migration that grants itself or others a role, or creates another role, fails too.
+check_identity() {
+  local ok
+  ok="$(psql_as "$owner" "$migrated" "
+    SELECT current_user = '$owner' AND session_user = '$owner'
+       AND NOT r.rolsuper AND r.rolbypassrls AND r.rolcreaterole AND r.rolcreatedb AND r.rolreplication
+       AND NOT EXISTS (SELECT FROM pg_roles s WHERE s.rolsuper AND pg_has_role(session_user, s.oid, 'MEMBER'))
+       AND coalesce((SELECT string_agg(m.roleid::regrole::text || ':' || m.inherit_option || m.set_option || m.admin_option, ','
+                                       ORDER BY m.roleid::regrole::text)
+                       FROM pg_auth_members m WHERE m.member = r.oid), '')
+           IN ('$stand_in:truefalsefalse', 'app_runtime:falsefalsetrue,$stand_in:truefalsefalse')
+       AND (SELECT string_agg(m.roleid::regrole::text, ',' ORDER BY m.roleid::regrole::text) FROM pg_auth_members m
+              WHERE m.member = '$stand_in'::regrole) = 'pg_read_all_data,pg_write_all_data'
+       AND NOT EXISTS (SELECT FROM pg_auth_members m WHERE m.grantor = r.oid)
+       AND NOT EXISTS (SELECT FROM pg_parameter_acl p, aclexplode(p.paracl) a WHERE a.grantee = r.oid)
+       AND (SELECT datdba FROM pg_database WHERE datname = current_database()) = r.oid
+    FROM pg_roles r WHERE r.rolname = current_user")"
+  [ "$ok" = t ] || { echo "check-schema-sql: the migration login isn't exactly the restricted role ($1)" >&2; exit 2; }
+}
+check_identity "before migrating"
 kit() {
   DATABASE_URL="$owner_url/$1" pnpm --filter @saas-foundation/db exec drizzle-kit "${@:2}" </dev/null >"$work/$1.log" 2>&1 \
     || { cat "$work/$1.log" >&2; echo "check-schema-sql: drizzle-kit ${*:2} failed" >&2; exit 1; }
 }
 kit "$migrated" migrate
+if [ -n "${SCHEMA_CHECK_PROBE:-}" ]; then
+  docker exec -i "$container" psql -qX -v ON_ERROR_STOP=1 -U "$owner" -d "$migrated" <"$SCHEMA_CHECK_PROBE" >/dev/null
+fi
+check_identity "after migrating"
 # The migrations ran as that login: it owns everything they created.
 others="$(psql_in "$migrated" "
   SELECT count(*) FROM (
@@ -110,9 +123,6 @@ others="$(psql_in "$migrated" "
     UNION ALL SELECT nspowner FROM pg_namespace WHERE nspname IN ('archive', 'drizzle')
   ) x WHERE o <> '$owner'::regrole")"
 [ "$others" = 0 ] || { echo "check-schema-sql: $others migrated objects aren't owned by $owner" >&2; exit 2; }
-if [ -n "${SCHEMA_CHECK_PROBE:-}" ]; then
-  docker exec -i "$container" psql -qX -v ON_ERROR_STOP=1 -U "$owner" -d "$migrated" <"$SCHEMA_CHECK_PROBE" >/dev/null
-fi
 # The reference: the whole schema generated from scratch by the same generator the migrations come
 # from, applied in one transaction (`drizzle-kit push` 0.31 drops policies' USING/WITH CHECK).
 pnpm --filter @saas-foundation/db exec drizzle-kit generate --dialect postgresql \
@@ -210,7 +220,8 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   SELECT 'rule', schemaname || '.' || tablename || '.' || rulename, to_json(definition)::text
     FROM pg_rules WHERE schemaname IN (SELECT nspname FROM ns)
   UNION ALL
-  SELECT 'statistics', ns.nspname || '.' || x.stxname, to_json(pg_get_statisticsobjdef(x.oid))::text
+  SELECT 'statistics', ns.nspname || '.' || x.stxname, json_build_object('def', pg_get_statisticsobjdef(x.oid),
+      'target', x.stxstattarget)::text
     FROM pg_statistic_ext x JOIN ns ON ns.oid = x.stxnamespace
   UNION ALL
   SELECT 'event_trigger', evtname, json_build_object('event', evtevent, 'enabled', evtenabled,
@@ -228,12 +239,25 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
       || defaclrole::regrole::text || '.' || defaclobjtype::text, to_json(defaclacl::text)::text
     FROM pg_default_acl
   UNION ALL
+  SELECT 'database', 'current', json_build_object('owner_is_migration_login', datdba = (SELECT oid FROM pg_roles WHERE rolname = current_user),
+      'encoding', pg_encoding_to_char(encoding), 'locale_provider', datlocprovider, 'collate', datcollate,
+      'ctype', datctype, 'locale', datlocale, 'icu_rules', daticurules, 'template', datistemplate,
+      'allow_connections', datallowconn, 'connection_limit', datconnlimit,
+      'tablespace', (SELECT spcname FROM pg_tablespace WHERE oid = dattablespace),
+      'acl', (SELECT json_agg(a ORDER BY a) FROM unnest(datacl::text[]) a))::text
+    FROM pg_database WHERE datname = current_database()
+  UNION ALL
   SELECT 'database_setting', CASE setrole WHEN 0 THEN '*' ELSE setrole::regrole::text END, to_json(setconfig::text)::text
     FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
   UNION ALL
   SELECT 'publication', p.pubname, json_build_object('all_tables', p.puballtables,
       'insert', p.pubinsert, 'update', p.pubupdate, 'delete', p.pubdelete, 'truncate', p.pubtruncate,
-      'tables', (SELECT json_agg(t.schemaname || '.' || t.tablename ORDER BY t.schemaname, t.tablename)
+      'via_root', p.pubviaroot,
+      'schemas', (SELECT json_agg(n.pnnspid::regnamespace::text ORDER BY n.pnnspid::regnamespace::text)
+                    FROM pg_publication_namespace n WHERE n.pnpubid = p.oid),
+      'tables', (SELECT json_agg(json_build_object('table', t.schemaname || '.' || t.tablename,
+                                   'columns', t.attnames, 'filter', t.rowfilter)
+                                 ORDER BY t.schemaname, t.tablename)
                    FROM pg_publication_tables t WHERE t.pubname = p.pubname))::text
     FROM pg_publication p
   UNION ALL

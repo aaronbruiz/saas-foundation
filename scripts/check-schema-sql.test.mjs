@@ -7,7 +7,7 @@
 // compare-catalogs.test.mjs. Needs the local Postgres container
 // (pnpm db:up), so it runs in `pnpm db:check` and ci.yml, not in `pnpm lint`.
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,11 +61,15 @@ const PROBES = [
   ],
   [
     `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO app_runtime`,
-    /only in the migrations: default_acl public\.schema_check_owner\.r/,
+    /only in the migrations: default_acl public\.schema_check_owner_[0-9a-f]+\.r/,
   ],
   [
     `CREATE TYPE public.probe_t AS ENUM ('a'); CREATE CAST (public.probe_t AS text) WITH INOUT`,
     /only in the migrations: cast probe_t->text/,
+  ],
+  [
+    `DO $$ BEGIN EXECUTE format('ALTER DATABASE %I CONNECTION LIMIT 1', current_database()); END $$`,
+    /differs: database current/,
   ],
   [`SELECT lo_create(0)`, /only in the migrations: large_objects count/],
   [
@@ -90,11 +94,11 @@ const REFUSED = [
   `CREATE EXTENSION file_fdw`,
   `SET ROLE app`,
   `SET SESSION AUTHORIZATION app`,
-  `ALTER ROLE schema_check_owner SUPERUSER`,
+  `ALTER ROLE CURRENT_USER SUPERUSER`,
   `ALTER ROLE app_runtime SUPERUSER`,
   `CREATE ROLE probe_super SUPERUSER`,
-  `GRANT app TO schema_check_owner`,
-  `GRANT pg_execute_server_program TO schema_check_owner`,
+  `GRANT app TO CURRENT_USER`,
+  `GRANT pg_execute_server_program TO CURRENT_USER`,
 ]
 
 const gate = (sql) => {
@@ -118,4 +122,56 @@ test('superuser-only changes are refused to the migration login and leave the ca
   const r = gate(wrapped.join('\n'))
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /migrations build the schema/)
+})
+
+/** The definition the gate reports for an object only the migrations have. */
+const reported = (r, key) => {
+  const line = r.stderr.split('\n').find((l) => l.startsWith(`only in the migrations: ${key} `))
+  assert.ok(line, `${key} not reported: ${r.stderr}`)
+  return line
+}
+
+test("a registered publication's columns and row filter, and a statistics object's target, are part of its definition", () => {
+  const stats = `CREATE STATISTICS public.probe_stats ON name, created_by FROM public.project;`
+  const narrow = gate(
+    `CREATE PUBLICATION probe_pub FOR TABLE public."user" (id) WHERE (id = 'allowed') WITH (publish = 'insert');\n${stats}`,
+  )
+  const wide = gate(
+    `CREATE PUBLICATION probe_pub FOR TABLE public."user" WITH (publish = 'insert');\n${stats}\nALTER STATISTICS public.probe_stats SET STATISTICS 0;`,
+  )
+  assert.notEqual(
+    reported(narrow, 'publication probe_pub'),
+    reported(wide, 'publication probe_pub'),
+  )
+  assert.notEqual(
+    reported(narrow, 'statistics public.probe_stats'),
+    reported(wide, 'statistics public.probe_stats'),
+  )
+})
+
+test('a migration that creates a role fails the identity check', () => {
+  const role = `probe_role_${Math.random().toString(36).slice(2, 10)}`
+  try {
+    const r = gate(`CREATE ROLE ${role};`)
+    assert.equal(r.status, 2, r.stderr)
+    assert.match(r.stderr, /isn't exactly the restricted role \(after migrating\)/)
+  } finally {
+    const container = execFileSync(
+      'docker',
+      ['ps', '-q', '--filter', `publish=${process.env.POSTGRES_PORT ?? 5432}`],
+      { encoding: 'utf8' },
+    ).trim()
+    execFileSync('docker', [
+      'exec',
+      container,
+      'psql',
+      '-qAtX',
+      '-U',
+      'app',
+      '-d',
+      'app',
+      '-c',
+      `DROP ROLE IF EXISTS ${role}`,
+    ])
+  }
 })
