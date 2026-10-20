@@ -115,6 +115,8 @@ if [ -n "${SCHEMA_CHECK_PROBE:-}" ]; then
   docker exec -i "$container" psql -qX -v ON_ERROR_STOP=1 -U "$owner" -d "$migrated" <"$SCHEMA_CHECK_PROBE" >/dev/null
 fi
 check_identity "after migrating"
+drizzle_seq="$(psql_in "$migrated" "SELECT last_value = (SELECT max(id) FROM drizzle.__drizzle_migrations) FROM drizzle.__drizzle_migrations_id_seq")"
+[ "$drizzle_seq" = t ] || { echo "check-schema-sql: drizzle's migration counter doesn't match its applied migrations" >&2; exit 2; }
 # The migrations ran as that login: it owns everything they created.
 others="$(psql_in "$migrated" "
   SELECT count(*) FROM (
@@ -148,13 +150,15 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
       'options', (SELECT json_agg(o ORDER BY o) FROM unnest(reloptions) o),
       'inherits', (SELECT json_agg(i.inhparent::regclass::text ORDER BY i.inhseqno) FROM pg_inherits i WHERE i.inhrelid = rel.oid),
       'partition_bound', pg_get_expr(relpartbound, oid),
+      'partition_key', CASE WHEN relkind = 'p' THEN pg_get_partkeydef(oid) END,
+      'toast_options', (SELECT json_agg(o ORDER BY o) FROM pg_class t, unnest(t.reloptions) o WHERE t.oid = rel.reltoastrelid),
       'tablespace', (SELECT spcname FROM pg_tablespace WHERE oid = reltablespace))::text
     FROM rel WHERE relkind IN ('r', 'p', 'v', 'm', 'S', 'f', 'c')
   UNION ALL
   SELECT 'column', r.qname || '.' || a.attname, json_build_object(
       'type', format_type(a.atttypid, a.atttypmod), 'not_null', a.attnotnull,
       'default', pg_get_expr(d.adbin, d.adrelid), 'identity', a.attidentity,
-      'generated', a.attgenerated, 'collation', (SELECT collname FROM pg_collation WHERE oid = a.attcollation),
+      'generated', a.attgenerated, 'local', a.attislocal, 'inherited', a.attinhcount, 'collation', (SELECT collname FROM pg_collation WHERE oid = a.attcollation),
       'storage', a.attstorage, 'compression', a.attcompression, 'statistics', a.attstattarget,
       'options', (SELECT json_agg(o ORDER BY o) FROM unnest(a.attoptions) o))::text
     FROM pg_attribute a JOIN rel r ON r.oid = a.attrelid
@@ -165,7 +169,10 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     FROM pg_constraint k JOIN rel r ON r.oid = k.conrelid
   UNION ALL
   SELECT 'index', qname, (SELECT json_build_object('def', pg_get_indexdef(rel.oid), 'valid', x.indisvalid,
-      'ready', x.indisready, 'clustered', x.indisclustered, 'replica_identity', x.indisreplident)::text
+      'ready', x.indisready, 'clustered', x.indisclustered, 'replica_identity', x.indisreplident,
+      'column_statistics', (SELECT json_agg(a.attstattarget ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid = rel.oid),
+      'attached_to', (SELECT json_agg(i.inhparent::regclass::text) FROM pg_inherits i WHERE i.inhrelid = rel.oid),
+      'tablespace', (SELECT spcname FROM pg_tablespace WHERE oid = rel.reltablespace))::text
       FROM pg_index x WHERE x.indexrelid = rel.oid) FROM rel WHERE relkind IN ('i', 'I')
     AND NOT EXISTS (SELECT FROM pg_index x JOIN pg_class t ON t.oid = x.indrelid WHERE x.indexrelid = rel.oid AND t.relkind = 't')
   UNION ALL
@@ -207,6 +214,10 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
   SELECT 'sequence', schemaname || '.' || sequencename, json_build_object('type', data_type::text,
       'start', start_value, 'min', min_value, 'max', max_value, 'increment', increment_by,
       'cycle', cycle, 'cache', cache_size,
+      -- Its state (RESTART changes it, not the start value). Drizzle's own counter advances with
+      -- every migration: checked against its table after migrating instead.
+      'state', CASE WHEN schemaname || '.' || sequencename <> 'drizzle.__drizzle_migrations_id_seq' THEN
+        query_to_xml(format('SELECT last_value, is_called FROM %I.%I', schemaname, sequencename), false, true, '')::text END,
       'owned_by', (SELECT d.refobjid::regclass::text || '.' || a.attname FROM pg_depend d
                      JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
                     WHERE d.classid = 'pg_class'::regclass AND d.objid = (schemaname || '.' || sequencename)::regclass
@@ -214,8 +225,12 @@ SELECT kind || E'\t' || to_json(name)::text || E'\t' || detail FROM (
     FROM pg_sequences WHERE schemaname IN (SELECT nspname FROM ns)
   UNION ALL
   SELECT 'function', ns.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
-      CASE WHEN p.prokind = 'a' THEN '"aggregate"' ELSE to_json(pg_get_functiondef(p.oid))::text END
-    FROM pg_proc p JOIN ns ON ns.oid = p.pronamespace
+      to_json(pg_get_functiondef(p.oid))::text
+    FROM pg_proc p JOIN ns ON ns.oid = p.pronamespace WHERE p.prokind <> 'a'
+  UNION ALL
+  SELECT 'aggregate', ns.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+      (SELECT row_to_json(a)::text FROM pg_aggregate a WHERE a.aggfnoid = p.oid)
+    FROM pg_proc p JOIN ns ON ns.oid = p.pronamespace WHERE p.prokind = 'a'
   UNION ALL
   SELECT 'trigger', r.qname || '.' || g.tgname,
       json_build_object('def', pg_get_triggerdef(g.oid), 'enabled', g.tgenabled)::text

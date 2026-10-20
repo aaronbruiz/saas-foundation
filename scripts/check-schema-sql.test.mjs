@@ -72,6 +72,14 @@ const PROBES = [
     `DO $$ DECLARE d record; BEGIN FOR d IN SELECT datname FROM pg_database WHERE datdba = current_user::regrole LOOP EXECUTE format('ALTER DATABASE %I CONNECTION LIMIT 100', d.datname); END LOOP; END $$`,
     /differs: database current/,
   ],
+  [
+    `ALTER SEQUENCE archive.auth_event_id_seq RESTART WITH 1000000`,
+    /registered SQL-only object changed: sequence archive\.auth_event_id_seq/,
+  ],
+  [
+    `ALTER TABLE public.project SET (toast.autovacuum_enabled = false)`,
+    /differs: relation public\.project/,
+  ],
   [`SELECT lo_create(0)`, /only in the migrations: large_objects count/],
   [
     `DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET work_mem = %L', current_database(), '8MB'); END $$`,

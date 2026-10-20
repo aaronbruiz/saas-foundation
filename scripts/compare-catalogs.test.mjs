@@ -229,6 +229,7 @@ test('only kinds whose whole definition is compared can be registered', () => {
     'type',
     'conversion',
     'foreign_server',
+    'aggregate',
   ]) {
     fails(
       run({ registry: `${kind}\tpublic.x\t${'a'.repeat(64)}\n` }),
