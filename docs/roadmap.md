@@ -45,6 +45,36 @@ Merged, validated, deployed and operational are different states. Report each on
   5. Production verified after the release: health, smoke e2e, and the definer function's privileges ("After a restore or a promote").
 - **Deferred:** the runtime-role switch (M2), RLS policies (M4), and anything in the M5 backlog.
 
+### Parallel track: Reuse validation
+
+Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When hosted runs are available again, M1 takes priority and this track pauses wherever it stands.
+
+- **Question:** starting from a fresh copy, can someone build and run a small SaaS locally using the documented paths, without undocumented knowledge from this project's authors?
+- **Product:** a fictional client request tracker. Synthetic data only.
+- **Bounded workflow:**
+  - create a request;
+  - add a comment;
+  - change the request's status;
+  - an open-request limit, enforced per plan;
+  - tenant isolation proven by cross-tenant tests.
+
+  Out of scope: attachments, notifications, search and custom statuses.
+
+- **Who builds it:** a fresh agent. It gets the repository, `docs/runbooks/start-new-product.md` and `AGENTS.md`, and may explore the source normally. It records each friction point and workaround, and classifies the guidance it used: a documented instruction, reasonable discovery, or missing guidance. Reading source doesn't count as a failure by itself. A walkthrough by the owner afterwards strengthens the result.
+- **Isolation:**
+  - a disposable local copy with no git remote;
+  - its own database service, port and volume;
+  - synthetic credentials only;
+  - no cloud resources, no deployments, and no access to production, the preview project or the main workspace's database.
+- **Findings stay separate from fixes:** the agent doesn't change this repository. The owner reviews its ranked findings before any fix PR is opened. Each fix addresses only friction the exercise found, and none weakens an invariant or an ADR guarantee.
+- **Done when:**
+  - the flow works locally and its relevant checks pass (`pnpm check`, `pnpm test`, including the new cross-tenant tests);
+  - a short friction report backed by evidence exists: time to the first working flow, manual steps, missing guidance, duplicated configuration, and problems the checks caught versus problems nothing caught.
+
+  If the timebox (about two sessions) ends before the flow works, the report is still delivered and records where the flow stopped.
+
+- **Feeds M3:** the pilot tests what this track found easy or hard.
+
 ### M2: Production on the least-privilege runtime role
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
