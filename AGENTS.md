@@ -106,7 +106,7 @@ kill -9 $(lsof -t -i:3000)
 
 Review for behaviour and security. Formatting, lint and types are CI's job. Flag:
 
-- Any data access to tenant tables that doesn't go through a `packages/db` repository function taking `ctx.orgId`; a statement on `project` or `billing_subscription` outside `inTenant`/`enterTenant`, a way around its open-transaction guard, or a new cross-tenant read on them (ADR-0040).
+- Any data access to tenant tables that doesn't go through a `packages/db` repository function taking `ctx.orgId`; a statement on `project` or `billing_subscription` outside `inTenant`/`enterTenant`, a way around its open-transaction guard, concurrent work on one `Db`, or a new cross-tenant read on them (ADR-0040).
 - Any server function or route touching tenant data **without** calling `getTenantContext`, or that trusts a slug, `organizationId` or `activeOrganizationId` from the client.
 - Responses that return 403 (instead of 404) or distinguish "exists but forbidden" for another tenant's resources. (403 for a member with an insufficient role in their own tenant is intended.)
 - Authorization or feature gating that reads subscription status or Polar/provider objects instead of entitlements; `@polar-sh/*` imported outside `modules/billing/providers/**`.

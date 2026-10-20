@@ -83,6 +83,8 @@ const cases = [
   [server, "const q = sql`select set_config('app.org_id', ${id}, true)`", SET_CONFIG],
   [projects, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   [route, `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  [server, "const q = sql`select set_\\u0063onfig('app.org_id', ${id}, false)`", SET_CONFIG],
+  [server, `const q = 'select set_\\u0063onfig($1, $2, false)'`, SET_CONFIG],
   ['apps/app/test/fixture.test.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   // Raw database access stays in packages/db.
   [projects, `import { eq } from 'drizzle-orm/sql'`, DRIZZLE],

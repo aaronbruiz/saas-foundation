@@ -108,7 +108,8 @@ const noDynamicRawDb = [
 // ADR-0040: only the tenant-transaction helper sets the tenant context, always transaction-locally.
 const tenantHelper = 'packages/db/src/tenant-transaction.ts'
 const noSetConfig = {
-  selector: ':matches(Literal[value=/set_config/i], TemplateElement[value.raw=/set_config/i])',
+  selector:
+    ':matches(Literal[value=/set_config/i], TemplateElement[value.raw=/set_config/i], TemplateElement[value.cooked=/set_config/i])',
   message: `Only ${tenantHelper} calls set_config, so the tenant context is always transaction-local (ADR-0040).`,
 }
 

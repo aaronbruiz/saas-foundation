@@ -10,21 +10,41 @@ export class TenantTransactionError extends Error {
   override name = 'TenantTransactionError'
 }
 
+/** pg's own queue (pg 8; not public API). Missing fields mean an unknown client: refused. */
+type PgClient = Partial<Pick<Client, 'getTransactionStatus'>> & {
+  _queryQueue?: unknown[]
+  _getActiveQuery?: () => unknown
+}
+
+/** Clients with a tenant transaction in progress, claimed before the first await. */
+const owned = new WeakSet<object>()
+
 /**
- * Runs `fn` in a transaction this call owns (ADR-0040). Refuses when the client is already in a
- * transaction: a nested top-level transaction would commit the outer one early, and a savepoint
- * would leak the tenant context into it. The status comes from the last ReadyForQuery, so the
- * check costs no round trip.
+ * Runs `fn` in a transaction this call owns (ADR-0040). Refuses unless the client is idle with
+ * nothing queued or running and no tenant transaction already claimed it: a nested top-level
+ * transaction would commit the outer one early, a savepoint would leak the tenant context into
+ * it, and a concurrent one would share it. The status comes from the last ReadyForQuery and the
+ * queue is local, so the check costs no round trip.
  */
 export async function ownTransaction<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   const raw = rawDb(db)
-  // A Pool has no status (and no single connection to own): undefined, refused.
-  const { $client } = raw as unknown as { $client: Partial<Pick<Client, 'getTransactionStatus'>> }
-  const status = $client.getTransactionStatus?.()
-  if (status !== 'I') {
+  // A Pool has none of these (and no single connection to own): refused.
+  const client = (raw as unknown as { $client: PgClient }).$client
+  const status = client.getTransactionStatus?.()
+  const busy =
+    !Array.isArray(client._queryQueue) ||
+    client._queryQueue.length > 0 ||
+    typeof client._getActiveQuery !== 'function' ||
+    client._getActiveQuery() != null
+  if (status !== 'I' || busy || owned.has(client)) {
     throw new TenantTransactionError(`a tenant transaction can't start here (status ${status})`)
   }
-  return raw.transaction(fn)
+  owned.add(client)
+  try {
+    return await raw.transaction(fn)
+  } finally {
+    owned.delete(client)
+  }
 }
 
 /**

@@ -70,6 +70,31 @@ describe('tenant transactions refuse to run inside another transaction', () => {
       }),
     )
   })
+
+  it('two tenant calls started together on one client: one runs, the other is refused', async () => {
+    await withDb(async (db) => {
+      const seen: (string | null)[] = []
+      const results = await Promise.allSettled([
+        inTenant(db, { orgId: orgA }, async () => seen.push(await context(db))),
+        inTenant(db, { orgId: orgB }, async () => seen.push(await context(db))),
+      ])
+      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+      const refused = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
+      expect(refused.reason).toBeInstanceOf(TenantTransactionError)
+      expect(seen).toHaveLength(1)
+      expect(status(db)).toBe('I')
+    })
+  })
+
+  it("a tenant call while another transaction's BEGIN is still in flight on the client is refused", async () => {
+    await withDb(async (db) => {
+      const begin = client(db).query('BEGIN')
+      await expect(projects(db, { orgId: orgA }).list()).rejects.toThrow(TenantTransactionError)
+      await begin
+      await client(db).query('ROLLBACK')
+      expect(status(db)).toBe('I')
+    })
+  })
 })
 
 describe('tenant context', () => {
