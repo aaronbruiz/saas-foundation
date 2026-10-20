@@ -81,7 +81,7 @@ psql_in app "
   CREATE ROLE $owner LOGIN PASSWORD '$password' NOSUPERUSER BYPASSRLS CREATEROLE CREATEDB REPLICATION INHERIT;
   GRANT pg_read_all_data, pg_write_all_data TO $stand_in;
   GRANT $stand_in TO $owner WITH INHERIT TRUE, SET FALSE;" >/dev/null
-for db in "$migrated" "$fresh"; do psql_in app "CREATE DATABASE $db OWNER $owner" >/dev/null; done
+psql_in app "CREATE DATABASE $migrated OWNER $owner" >/dev/null
 # Fail closed unless the migration login is exactly the restricted role: not a superuser, no way to
 # become one, only the memberships above (plus, once migration 0005 has created app_runtime with
 # it, the ADMIN-only grant PostgreSQL 16+ gives a role's creator, as production app_owner has),
@@ -123,6 +123,9 @@ others="$(psql_in "$migrated" "
     UNION ALL SELECT nspowner FROM pg_namespace WHERE nspname IN ('archive', 'drizzle')
   ) x WHERE o <> '$owner'::regrole")"
 [ "$others" = 0 ] || { echo "check-schema-sql: $others migrated objects aren't owned by $owner" >&2; exit 2; }
+# The reference database only exists from here on, so nothing the migrations ran can have
+# touched it (a database owner can alter any of its databases without connecting).
+psql_in app "CREATE DATABASE $fresh OWNER $owner" >/dev/null
 # The reference: the whole schema generated from scratch by the same generator the migrations come
 # from, applied in one transaction (`drizzle-kit push` 0.31 drops policies' USING/WITH CHECK).
 pnpm --filter @saas-foundation/db exec drizzle-kit generate --dialect postgresql \

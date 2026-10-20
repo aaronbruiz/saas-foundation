@@ -68,7 +68,8 @@ const PROBES = [
     /only in the migrations: cast probe_t->text/,
   ],
   [
-    `DO $$ BEGIN EXECUTE format('ALTER DATABASE %I CONNECTION LIMIT 1', current_database()); END $$`,
+    // Every database the login owns, as a migration could: the reference database doesn't exist yet.
+    `DO $$ DECLARE d record; BEGIN FOR d IN SELECT datname FROM pg_database WHERE datdba = current_user::regrole LOOP EXECUTE format('ALTER DATABASE %I CONNECTION LIMIT 100', d.datname); END LOOP; END $$`,
     /differs: database current/,
   ],
   [`SELECT lo_create(0)`, /only in the migrations: large_objects count/],

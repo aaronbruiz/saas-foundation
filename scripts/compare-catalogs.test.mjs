@@ -219,3 +219,21 @@ test('a malformed or duplicate registry entry, or an unreadable or duplicate cat
     2,
   )
 })
+
+test('only kinds whose whole definition is compared can be registered', () => {
+  for (const kind of [
+    'ts_config',
+    'opfamily',
+    'opclass',
+    'operator',
+    'type',
+    'conversion',
+    'foreign_server',
+  ]) {
+    fails(
+      run({ registry: `${kind}\tpublic.x\t${'a'.repeat(64)}\n` }),
+      new RegExp(`${kind} objects can't be registered`),
+      2,
+    )
+  }
+})

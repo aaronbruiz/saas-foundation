@@ -34,6 +34,28 @@ function catalog(file) {
   return objects
 }
 
+// Kinds whose catalog line holds the object's whole reviewable definition. Others (operators,
+// operator classes and families, text-search objects, conversions, types, foreign-data objects...)
+// are compared by name or only in part, so a registered one could change without its hash
+// changing: they can't be registered (an unregistered one still fails as unexpected).
+const REGISTRABLE = new Set([
+  'schema',
+  'relation',
+  'column',
+  'constraint',
+  'index',
+  'sequence',
+  'function',
+  'trigger',
+  'constraint_trigger',
+  'rule',
+  'view',
+  'policy',
+  'statistics',
+  'publication',
+  'default_acl',
+])
+
 function registry(file) {
   const entries = new Map()
   for (const [i, line] of readFileSync(file, 'utf8').split('\n').entries()) {
@@ -47,6 +69,10 @@ function registry(file) {
     )
       throw new Error(
         `${file}:${i + 1}: expected <kind>\\t<name>\\t<sha256>, got ${JSON.stringify(line)}`,
+      )
+    if (!REGISTRABLE.has(fields[0]))
+      throw new Error(
+        `${file}:${i + 1}: ${fields[0]} objects can't be registered: the gate doesn't compare their whole definition`,
       )
     const key = `${fields[0]} ${fields[1]}`
     if (entries.has(key)) throw new Error(`${file}:${i + 1}: ${key} is registered twice`)
