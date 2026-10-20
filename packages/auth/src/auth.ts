@@ -162,7 +162,19 @@ export function createAuth({
   return betterAuth({
     secret,
     baseURL,
-    database: drizzleAdapter(rawDb(db), { provider: 'pg', schema }),
+    // `transaction: true`: Better Auth's multi-write operations (sign-up, accepting an invitation,
+    // consuming a verification token, removing a member, deleting an organization) run in one
+    // Postgres transaction on the request's single connection, so a database error rolls all of
+    // their writes back. Without it they auto-commit one by one: a failed organization delete left
+    // the organization without members. Hooks and checks that run before those operations (our
+    // middleware, permission checks, clearing the active organization, beforeDeleteOrganization and
+    // its Polar call) are outside the transaction and aren't undone by it.
+    database: drizzleAdapter(rawDb(db), { provider: 'pg', schema, transaction: true }),
+    // `verification.identifier` holds a SHA-256 of `reset-password:<token>`, so reading the table
+    // yields no usable reset link. Rows stored in plaintext before this keep working until they
+    // expire (Better Auth also looks the plaintext identifier up). ADR-0039 audits every
+    // `verification` write, since a hashed row can't be told apart by its identifier.
+    verification: { storeIdentifier: 'hashed' },
     emailAndPassword: {
       enabled: true,
       // Our own page, token in the query string (Better Auth's default link has it in the path,

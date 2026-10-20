@@ -26,7 +26,18 @@ KEY="daily/$NAME"
 export AWS_DEFAULT_REGION=auto
 # R2 doesn't need the AWS CLI's default request checksums; send them only when an operation requires one.
 export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
-s3api() { aws s3api --endpoint-url "$R2_BACKUP_ENDPOINT" "$@"; }
+# Environment variables beat the operator's AWS config file (`output = no` there broke put-object on
+# 2026-10-18 after the upload), so a run by hand behaves like CI's config-less runner; the rest of
+# that file (profile, CA bundle, proxy, retries) still applies. Credentials come from AWS_* variables,
+# which also beat any profile's.
+export AWS_DEFAULT_OUTPUT=json AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off
+# The CLI's errors quote the endpoint URL (the account id); print them without it.
+s3api() {
+  local err rc=0
+  { err="$(aws s3api --endpoint-url "$R2_BACKUP_ENDPOINT" "$@" 2>&1 >&3)"; } 3>&1 || rc=$?
+  [ -z "$err" ] || echo "${err//"$R2_BACKUP_ENDPOINT"/<R2 endpoint>}" >&2
+  return "$rc"
+}
 
 # Exit 0 if the object exists, 1 if it doesn't; anything else (auth, network) fails the run.
 exists() {
@@ -97,7 +108,7 @@ for t in organization member user __drizzle_migrations; do
   grep -Eq "TABLE DATA [a-z_]+ \"?$t\"? " "$WORK/list" || fail "dump has no data entry for table $t"
 done
 (cd "$WORK" && sha256sum "$NAME" >"$NAME.sha256")
-log "dump ok: $(wc -c <"$WORK/$NAME") bytes, $(grep -c 'TABLE DATA' "$WORK/list") tables"
+log "dump ok: $(wc -c <"$WORK/$NAME") bytes, $(grep -c 'TABLE DATA' "$WORK/list") tables, sha256 $(cut -d' ' -f1 "$WORK/$NAME.sha256")"
 
 if [ -n "${DRY_RUN:-}" ]; then log "DRY_RUN: not uploading $KEY"; exit 0; fi
 s3api put-object --bucket "$R2_BACKUP_BUCKET" --key "$KEY" --body "$WORK/$NAME" >/dev/null

@@ -2,3 +2,4 @@
 // Auth's adapter) and tests only; eslint.config.js keeps it out of apps/app/src.
 export { asDb, rawDb, type RawDb } from './client.ts'
 export * as schema from './schema/index.ts'
+export { inTenant, TenantTransactionError } from './tenant-transaction.ts'

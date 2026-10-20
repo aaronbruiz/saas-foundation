@@ -43,6 +43,27 @@
       "when": 1792113878624,
       "tag": "0005_runtime_role",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792363724395,
+      "tag": "0006_archive_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792450781808,
+      "tag": "0007_hashed_verification",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792460056024,
+      "tag": "0008_billing_conflict_definer",
+      "breakpoints": true
     }
   ]
 }

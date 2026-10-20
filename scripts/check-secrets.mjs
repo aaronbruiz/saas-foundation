@@ -4,8 +4,10 @@
 //   - apps/app/wrangler.jsonc sets EMAIL_VERIFICATION (ADR-0016: any `vars` block would reach
 //     production; only previews may turn it off, with --var from scripts/preview/lib.sh);
 //   - with --deployed, the production Worker has an EMAIL_VERIFICATION secret (secrets persist
-//     across deploys; the app also ignores `off` outside a workers.dev URL), or lacks either
-//     Turnstile key (ADR-0025: without them the app refuses sign-up, sign-in and password resets).
+//     across deploys; the app also ignores `off` outside a workers.dev URL), lacks either
+//     Turnstile key (ADR-0025: without them the app refuses sign-up, sign-in and password resets),
+//     or lacks BETTER_AUTH_SECRET or BETTER_AUTH_URL (runbook "First production deploy"; never
+//     SIGNUP_MODE, which production leaves unset by design, ADR-0014). A failed listing fails too.
 // Secret values can't be read back, only names. Run from CI without --deployed (config only).
 // Usage: node scripts/check-secrets.mjs [--deployed]
 import { execFileSync } from 'node:child_process'
@@ -32,6 +34,11 @@ if (process.argv.includes('--deployed')) {
   for (const name of ['TURNSTILE_SECRET_KEY', 'TURNSTILE_SITE_KEY'])
     if (!names.has(name))
       errors.push(`the production Worker has no ${name} secret; set it first (runbook "Turnstile")`)
+  for (const name of ['BETTER_AUTH_SECRET', 'BETTER_AUTH_URL'])
+    if (!names.has(name))
+      errors.push(
+        `the production Worker has no ${name} secret; set it first (runbook "First production deploy")`,
+      )
 }
 
 for (const e of errors) console.error(`check-secrets: ${e}`)

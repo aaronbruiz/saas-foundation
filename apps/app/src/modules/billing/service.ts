@@ -12,8 +12,6 @@ import { PriceNotFound, type BillingProvider } from './provider'
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
 // ./policy (product) or the capability matrix (roles); this file only wires them (ADR-0020).
 
-const vars = env as unknown as { BETTER_AUTH_URL: string }
-
 export async function getBillingOverview(headers: Headers, input: unknown) {
   const { tenant } = parseInput(TenantInput, input)
   return withDb(async (db) => {
@@ -57,7 +55,7 @@ export async function startCheckout(
     if (isLive(sub))
       throw new HttpError(409, 'This organization already has a subscription. Use Manage billing.')
     if (!provider) throw new HttpError(503, 'Billing is not configured')
-    const back = `${vars.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
+    const back = `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
     try {
       const url = await provider.checkout({
         organizationId: ctx.orgId,
@@ -97,7 +95,7 @@ export async function openBillingPortal(
       customerId: sub.providerCustomerId,
       userId: ctx.userId,
       customerEmail: ctx.email,
-      returnUrl: `${vars.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
+      returnUrl: `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
     })
     return { url }
   })

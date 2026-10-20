@@ -40,3 +40,5 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0036](0036-recovery-objectives.md): Recovery objectives: backup copy age ≤ 24 h and RTO ≤ 1 h of execution, how they are measured, and their limits
 - [ADR-0037](0037-backup-heartbeat-healthchecks.md): Backup heartbeat: a Healthchecks.io dead-man's switch pinged by the `dump` job, alerting by email
 - [ADR-0038](0038-least-privilege-database-runtime-role.md): Least-privilege database runtime role `app_runtime` for the app (explicit per-table grants; production switch gated on runbook verification)
+- [ADR-0039](0039-archive-and-audit-triggers.md): Owner-owned archive and audit triggers: deleted rows and access-granting auth writes, out of the runtime role's reach
+- [ADR-0040](0040-tenant-row-level-security.md): Tenant context per repository call (transaction-local, refusing to join another transaction) and staged row-level security on `project` and `billing_subscription`

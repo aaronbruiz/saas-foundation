@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { createDb } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { authPost, signUp } from './helpers'
 
 // ADR-0038: the app connects as `app_runtime`, a role that owns nothing and holds only the table
 // privileges below. A new table gets no privileges until a migration grants them (no default
@@ -9,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 const GRANTS: Record<string, string[]> = {
   user: ['INSERT', 'SELECT', 'UPDATE'],
   session: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
-  account: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
+  account: ['INSERT', 'SELECT', 'UPDATE'],
   verification: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   organization: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   member: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
@@ -19,6 +20,8 @@ const GRANTS: Record<string, string[]> = {
   billing_subscription: ['INSERT', 'SELECT', 'UPDATE'],
   billing_webhook_event: ['INSERT', 'SELECT'],
 }
+// The only functions of ours it may call (ADR-0040's webhook bypass), owner-owned definers.
+const FUNCTIONS = ['billing_subscription_held_elsewhere(text,text)']
 
 type Query = (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
 let query: Query
@@ -70,8 +73,9 @@ describe('the database role the app connects as', () => {
     )
     expect(memberships).toEqual([])
     const { rows: owned } = await query(
-      `SELECT relname FROM pg_class WHERE relowner = current_user::regrole
+      `SELECT relname FROM pg_class WHERE relowner = current_user::regrole AND relpersistence <> 't'
        UNION ALL SELECT nspname FROM pg_namespace WHERE nspowner = current_user::regrole
+         AND nspname NOT LIKE 'pg_temp_%' AND nspname NOT LIKE 'pg_toast_temp_%'
        UNION ALL SELECT proname FROM pg_proc WHERE proowner = current_user::regrole`,
     )
     expect(owned).toEqual([])
@@ -104,11 +108,112 @@ describe('the database role the app connects as', () => {
       updateWebhookEvents: await attempt("UPDATE billing_webhook_event SET type = 'x'"),
       deleteSubscriptions: await attempt('DELETE FROM billing_subscription'),
       deleteUsers: await attempt('DELETE FROM "user"'),
+      deleteAccounts: await attempt('DELETE FROM account'),
       readMigrations: await attempt('SELECT 1 FROM drizzle.__drizzle_migrations'),
       createRole: await attempt('CREATE ROLE not_allowed'),
       createSchema: await attempt('CREATE SCHEMA not_allowed'),
     }
     // 42501 insufficient_privilege for every one.
     expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+  })
+
+  it("can't read, change or call the archive, or turn off, replace or remove its triggers (ADR-0039)", async () => {
+    const refused = {
+      readDeleted: await attempt('SELECT 1 FROM archive.deleted_row'),
+      readEvents: await attempt('SELECT 1 FROM archive.auth_event'),
+      insertEvent: await attempt(
+        "INSERT INTO archive.auth_event (event, detail) VALUES ('x', '{}')",
+      ),
+      deleteArchive: await attempt('DELETE FROM archive.deleted_row'),
+      truncateArchive: await attempt('TRUNCATE archive.auth_event'),
+      callCapture: await attempt('SELECT archive.capture_delete()'),
+      replaceFunction: await attempt(
+        'CREATE OR REPLACE FUNCTION archive.audit_auth() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$',
+      ),
+      disableTrigger: await attempt('ALTER TABLE organization DISABLE TRIGGER archive_delete'),
+      disableAll: await attempt('ALTER TABLE session DISABLE TRIGGER ALL'),
+      dropTrigger: await attempt('DROP TRIGGER archive_delete ON project'),
+      replaceTrigger: await attempt(
+        'CREATE OR REPLACE TRIGGER audit_insert AFTER INSERT ON member FOR EACH ROW EXECUTE FUNCTION suppress_redundant_updates_trigger()',
+      ),
+      replicationRole: await attempt("SET session_replication_role = 'replica'"),
+      dropSchema: await attempt('DROP SCHEMA archive CASCADE'),
+    }
+    expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+    const { rows } = await query(
+      `SELECT has_schema_privilege('archive', 'USAGE') AS usage,
+              has_schema_privilege('archive', 'CREATE') AS create`,
+    )
+    expect(rows).toEqual([{ usage: false, create: false }])
+  })
+
+  it('may call only the reviewed functions, each an owner-owned definer with a pinned search_path', async () => {
+    const { rows } = await query(
+      `SELECT p.oid::regprocedure::text AS fn, p.prosecdef, p.provolatile, p.proconfig,
+              p.proowner = c.relowner AS owned_like_tables,
+              ARRAY(SELECT CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
+                           || ':' || a.privilege_type
+                           || CASE WHEN a.is_grantable THEN ' WITH GRANT OPTION' ELSE '' END
+                      FROM aclexplode(p.proacl) a WHERE a.grantee <> p.proowner ORDER BY 1) AS grants
+         FROM pg_proc p, pg_class c
+        WHERE c.oid = 'public.billing_subscription'::regclass
+          AND p.pronamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+          AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
+                            AND d.objid = p.oid AND d.deptype = 'e')
+          AND has_function_privilege(current_user, p.oid, 'EXECUTE')
+        ORDER BY 1`,
+    )
+    expect(rows.map((r) => r.fn)).toEqual(FUNCTIONS)
+    for (const r of rows) {
+      expect(r).toMatchObject({
+        prosecdef: true,
+        provolatile: 's',
+        proconfig: ['search_path=pg_catalog, pg_temp'],
+        owned_like_tables: true,
+        grants: ['app_runtime:EXECUTE'],
+      })
+    }
+  })
+
+  it("can't replace, reconfigure, re-own, drop or share the webhook's definer function (ADR-0040)", async () => {
+    const fn = 'public.billing_subscription_held_elsewhere(text, text)'
+    const refused = {
+      replace: await attempt(
+        `CREATE OR REPLACE FUNCTION ${fn} RETURNS boolean LANGUAGE sql AS 'SELECT false'`,
+      ),
+      invoker: await attempt(`ALTER FUNCTION ${fn} SECURITY INVOKER`),
+      searchPath: await attempt(`ALTER FUNCTION ${fn} SET search_path = pg_temp, public`),
+      owner: await attempt(`ALTER FUNCTION ${fn} OWNER TO app_runtime`),
+      rename: await attempt(`ALTER FUNCTION ${fn} RENAME TO not_allowed`),
+      drop: await attempt(`DROP FUNCTION ${fn}`),
+      overload: await attempt(
+        `CREATE FUNCTION public.billing_subscription_held_elsewhere(varchar, varchar) RETURNS boolean LANGUAGE sql AS 'SELECT false'`,
+      ),
+    }
+    expect(refused).toEqual(Object.fromEntries(Object.keys(refused).map((k) => [k, '42501'])))
+    // Without the grant option a GRANT only warns; checked inside its transaction, before rollback.
+    await query('BEGIN')
+    try {
+      await query(`GRANT EXECUTE ON FUNCTION ${fn} TO PUBLIC`)
+      const { rows } = await query(
+        `SELECT has_function_privilege('public', '${fn}', 'EXECUTE') AS public_execute`,
+      )
+      expect(rows).toEqual([{ public_execute: false }])
+    } finally {
+      await query('ROLLBACK')
+    }
+  })
+})
+
+describe('auth flows without DELETE on account', () => {
+  it('unlinking the only account is a clean 400 and keeps the account', async () => {
+    const user = await signUp()
+    const { rows } = await query(`SELECT id FROM account WHERE user_id = $1`, [user.userId])
+    const res = await authPost('/unlink-account', { accountId: rows[0]!.id }, undefined, user)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: 'FAILED_TO_UNLINK_LAST_ACCOUNT' })
+    expect((await query(`SELECT id FROM account WHERE user_id = $1`, [user.userId])).rows).toEqual(
+      rows,
+    )
   })
 })
