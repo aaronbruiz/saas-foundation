@@ -121,14 +121,19 @@ const noSplitLiterals = {
   message: 'Write string literals whole; split literals hide SQL from lint (ADR-0040).',
 }
 const noRawSql = {
-  selector:
-    "MemberExpression[object.name='sql']:matches([property.name='raw'], [property.value='raw']), VariableDeclarator[init.name='sql'] > ObjectPattern",
+  // Also through an alias: `sql` is only ever imported and used under its own name.
+  selector: [
+    "MemberExpression:matches([property.name='raw'], [property.value='raw']):matches([object.name='sql'], [object.property.name='sql'])",
+    "ImportSpecifier[imported.name='sql'][local.name!='sql']",
+    'ImportDeclaration[source.value=/^drizzle-orm/] > ImportNamespaceSpecifier',
+    "VariableDeclarator[init.name='sql']",
+  ].join(', '),
   message:
-    'No sql.raw: SQL built at runtime cannot be checked (ADR-0040). Use the sql tag; values become parameters.',
+    'No sql.raw and no alias of sql: SQL built at runtime cannot be checked (ADR-0040). Use the sql tag; values become parameters.',
 }
 const noDynamicQueryText = {
   selector:
-    "CallExpression[callee.property.name=/^(execute|query)$/]:not([arguments.0.type='TaggedTemplateExpression']):not([arguments.0.type='Literal'])",
+    "CallExpression[callee.property.name=/^(execute|query)$/]:not([arguments.0.type='Literal']):not([arguments.0.tag.name='sql'])",
   message:
     'Pass SQL as the sql tag or a string literal, never as a value built at runtime (ADR-0040).',
 }

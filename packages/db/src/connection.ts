@@ -19,12 +19,13 @@ type PgState = {
   _getActiveQuery?: () => unknown
 }
 
-// Outside the owner's control path no statement may set or reset the tenant context. Inside the
-// owner, only single plain statements run: nothing that ends, nests or reconfigures the transaction.
+// Defense in depth, not the boundary (ADR-0040): text checks can't parse PostgreSQL. Outside an
+// owner, statements that visibly set the tenant context are refused. Inside one, only a single
+// plain query or write of the kind Drizzle generates runs: no comments, no second statement, no
+// Unicode-escaped identifiers, no dollar quoting, no setters.
 const SETS_CONTEXT = /set_config|\b(set|reset)\b[\s\S]*\bapp\b["\s]*\./i
-const CONTROL =
-  /^(begin|start|commit|end|rollback|abort|savepoint|release|prepare|set|reset|discard|do|call|listen|unlisten|notify|lock|copy)\b/i
-const LEADING_NOISE = /^(\s+|--[^\n]*(\n|$)|\/\*[\s\S]*?\*\/)*/
+const PLAIN = /^\s*(select|insert|update|delete|with)\s/i
+const UNCHECKABLE = /\/\*|--|;|\bu&|\$(?!\d)|set_config|pg_settings/i
 
 const textOf = (config: unknown): string | undefined =>
   typeof config === 'string'
@@ -62,7 +63,7 @@ export class GuardedClient extends Client {
     if (!this.#owner) return
     if (current !== this.#owner)
       throw new TenantTransactionError('connection owned by a tenant transaction')
-    if (CONTROL.test(text.replace(LEADING_NOISE, '')) || text.includes(';')) {
+    if (!PLAIN.test(text) || UNCHECKABLE.test(text)) {
       throw new TenantTransactionError('statement refused inside a tenant transaction')
     }
   }
@@ -70,23 +71,15 @@ export class GuardedClient extends Client {
   /**
    * Runs `fn` as the owner of this connection, inside `BEGIN … COMMIT` (ROLLBACK on failure).
    * Claimed synchronously, before anything is awaited; refused unless the connection is idle with
-   * nothing queued, running or awaiting ReadyForQuery. Released after the transaction ends on every
-   * path; a connection whose transaction didn't end cleanly refuses everything afterwards.
+   * nothing queued, running or awaiting ReadyForQuery. The owner's admission closes the moment `fn`
+   * settles, before COMMIT or ROLLBACK is queued, so nothing it started can run after them; if its
+   * statements are still pending then, or the transaction isn't open and healthy, it rolls back
+   * (fail closed). Released only after the transaction has ended; a connection that isn't idle then
+   * refuses everything afterwards.
    */
   runOwned<T>(fn: () => Promise<T>): Promise<T> {
-    const pg = this as unknown as PgState
-    const busy =
-      this.#broken ||
-      this.#owner !== null ||
-      pg.pipeline !== false ||
-      pg.readyForQuery !== true ||
-      !Array.isArray(pg._queryQueue) ||
-      pg._queryQueue.length > 0 ||
-      typeof pg._getActiveQuery !== 'function' ||
-      pg._getActiveQuery() != null ||
-      this.getTransactionStatus() !== 'I'
-    // Also refused from inside any tenant transaction's async context, live or ended.
-    if (busy || owners.getStore() !== undefined) {
+    if (this.#busy() || owners.getStore() !== undefined) {
+      // Also refused from inside any tenant transaction's async context, live or ended.
       return Promise.reject(
         new TenantTransactionError(
           `a tenant transaction can't start here (status ${this.getTransactionStatus()})`,
@@ -100,9 +93,24 @@ export class GuardedClient extends Client {
       try {
         await this.#control('BEGIN')
         open = true
-        const result = await fn()
+        let result: T
+        try {
+          result = await fn()
+        } finally {
+          owner.live = false
+        }
+        const status = this.getTransactionStatus()
+        if (this.#pending() || status !== 'T') {
+          throw new TenantTransactionError(
+            this.#pending()
+              ? 'statements still running when the tenant transaction body finished'
+              : `tenant transaction no longer open (status ${status})`,
+          )
+        }
         open = false
-        await this.#control('COMMIT')
+        const done = (await this.#control('COMMIT')) as { command?: string }
+        if (done.command !== 'COMMIT')
+          throw new TenantTransactionError('tenant transaction did not commit')
         return result
       } catch (error) {
         if (open) await this.#control('ROLLBACK').catch(() => undefined)
@@ -110,9 +118,32 @@ export class GuardedClient extends Client {
       } finally {
         owner.live = false
         this.#owner = null
-        if (this.getTransactionStatus() !== 'I') this.#broken = true
+        if (this.#busy()) this.#broken = true
       }
     })
+  }
+
+  /** pg has a statement queued, running or awaiting ReadyForQuery (missing state counts as pending). */
+  #pending(): boolean {
+    const pg = this as unknown as PgState
+    return (
+      pg.readyForQuery !== true ||
+      !Array.isArray(pg._queryQueue) ||
+      pg._queryQueue.length > 0 ||
+      typeof pg._getActiveQuery !== 'function' ||
+      pg._getActiveQuery() != null
+    )
+  }
+
+  /** Not free for a new tenant transaction. */
+  #busy(): boolean {
+    return (
+      this.#broken ||
+      this.#owner !== null ||
+      (this as unknown as PgState).pipeline !== false ||
+      this.#pending() ||
+      this.getTransactionStatus() !== 'I'
+    )
   }
 
   /**

@@ -297,6 +297,110 @@ describe('a tenant transaction owns its connection until it ends', () => {
     })
   })
 
+  for (const outcome of ['commits', 'fails'] as const) {
+    it(`work resumed inside its body after the body ${outcome === 'commits' ? 'returned' : 'threw'} is refused, and never runs after ${outcome === 'commits' ? 'COMMIT' : 'ROLLBACK'}`, async () => {
+      const name = `late-${crypto.randomUUID()}`
+      await withDb(async (db) => {
+        let late!: Promise<unknown> // settles with the insert's error, or 'ran'
+        const done = inTenant(db, { orgId: orgA }, async (tx) => {
+          late = (async () => {
+            // Resumes in a later task: while COMMIT or ROLLBACK is in flight, or after it.
+            await new Promise((r) => setTimeout(r, 0))
+            return tx
+              .insert(schema.project)
+              .values({ organizationId: orgA, name, createdBy: creator })
+          })().then(
+            () => 'ran',
+            (e: unknown) => e,
+          )
+          if (outcome === 'fails') throw new Error('body failure')
+        })
+        if (outcome === 'commits') await done
+        else await expect(done).rejects.toThrow('body failure')
+        expect(isRefusal(await late)).toBe(true)
+        expect(status(db)).toBe('I')
+        expect(await names(db, orgA)).not.toContain(name)
+      })
+    })
+  }
+
+  it('a statement still running when the body returns fails the transaction closed: nothing commits', async () => {
+    const name = `pending-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      let pending!: Promise<unknown>
+      const done = inTenant(db, { orgId: orgA }, async (tx) => {
+        await tx.insert(schema.project).values({ organizationId: orgA, name, createdBy: creator })
+        pending = client(db).query('select pg_sleep(0.05)')
+      })
+      await expectRefused(done)
+      await pending
+      expect(status(db)).toBe('I')
+      expect(await names(db, orgA)).not.toContain(name)
+      expect(await projects(db, { orgId: orgA }).count()).toBeGreaterThan(0)
+    })
+  })
+
+  it('work admitted just before the body returns runs inside the transaction and fails it closed', async () => {
+    const name = `racing-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      let racing!: Promise<unknown>
+      const done = inTenant(db, { orgId: orgA }, async (tx) => {
+        const go = deferred()
+        racing = (async () => {
+          await go.promise
+          return tx
+            .insert(schema.project)
+            .values({ organizationId: orgA, name, createdBy: creator })
+        })()
+        go.resolve() // the insert is admitted in a microtask that runs before the body settles
+      })
+      await expectRefused(done)
+      await racing
+      expect(status(db)).toBe('I')
+      expect(await names(db, orgA)).not.toContain(name)
+    })
+  })
+
+  it('a COMMIT hidden in nested comments is refused, and the transaction still rolls back', async () => {
+    const name = `nested-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      const done = inTenant(db, { orgId: orgA }, async (tx) => {
+        await tx.insert(schema.project).values({ organizationId: orgA, name, createdBy: creator })
+        await expectRefused(async () => client(db).query('/* a /* b */ c */ COMMIT'))
+        throw new Error('body failure')
+      })
+      await expect(done).rejects.toThrow('body failure')
+      expect(await names(db, orgA)).not.toContain(name)
+    })
+  })
+
+  it('a tenant setter spelled with Unicode escapes is refused inside, and the tenant stays set', async () => {
+    await withDb(async (db) => {
+      const seen = await inTenant(db, { orgId: orgA }, async () => {
+        await expectRefused(async () =>
+          client(db).query(`select pg_catalog.U&"s\\0065t_config"('app.org_id', 'other', false)`),
+        )
+        await expectRefused(async () =>
+          // eslint-disable-next-line no-restricted-syntax -- the runtime guard is what's under test
+          client(db).query(`update pg_settings set setting = 'other' where name = 'app.org_id'`),
+        )
+        return context(db)
+      })
+      expect(seen).toBe(orgA)
+      expect(await context(db)).toBeNull()
+    })
+  })
+
+  it('a session-level tenant setting left on the connection by other code never reaches a tenant transaction', async () => {
+    await withDb(async (db) => {
+      // Outside a tenant transaction the text checks are best effort; this spelling passes them.
+      await client(db).query(`SET app /* x */ .org_id = 'forged'`)
+      expect(await context(db)).toBe('forged')
+      expect(await inTenant(db, { orgId: orgA }, () => context(db))).toBe(orgA)
+      expect(await inTenant(db, { orgId: orgB }, () => context(db))).toBe(orgB)
+    })
+  })
+
   it('a callback left behind by a finished tenant transaction cannot use the connection', async () => {
     await withDb(async (db) => {
       const later = deferred()
