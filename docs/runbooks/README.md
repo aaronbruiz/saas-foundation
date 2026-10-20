@@ -364,6 +364,9 @@ The app is meant to connect as `app_runtime`, which migration `0005_runtime_role
 - [x] **G1** role, grants and Hyperdrive login verified on a disposable preview-project branch: 2026-10-16 (ADR-0038 Notes; sanitized evidence in the owner's local `R06-artifacts/runtime-check-2026-10-16.txt`).
 - [ ] **G2** migration 0005 released to production: the identity check (below) on production shows `app_runtime` with its grants.
 - [ ] **G3** the app working through Hyperdrive as `app_runtime`: step 2's PR preview e2e run, or an isolated Worker smoke test the owner approved.
+      G3 also needs, recorded here from read-only queries on production (`app`, as `app_owner`), because the local schema gate's restricted migration role (`scripts/check-schema-sql.sh`) doesn't reproduce Neon's managed roles exactly:
+  - **Default privileges:** `select defaclrole::regrole, defaclnamespace::regnamespace, defaclobjtype, defaclacl from pg_default_acl;`. Neon's `cloud_admin` grants `neon_superuser` all rights on future tables and sequences in `public` (R06 inspection, 2026-10-15). Confirm no entry grants anything to `app_runtime` or PUBLIC, and that `app_runtime` isn't a member of `neon_superuser`, so a new table still needs its grant migration.
+  - **Effective roles:** `pg_roles` attributes and `pg_auth_members` memberships of `app_owner` and `app_runtime`. `app_runtime`: no superuser, BYPASSRLS, CREATEROLE, CREATEDB or REPLICATION, member of nothing. `app_owner`: as `check-schema-sql.sh`'s header describes (the gate mirrors it). Any difference: update the gate's role, or record why here.
 - [ ] **G4** the owner's explicit approval to change production credentials (date and who, here).
 
 **Secret handling.**

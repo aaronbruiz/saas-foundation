@@ -1,7 +1,10 @@
-// Proves scripts/check-schema-sql.sh's catalog query sees each kind of object a migration could
-// add outside the Drizzle schema, against real Postgres: one run applies every probe below to the
-// migrated database (SCHEMA_CHECK_PROBE) and the gate must report each. The comparator's own rules
-// are proven without a database by compare-catalogs.test.mjs. Needs the local Postgres container
+// Proves scripts/check-schema-sql.sh against real Postgres, with probes applied to the migrated
+// database as the restricted migration login (SCHEMA_CHECK_PROBE): what that role can do outside
+// the Drizzle schema and the registry, the gate reports (one run, PROBES); what only a superuser
+// can do (changing built-ins, creating in system schemas, switching to or granting a superuser) is
+// refused and leaves nothing behind (one run, REFUSED: each wrapped so that success fails the run,
+// and the gate must then pass). The comparator's own rules are proven without a database by
+// compare-catalogs.test.mjs. Needs the local Postgres container
 // (pnpm db:up), so it runs in `pnpm db:check` and ci.yml, not in `pnpm lint`.
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -58,40 +61,11 @@ const PROBES = [
   ],
   [
     `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO app_runtime`,
-    /only in the migrations: default_acl public\.app\.r/,
+    /only in the migrations: default_acl public\.schema_check_owner\.r/,
   ],
   [
-    `ALTER FUNCTION pg_catalog.pg_read_file(text) SECURITY DEFINER`,
-    /differs: function pg_catalog\.pg_read_file\(text\)/,
-  ],
-  [
-    `CREATE OPERATOR FAMILY pg_catalog.probe_family USING btree`,
-    /only in the migrations: opfamily pg_catalog\.probe_family USING btree/,
-  ],
-  [
-    `CREATE FUNCTION pg_catalog.probe_sys() RETURNS int LANGUAGE sql AS 'SELECT 1'`,
-    /only in the migrations: function pg_catalog\.probe_sys\(\)/,
-  ],
-  [
-    `CREATE TABLE information_schema.probe_sys (x int)`,
-    /only in the migrations: relation information_schema\.probe_sys/,
-  ],
-  [
-    `CREATE FOREIGN DATA WRAPPER probe_fdw`,
-    /only in the migrations: foreign_data_wrapper probe_fdw/,
-  ],
-  [
-    `CREATE SERVER probe_srv FOREIGN DATA WRAPPER probe_fdw`,
-    /only in the migrations: foreign_server probe_srv/,
-  ],
-  [
-    `CREATE USER MAPPING FOR app_runtime SERVER probe_srv`,
-    /only in the migrations: user_mapping probe_srv\.app_runtime/,
-  ],
-  [`CREATE CAST (text AS money) WITH INOUT`, /only in the migrations: cast text->money/],
-  [
-    `CREATE ACCESS METHOD probe_am TYPE TABLE HANDLER heap_tableam_handler`,
-    /only in the migrations: access_method probe_am/,
+    `CREATE TYPE public.probe_t AS ENUM ('a'); CREATE CAST (public.probe_t AS text) WITH INOUT`,
+    /only in the migrations: cast probe_t->text/,
   ],
   [`SELECT lo_create(0)`, /only in the migrations: large_objects count/],
   [
@@ -100,13 +74,48 @@ const PROBES = [
   ],
 ]
 
-test('every probed object outside the Drizzle schema and the registry fails the gate', () => {
-  const probe = join(dir, 'probe.sql')
-  writeFileSync(probe, PROBES.map(([sql]) => `${sql};`).join('\n'))
-  const r = spawnSync(script, {
-    encoding: 'utf8',
-    env: { ...process.env, SCHEMA_CHECK_PROBE: probe },
-  })
+// Superuser-only changes, including the built-in alterations a superuser login escaped the gate
+// with: each must fail with insufficient_privilege (42501) for the migration login.
+const REFUSED = [
+  `ALTER OPERATOR pg_catalog.= (integer, integer) SET (RESTRICT = NONE, JOIN = NONE)`,
+  `ALTER OPERATOR FAMILY pg_catalog.integer_ops USING btree DROP FUNCTION 1 (integer, smallint)`,
+  `ALTER TEXT SEARCH CONFIGURATION pg_catalog.english DROP MAPPING FOR asciiword`,
+  `ALTER FUNCTION pg_catalog.pg_read_file(text) SECURITY DEFINER`,
+  `CREATE OPERATOR FAMILY pg_catalog.probe_family USING btree`,
+  `CREATE FUNCTION pg_catalog.probe_sys() RETURNS int LANGUAGE sql AS 'SELECT 1'`,
+  `CREATE TABLE information_schema.probe_sys (x int)`,
+  `CREATE FOREIGN DATA WRAPPER probe_fdw`,
+  `CREATE CAST (text AS money) WITH INOUT`,
+  `CREATE ACCESS METHOD probe_am TYPE TABLE HANDLER heap_tableam_handler`,
+  `CREATE EXTENSION file_fdw`,
+  `SET ROLE app`,
+  `SET SESSION AUTHORIZATION app`,
+  `ALTER ROLE schema_check_owner SUPERUSER`,
+  `ALTER ROLE app_runtime SUPERUSER`,
+  `CREATE ROLE probe_super SUPERUSER`,
+  `GRANT app TO schema_check_owner`,
+  `GRANT pg_execute_server_program TO schema_check_owner`,
+]
+
+const gate = (sql) => {
+  const probe = join(dir, `probe-${Math.random().toString(36).slice(2)}.sql`)
+  writeFileSync(probe, sql)
+  return spawnSync(script, { encoding: 'utf8', env: { ...process.env, SCHEMA_CHECK_PROBE: probe } })
+}
+
+test('every probed object the migration login can create or change outside the registry fails the gate', () => {
+  const r = gate(PROBES.map(([sql]) => `${sql};`).join('\n'))
   assert.equal(r.status, 1, r.stderr)
   for (const [sql, report] of PROBES) assert.match(r.stderr, report, `not reported: ${sql}`)
+})
+
+test('superuser-only changes are refused to the migration login and leave the catalog unchanged', () => {
+  const wrapped = REFUSED.map(
+    (sql) =>
+      `DO $probe$ BEGIN EXECUTE $sql$${sql}$sql$; RAISE EXCEPTION 'probe allowed: %', $sql$${sql}$sql$; ` +
+      `EXCEPTION WHEN insufficient_privilege THEN NULL; END $probe$;`,
+  )
+  const r = gate(wrapped.join('\n'))
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /migrations build the schema/)
 })
