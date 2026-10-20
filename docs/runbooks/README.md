@@ -484,8 +484,63 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 
 **After a restore or a promote:**
 
-- A dump restored with `--no-acl` has no grants. Re-apply them as the owner, in this order: `psqlo < packages/db/drizzle/0005_runtime_role.sql`, `psqlo < packages/db/drizzle/0006_archive_audit.sql` and `psqlo < packages/db/drizzle/0007_hashed_verification.sql` (all idempotent; 0006 brings back the archive's `REVOKE`s), plus any later grant migration. Order matters: 0005 grants `DELETE` on `account` and 0006 installs the older `verification` audit; 0007 revokes and replaces them.
+- A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. Re-apply the grants as the owner, in this order (all idempotent):
+  1. `psqlo < packages/db/drizzle/0005_runtime_role.sql`
+  2. `psqlo < packages/db/drizzle/0006_archive_audit.sql`: brings back the archive's `REVOKE`s.
+  3. `psqlo < packages/db/drizzle/0007_hashed_verification.sql`
+  4. `psqlo < packages/db/drizzle/0008_billing_conflict_definer.sql`: brings back the webhook definer's `REVOKE` and its single grant (ADR-0040).
+  5. Any later grant migration, in order.
+
+  Order matters: 0005 grants `DELETE` on `account` and 0006 installs the older `verification` audit; 0007 revokes and replaces them.
+
+- Then run the **definer check** below as the owner (`psqlo <<'SQL'` … `SQL`). It must end with `NOTICE:  definer check ok`. Any error stops the recovery until it's fixed: a missing function, role or property is an error, never a pass.
 - Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
+
+**Definer check** (ADR-0040: `public.billing_subscription_held_elsewhere` is owner-owned, `SECURITY DEFINER` with a pinned `search_path`, and executable by `app_runtime` alone, without the grant option):
+
+```sql
+do $$
+declare
+  fn regprocedure := to_regprocedure('public.billing_subscription_held_elsewhere(text, text)');
+  p pg_proc;
+  grants text;
+begin
+  if fn is null then
+    raise exception 'definer check: public.billing_subscription_held_elsewhere(text, text) is missing';
+  end if;
+  if to_regrole('app_runtime') is null then
+    raise exception 'definer check: role app_runtime is missing';
+  end if;
+  select * into p from pg_proc where oid = fn;
+  if not p.prosecdef then
+    raise exception 'definer check: not SECURITY DEFINER';
+  end if;
+  if p.proconfig is distinct from array['search_path=pg_catalog, pg_temp'] then
+    raise exception 'definer check: search_path setting is %, expected pg_catalog, pg_temp', p.proconfig;
+  end if;
+  if p.proowner <> (select relowner from pg_class where oid = 'public.billing_subscription'::regclass) then
+    raise exception 'definer check: owned by %, not by the owner of public.billing_subscription', p.proowner::regrole;
+  end if;
+  if has_function_privilege('public', fn, 'execute') then
+    raise exception 'definer check: PUBLIC can execute it';
+  end if;
+  if not has_function_privilege('app_runtime', fn, 'execute')
+     or has_function_privilege('app_runtime', fn, 'execute with grant option') then
+    raise exception 'definer check: app_runtime must execute it, without the grant option';
+  end if;
+  -- Exactly one grant besides the owner's; a NULL ACL means PostgreSQL's default (PUBLIC executes).
+  select string_agg(case a.grantee when 0 then 'PUBLIC' else a.grantee::regrole::text end
+                    || ':' || a.privilege_type || case when a.is_grantable then ' with grant option' else '' end,
+                    ', ' order by a.grantee, a.privilege_type)
+    into grants
+    from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   where a.grantee <> p.proowner;
+  if grants is distinct from 'app_runtime:EXECUTE' then
+    raise exception 'definer check: grants are %, expected app_runtime:EXECUTE only', coalesce(grants, 'none');
+  end if;
+  raise notice 'definer check ok';
+end $$;
+```
 
 **A new table** gets no runtime privileges until a migration grants them. A `42501` error on a table that was just released means its grant migration is missing.
 
