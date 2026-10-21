@@ -18,8 +18,8 @@
     "db:migrate": "pnpm --filter @saas-foundation/db db:migrate",
     "db:check": "node scripts/check-migrations.mjs origin/main && SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh && node --test scripts/check-schema-sql.test.mjs",
     "lint": "eslint . && node --test scripts/lint-boundaries.test.mjs scripts/check-secrets.test.mjs scripts/check-migrations.test.mjs scripts/compare-catalogs.test.mjs",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "typecheck": "pnpm -r --parallel typecheck",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check && pnpm --filter app types:check",
     "plans:export": "node apps/app/scripts/export-plans.ts",
@@ -34,8 +34,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
     "neon": "8.3.5",
-    "prettier": "^3.9.10",
-    "prettier-plugin-astro": "^1.1.1",
+    "oxfmt": "0.74.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1"
   }
