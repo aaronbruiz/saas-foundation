@@ -2,7 +2,7 @@
 
 Status: Partially accepted (owner 2026-10-21) · Date: 2026-10-19
 
-Decisions 1–4 (phases 1–2: tenant transactions, `GuardedClient`, the webhook definer) are accepted, implemented and binding. Implemented means merged on `main`; they reach production with the next release (roadmap M1). Decisions 5–8 (policies, no `FORCE`, the role switch before enforcement, the round-trip measurement) remain proposed and are not approved implementation requirements. Decisions 7–8 were revised on 2026-10-21 for roadmap M2: production switches to `app_runtime` (ADR-0038 G3/G4) before any policy exists, and M4 decides whether RLS enforcement is adopted.
+Decisions 1–4 (phases 1–2: tenant transactions, `GuardedClient`, the webhook definer) are accepted, implemented and binding. Implemented means merged on `main`; they reach production with the next release (roadmap M1). Decisions 7–8 (the role switch before enforcement, the round-trip measurement before the switch) were revised for roadmap M2 and accepted by the owner on 2026-10-21: production switches to `app_runtime` (ADR-0038 G3/G4) before any policy exists. Decisions 5–6 (policies, no `FORCE`) and the phase 3 release they describe remain proposed and are not approved implementation requirements: M4 decides whether RLS enforcement is adopted.
 
 ## Context
 
