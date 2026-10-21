@@ -10,6 +10,8 @@ export {
 } from './billing.ts'
 export { createDb, type Db } from './client.ts'
 export { currentDatabase, ping } from './health.ts'
+// THROWAWAY probe (never merged): ADR-0040 preview checks.
+export { hyperdriveProbe, type ProbeResult } from './probe.ts'
 export {
   countMembers,
   findMembership,
