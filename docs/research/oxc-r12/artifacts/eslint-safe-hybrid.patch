@@ -1,0 +1,17 @@
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -7,6 +7,7 @@
+ import reactHooks from 'eslint-plugin-react-hooks'
+ import globals from 'globals'
+ import tseslint from 'typescript-eslint'
++import oxlint from 'eslint-plugin-oxlint'
+ 
+ const providerSdksOnlyInProviders = {
+   regex: '^@polar-sh/[^/]+(/.*)?$',
+@@ -395,5 +396,6 @@
+       ],
+     },
+   },
++  ...oxlint.buildFromOxlintConfigFile('./.oxlintrc.json'),
+   prettier,
+ ])

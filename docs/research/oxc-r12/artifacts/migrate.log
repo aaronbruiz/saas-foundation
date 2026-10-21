@@ -1,0 +1,19 @@
+
+✨ .oxlintrc.json created with 85 rules.
+
+   Skipped 5 rules:
+     - 2 Nursery
+       - no-undef
+       - no-useless-assignment
+     - 1 Not Implemented
+       - no-restricted-syntax
+     - 2 Unsupported
+       - no-dupe-args: Superseded by strict mode.
+       - no-octal: Superseded by strict mode.
+
+👉 Re-run with flags to include more:
+     npx @oxlint/migrate eslint.config.js --with-nursery
+
+🚀 Next:
+     npx oxlint .
+
