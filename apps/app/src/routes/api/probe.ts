@@ -5,7 +5,7 @@ import { probeResponse } from '../../server/probe'
 export const Route = createFileRoute('/api/probe')({
   server: {
     handlers: {
-      GET: ({ request }) => probeResponse(request.url),
+      GET: ({ request }) => probeResponse(request),
     },
   },
 })
