@@ -13,6 +13,7 @@ export const project = pgTable(
       .references(() => organization.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
+    driftProbe: text('drift_probe'), // THROWAWAY: schema change without a migration (gate must fail)
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id),
