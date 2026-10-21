@@ -68,10 +68,10 @@ jobs:
           # 2026-10-15). A rename counts at both paths, and a list that isn't complete (the files
           # API stops at 3,000) keeps the preview.
           changed="$(gh api "repos/$REPO/pulls/$pr" --jq '.changed_files')"
-          files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" \
-            --jq '.[] | [.filename, .previous_filename // empty] | join("\t")')"
-          if [ -n "$files" ] && [ "$(grep -c '' <<<"$files")" = "$changed" ] \
-            && ! grep -qvE '^(apps/(docs|site)/|docs/|[^/]+\.md$)' <<<"${files//$'\t'/$'\n'}"; then
+          # Only the default branch's classifier executes in this trusted workflow.
+          scope="$(gh api --paginate --slurp "repos/$REPO/pulls/$pr/files" | \
+            jq 'add' | node scripts/classify-changes.mjs --pr-files "$changed")"
+          if [ "$scope" = light ]; then
             echo "::notice title=Preview skipped::PR #$pr changes only the static sites or documentation"
             exit 0
           fi

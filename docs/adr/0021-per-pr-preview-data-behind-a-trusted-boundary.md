@@ -120,3 +120,7 @@ Revisit (Access ADR) before a preview gets anything non-synthetic or a real cred
 ## Notes (2026-10-15)
 
 **Documentation-only PRs get no app preview** (owner decision, to save Actions minutes). `preview.yml`'s `resolve` already skips a PR that changes only the static sites. It now also skips one whose files are all under `docs/**` or are root-level `*.md` (AGENTS.md, CLAUDE.md, README.md). The app doesn't build from either. Same rules as before: a rename counts at both paths, and an incomplete file list keeps the preview. Such a PR is still gated by CI's `check + test`.
+
+## Notes (2026-10-21)
+
+CI now classifies PRs before starting the app job or its Postgres service. Changes confined to `docs/**`, root `*.md`, `apps/docs/**` and `apps/site/**` run formatting instead of the app suite; the existing static-site workflows still validate the affected sites. This supersedes the 2026-10-15 note that documentation-only PRs run `check + test`. Mixed changes, empty or unreadable diffs, and pushes to `main` run the full suite. The `ci-ok` gate requires classification and the selected check to succeed. Preview uses the same allowlist, executing only the default branch's classifier and counting both rename paths; incomplete API file lists retain the preview.

@@ -13,9 +13,45 @@ permissions:
   contents: read
 
 jobs:
-  # One job: GitHub bills every job at least a whole minute, so the seconds-long bindings check runs
-  # here as its first steps instead of in its own job.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
+      # `previews` override. Run even when app checks are skipped.
+      - name: Bindings need an ADR
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-bindings.mjs HEAD^1
+      - id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          scope=full
+          if [ "$EVENT_NAME" = pull_request ]; then
+            scope="$(node scripts/classify-changes.mjs HEAD^1)"
+          fi
+          echo "scope=$scope" >>"$GITHUB_OUTPUT"
+
+  format:
+    needs: changes
+    if: needs.changes.outputs.scope == 'light'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+        with:
+          cache: pnpm
+      - run: pnpm format:check
+
   check:
+    needs: changes
+    if: needs.changes.outputs.scope == 'full'
     name: check + test
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -38,11 +74,6 @@ jobs:
         with:
           cache: pnpm
           install: false
-      # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
-      # `previews` override. Before the install, so it fails fast.
-      - name: Bindings need an ADR
-        if: github.event_name == 'pull_request'
-        run: node scripts/check-bindings.mjs HEAD^1
       - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
       - run: pnpm install --frozen-lockfile
       - name: Create test database (mirrors docker/postgres-init)
@@ -100,3 +131,24 @@ jobs:
           pnpm db:migrate
           pnpm --filter app exec playwright install --with-deps chromium
           pnpm test:e2e
+
+  ci-ok:
+    name: ci-ok
+    needs: [changes, format, check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES: ${{ needs.changes.result }}
+      SCOPE: ${{ needs.changes.outputs.scope }}
+      FORMAT: ${{ needs.format.result }}
+      CHECK: ${{ needs.check.result }}
+    steps:
+      - name: Selected checks passed
+        run: |
+          test "$CHANGES" = success
+          case "$SCOPE" in
+            light) test "$FORMAT" = success && test "$CHECK" = skipped ;;
+            full) test "$CHECK" = success && test "$FORMAT" = skipped ;;
+            *) exit 1 ;;
+          esac
