@@ -11,14 +11,16 @@
 // The base is compared with the working tree. A missing base commit is an error, never a pass; an
 // all-zero base (a newly created branch) skips check 1. scripts/check-schema-sql.sh checks that
 // the migrations' SQL builds the schema (needs Postgres). Run by ci.yml and `pnpm db:check`.
-// Usage: node scripts/check-migrations.mjs [<base-ref>] [--history-only]
+// Usage: node scripts/check-migrations.mjs [<base-ref> | --default-base] [--history-only]
+// --default-base (`pnpm db:check`): $BASE if set, else origin/main, else the merge base with
+// upstream/main (a product not pushed yet, docs/runbooks/start-new-product.md). With none of these
+// it fails and asks for BASE; it never skips check 1.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 const historyOnly = args.includes('--history-only')
-const base = args.find((a) => !a.startsWith('--'))
 
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8' })
 const root = git('rev-parse', '--show-toplevel').trim()
@@ -27,12 +29,39 @@ const JOURNAL = `${DIR}/meta/_journal.json`
 const AUTH_SCHEMA = 'packages/db/src/schema/auth.ts'
 const errors = []
 
+const isCommit = (ref) =>
+  spawnSync('git', ['cat-file', '-e', `${ref}^{commit}`], { cwd: root }).status === 0
+
+function defaultBase() {
+  if (process.env.BASE) return process.env.BASE
+  if (isCommit('origin/main')) return 'origin/main'
+  if (isCommit('upstream/main')) {
+    const r = spawnSync('git', ['merge-base', 'HEAD', 'upstream/main'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+    if (r.status === 0) {
+      const mergeBase = r.stdout.trim()
+      console.log(
+        `check-migrations: no origin/main; base is the merge base with upstream/main (${mergeBase})`,
+      )
+      return mergeBase
+    }
+  }
+  console.error(
+    'check-migrations: no base: neither origin/main nor upstream/main is here; set BASE=<commit> (the last commit whose migrations may have been applied anywhere)',
+  )
+  process.exit(1)
+}
+
+const base = args.includes('--default-base') ? defaultBase() : args.find((a) => !a.startsWith('--'))
+
 function checkHistory(base) {
   if (/^0+$/.test(base)) {
     console.log(`check-migrations: base ${base} is all zeros (new branch); history not checked`)
     return
   }
-  if (spawnSync('git', ['cat-file', '-e', `${base}^{commit}`], { cwd: root }).status !== 0) {
+  if (!isCommit(base)) {
     errors.push(`base ${base} is not a commit in this checkout (fetch it first)`)
     return
   }

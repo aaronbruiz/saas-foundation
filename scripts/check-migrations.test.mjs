@@ -227,3 +227,55 @@ test('an applied migration replaced by a symlink is refused', () => {
   symlinkSync('../outside.sql', sql)
   fails(check(cwd, base), /0001_volatile_iron_lad\.sql exists on .* changed type/)
 })
+
+// `pnpm db:check` (--default-base): $BASE, else origin/main, else the merge base with upstream/main.
+const checkDefault = (cwd, extra = {}) => {
+  git(cwd, 'add', '-A')
+  const env = { ...process.env }
+  delete env.BASE
+  return spawnSync('node', [script, '--default-base', '--history-only'], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...env, ...extra },
+  })
+}
+const editApplied = (cwd) => {
+  const sql = join(cwd, DIR, '0004_giant_silver_surfer.sql')
+  writeFileSync(sql, `${readFileSync(sql, 'utf8')}\nCREATE INDEX "x" ON "project" ("name");`)
+}
+
+test('the default base in a copy without remotes fails and asks for BASE', () => {
+  const { cwd } = repo()
+  fails(checkDefault(cwd), /no base: neither origin\/main nor upstream\/main is here; set BASE=/)
+})
+
+test('the default base uses BASE when it is set', () => {
+  const { cwd, base } = repo()
+  addMigration(cwd)
+  passes(checkDefault(cwd, { BASE: base }))
+  editApplied(cwd)
+  fails(
+    checkDefault(cwd, { BASE: base }),
+    /0004_giant_silver_surfer\.sql exists on .* was modified/,
+  )
+})
+
+test('the default base is origin/main when it exists', () => {
+  const { cwd, base } = repo()
+  git(cwd, 'update-ref', 'refs/remotes/origin/main', base)
+  addMigration(cwd)
+  passes(checkDefault(cwd))
+  editApplied(cwd)
+  fails(checkDefault(cwd), /0004_giant_silver_surfer\.sql exists on origin\/main and was modified/)
+})
+
+test('without origin/main the default base is the merge base with upstream/main', () => {
+  const { cwd, base } = repo()
+  git(cwd, 'update-ref', 'refs/remotes/upstream/main', base)
+  addMigration(cwd)
+  const r = checkDefault(cwd)
+  passes(r)
+  assert.match(r.stdout, new RegExp(`merge base with upstream/main \\(${base}\\)`))
+  editApplied(cwd)
+  fails(checkDefault(cwd), /0004_giant_silver_surfer\.sql exists on .* was modified/)
+})
