@@ -37,7 +37,7 @@ Every value below names a foundation resource. Replace each with the product's o
 | `README.md`, `docs/architecture/README.md`                                              | product name and purpose                                                                                                                                                |
 | `docs/runbooks/README.md`                                                               | resource names and dated rollout notes (they describe the foundation's production)                                                                                      |
 
-Then `pnpm --filter app cf-typegen`. Search for leftovers (skips the `@saas-foundation/*` imports): `git grep -n -P -e '(?<!@)saas-foundation(?!/)' -e aaronlabr -- ':!pnpm-lock.yaml' ':!docs/adr'`. Test fixtures that only use the names as sample strings can stay. The ADRs keep the foundation's ids as history (step 6).
+Then `pnpm --filter app cf-typegen`. Search for leftovers (skips the `@saas-foundation/*` imports): `git grep -n -P -e '(?<!@)saas-foundation(?!/)' -e aaronlabr -- ':!pnpm-lock.yaml' ':!docs/adr'`. Test fixtures that only use the names as sample strings can stay. The ADRs keep the foundation's ids as history (step 7).
 
 ## 3. Provision independent infrastructure (owner)
 
@@ -66,12 +66,29 @@ Repository settings (ADR-0029, ADR-0030): squash merge only, with the PR title a
 
 ## 5. Verify, including tenant isolation
 
-1. Local setup as in `README.md`: `pnpm install --frozen-lockfile`; `cp apps/app/.dev.vars.example apps/app/.dev.vars` and set a new `BETTER_AUTH_SECRET` (`openssl rand -base64 32`; the Turnstile test keys are in runbook "Turnstile"); `pnpm db:up`, `pnpm db:migrate`; `pnpm --filter app exec playwright install --with-deps chromium`. Then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass.
+1. Local setup as in `README.md`: `pnpm install --frozen-lockfile`; `cp apps/app/.dev.vars.example apps/app/.dev.vars` and set a new `BETTER_AUTH_SECRET` (`openssl rand -base64 32`; the Turnstile test keys are in runbook "Turnstile"); `pnpm db:up`, `pnpm db:migrate`; `pnpm --filter app exec playwright install --with-deps chromium`. Then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass. If tests time out, see `README.md` "Troubleshooting".
 2. Tenant isolation is covered by `apps/app/test/tenancy.test.ts`, `database-isolation.test.ts` and `roles.test.ts`, plus the E2E slice. They must pass unchanged. Every tenant-owned table the product adds gets cross-tenant tests for URL **and** server-function input (AGENTS.md recipe "Add a tenant-owned table").
 3. Open a first PR: CI green, the preview deploys from its own Neon branch, and preview E2E passes.
 4. Production: follow runbook "First production deploy" from step 0 with the product's values. The data gate (ADR-0014) and the launch milestones apply to each product separately.
 
-## 6. Record product decisions
+## 6. Build the first feature
+
+The projects feature is the complete pattern for a tenant-owned resource; copy its shape rather than starting from scratch:
+
+| Layer                     | Projects                                                                              | Shows                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Table                     | `packages/db/src/schema/projects.ts`                                                  | `organization_id`, FK, index leading with it                                                           |
+| Repository                | `projects()` in `packages/db/src/tenancy.ts`                                          | every statement in `inTenant`, filtered by `ctx.orgId`; `createWithinLimit` (limit under the row lock) |
+| Input schemas             | `packages/contracts/src/index.ts` (`ProjectRef`, `CreateProjectInput`, …)             | `tenant: TenantSlug`, never `organizationId`                                                           |
+| Service, server functions | `apps/app/src/modules/projects/{service,functions}.ts`                                | `getTenantContext`, 404 before `authorize`, capabilities                                               |
+| Pages                     | `apps/app/src/routes/t.$tenant.projects.index.tsx`, `t.$tenant.projects.$id.tsx`      | loaders, `method="post"` forms disabled until hydrated                                                 |
+| Tests                     | `apps/app/test/tenancy.test.ts`, `roles.test.ts`, `billing.test.ts` ("plan limits …") | cross-tenant by URL and by input, one case per role, the cap                                           |
+
+Then follow the AGENTS.md recipes in order: "Add a tenant-owned table" (including child tables), "Add a tenant-scoped server function", and "Add a plan limit or feature" if it has one. The checks name most missed steps: `pnpm db:check` prints the `sql-only-objects.tsv` line, the catalog tests fail without the grant or the archive trigger, `pnpm check` fails on a stale `plans.json` (`pnpm plans:export`) or route tree (`pnpm build`).
+
+E2E: a local run signs in from one IP, and the login rate limit (5 sign-ins and 5 sign-ups a minute per IP, ADR-0005, no test exemption) is nearly used up by the existing suite. A new test that signs in can make the full run fail with "Too many requests". Check it alone (`pnpm test:e2e -g "<test name>"`; each local run starts with a cleared counter), and reuse a signed-in page within a test instead of signing in again.
+
+## 7. Record product decisions
 
 - Foundation ADRs stay as they are: they're the product's history too. A product decision that differs gets a **new ADR in the product repo** naming the one it amends or supersedes (ADR README convention). Don't edit the inherited ones except to mark them superseded, as the ADR README allows.
 - First product ADRs, typically: what the product is and its non-goals; any foundation default it changes (plan, region, sign-up mode); any new deployable or runtime (ADR-0027 criteria and checklist).

@@ -1,6 +1,8 @@
 # ADR-0040: Tenant context per repository call and row-level security on tenant tables
 
-Status: Proposed · Date: 2026-10-19
+Status: Partially accepted (owner 2026-10-21) · Date: 2026-10-19
+
+Decisions 1–4 (phases 1–2: tenant transactions, `GuardedClient`, the webhook definer) are accepted, implemented and binding. Implemented means merged on `main`; they reach production with the next release (roadmap M1). Decisions 5–8 (policies, no `FORCE`, enforcement at G3/G4, the round-trip measurement) remain proposed and are not approved implementation requirements: roadmap M2 revisits decisions 7–8, and M4 decides whether RLS enforcement is adopted.
 
 ## Context
 
