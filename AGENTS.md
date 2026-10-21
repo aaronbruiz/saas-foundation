@@ -34,7 +34,7 @@ pnpm format        # apply Oxfmt
 pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
-pnpm db:check      # migrations: applied ones unchanged vs origin/main, no collision, none missing, schema/auth.ts current, SQL builds the schema plus the registered SQL-only objects, migrated by a non-superuser login mirroring `app_owner` (CI runs it)
+pnpm db:check      # migrations: applied ones unchanged vs $BASE, else origin/main, else the upstream/main merge base while no migration postdates it (never skipped; otherwise set `BASE`), no collision, none missing, schema/auth.ts current, SQL builds the schema plus the registered SQL-only objects, migrated by a non-superuser login mirroring `app_owner` (CI runs it)
 pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better Auth config, then db:generate
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
