@@ -85,7 +85,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
 - **Why:** M1 deploys the role, but it protects nothing until production uses it. This switch is worth doing without RLS: least privilege stands on its own.
 - **Before it starts:**
   - M1 done.
-  - ADR-0040 decisions 7–8 and its staged rollout table, plus the runbook "Runtime role (ADR-0038)", revised in an owner-approved docs PR. Today they tie the G3/G4 switch to RLS enforcement. The revision separates the two: the role switch first, policies later.
+  - ADR-0040 decisions 7–8 and its staged rollout table, plus the runbook "Runtime role (ADR-0038)", revised so the role switch comes first and policies later (done: owner-approved docs PR, 2026-10-21).
   - ADR-0040 check (d), preview latency, recorded.
 - **Done when:**
   - ADR-0038 G3 passes: effective privileges through Hyperdrive, plus the Neon default-ACL and effective-role checks in the runbook.
@@ -119,9 +119,9 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
 
   The existing tenant tables (`project`, `billing_subscription`) and the M3 pilot as defined don't trigger M4 by themselves. Allowlisted users still get tenant isolation from the application layer: AGENTS.md invariants 1–5 and the cross-tenant tests stay mandatory for every change, whether or not RLS is enforced.
 
-- **Outcome:** a recorded decision to enforce RLS (ADR-0040 phases 3–5), or not to yet.
+- **Outcome:** a recorded decision to enforce RLS (ADR-0040 phases 3 and 5; phase 4 is M2's switch), or not to yet.
 - **Before it starts:** M2 done, and ADR-0040 phase 1 live and stable in production.
-- **Done when:** ADR-0040's enforcement acceptance criteria 1–4 are met and recorded, including the phase 3 gate (a test that `relforcerowsecurity` is false, and the conflict behaviour tested as `app_runtime` with the real policies). Or the decision not to proceed is recorded, with its reason.
+- **Done when:** ADR-0040's acceptance criteria 1–4 for the phase 3 release are met and recorded, then its post-release production checks, including the phase 3 gate (a test that `relforcerowsecurity` is false, and the conflict behaviour tested as `app_runtime` with the real policies). Or the decision not to proceed is recorded, with its reason.
 - **Deferred:** any simplification of `GuardedClient`. It's considered only with evidence of its cost and an alternative that keeps its guarantees: nesting, concurrent use of one connection, and statements escaping a transaction.
 
 ### M5: Hardening backlog (deferred)
