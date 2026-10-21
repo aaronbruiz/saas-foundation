@@ -69,7 +69,7 @@ What that second actor can do with decision 2's grants (verified on a fresh loca
 ## Consequences
 
 - **Adding a table** (AGENTS.md recipe) now also means granting its privileges to `app_runtime` in a migration (`drizzle-kit generate --custom`) and adding it to `GRANTS` in `test/database-role.test.ts`.
-- **Restores:** dumps are restored with `--no-acl` (runbook), so the grants don't come back with the data. After a restore, re-apply `packages/db/drizzle/0005_runtime_role.sql` and later grant migrations (`0007_hashed_verification.sql` revokes `DELETE` on `account` again) with `psql -v ON_ERROR_STOP=1 -f` (idempotent), then give the role its login on the new project.
+- **Restores:** dumps are restored with `--no-acl` (runbook), so the grants don't come back with the data. After a restore, re-apply `packages/db/drizzle/0005_runtime_role.sql` and later grant migrations (`0007_hashed_verification.sql` revokes `DELETE` on `account` again) with `psql -v ON_ERROR_STOP=1 -f` (idempotent), then give the role its login on the new project. A database older than the code version is first brought up with that version's migrator, so the migration journal stays current (runbook "After a restore or a promote", procedure (b)).
 - **Local setup:** a fresh docker volume creates the role with its local login. An existing volume gets it the first time `pnpm test` or `pnpm test:e2e` runs; `pnpm dev` alone needs `pnpm db:migrate` and one test run first.
 - **Rollback:** point `saas-foundation-prod` back at `app_owner` through the Hyperdrive API (runbook `hd_point app_owner`, which also restarts the pool; no credential in argv). Optionally remove `app_runtime`'s login. The role and grants can stay; removing them later is a contract migration.
 
