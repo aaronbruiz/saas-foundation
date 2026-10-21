@@ -13,52 +13,72 @@ permissions:
   contents: read
 
 jobs:
-  # Keep one job: on a private repo (e.g. a copy of this template) GitHub bills every job at least
-  # a whole minute, so the cheap checks run here instead of in their own jobs.
+  # ADR-0021 Notes 2026-10-21: a PR confined to documentation and the static sites skips the app's
+  # database, tests, build and E2E. `app` is true when any changed file is outside those paths; the
+  # action splits a rename into its added and deleted paths, so both count. Pushes to main skip this
+  # job and run everything.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            app:
+              - '**'
+              - '!docs/**'
+              - '!apps/docs/**'
+              - '!apps/site/**'
+              - '!*.md'
+
+  # GitHub bills every job at least a whole minute on a private repo (e.g. a copy of this template),
+  # so the seconds-long bindings check runs here as its first steps instead of in its own job.
   check:
     name: check + test
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      # Anything but an explicit 'false' (a push, a missing output) runs the app suite.
+      APP: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app != 'false' }}
+    services:
+      postgres:
+        # An empty image doesn't start the service.
+        image: ${{ (github.event_name != 'pull_request' || needs.changes.outputs.app != 'false') && 'postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24' || '' }}
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings and migrations
+      - uses: ./.github/actions/setup
+        with:
+          cache: pnpm
+          install: false
       # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
       # `previews` override. Before the install, so it fails fast.
       - name: Bindings need an ADR
         if: github.event_name == 'pull_request'
         run: node scripts/check-bindings.mjs HEAD^1
       - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
-      - id: scope
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          scope=full
-          if [ "$EVENT_NAME" = pull_request ]; then
-            scope="$(node scripts/classify-changes.mjs HEAD^1)"
-          fi
-          echo "scope=$scope" >>"$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup
-        with:
-          cache: pnpm
-          install: false
       - run: pnpm install --frozen-lockfile
-      - name: Start test database
-        if: steps.scope.outputs.scope != 'light'
-        run: |
-          docker run --detach --name ci-postgres --publish 127.0.0.1:5432:5432 \
-            --env POSTGRES_USER=app --env POSTGRES_PASSWORD=app --env POSTGRES_DB=app \
-            postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
-          for attempt in {1..30}; do
-            if docker exec ci-postgres pg_isready -h 127.0.0.1 -U app -d app; then
-              docker exec ci-postgres psql -h 127.0.0.1 -U app -d app -v ON_ERROR_STOP=1 \
-                -c "CREATE DATABASE app_test OWNER app"
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs ci-postgres
-          exit 1
+      - name: Create test database (mirrors docker/postgres-init)
+        if: env.APP == 'true'
+        run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
       # Every PR: lint, formatting, typecheck (astro check for the static sites) and the plans/Worker
       # types drift checks need no database, and nothing else runs them on a static-site PR.
       - run: pnpm check
@@ -67,10 +87,10 @@ jobs:
       # schema. Base: the PR's merge parent, or the commit a push to main replaced (fetched if the
       # depth-2 checkout lacks it).
       - name: Migrations are immutable and match the schema
-        if: steps.scope.outputs.scope != 'light'
+        if: env.APP == 'true'
         env:
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
-          POSTGRES_CONTAINER: ci-postgres
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           if [[ ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             git fetch --no-tags --depth=1 origin "$BASE"
@@ -79,25 +99,25 @@ jobs:
           SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh
           node --test scripts/check-schema-sql.test.mjs
       - run: pnpm test
-        if: steps.scope.outputs.scope != 'light'
+        if: env.APP == 'true'
       # dump.sh against a disposable Postgres and a local S3 stand-in, with the runner's AWS CLI
       # (runbook "Backups by hand"). Not in package.json: that path also triggers docs/site deploys.
       - run: node --test scripts/backup/dump.test.mjs
-        if: steps.scope.outputs.scope != 'light'
+        if: env.APP == 'true'
       - name: Build and scan the client bundle for secrets
-        if: steps.scope.outputs.scope != 'light'
+        if: env.APP == 'true'
         run: pnpm build && scripts/scan-client-bundle.sh
       # ADR-0021: this job runs PR code and holds no secrets. For same-repo PRs it hands the build
       # to preview.yml (workflow_run, default-branch code), which treats it strictly as data.
       - name: Assemble the preview artifact
-        if: steps.scope.outputs.scope != 'light' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: env.APP == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           out="$RUNNER_TEMP/preview-artifact"
           mkdir -p "$out/apps/app" "$out/packages/db"
           rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/app/dist "$out/apps/app/"
           rsync -a packages/db/drizzle "$out/packages/db/"
       - name: Upload the preview artifact
-        if: steps.scope.outputs.scope != 'light' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: env.APP == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: preview-artifact
@@ -109,7 +129,7 @@ jobs:
       # the default branch's suite against the deployed preview). After the upload, so these local
       # dev vars can never reach the artifact.
       - name: E2E (local dev server)
-        if: steps.scope.outputs.scope != 'light'
+        if: env.APP == 'true'
         run: |
           { echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"; echo 'BETTER_AUTH_URL=http://localhost:3000'
             echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'
