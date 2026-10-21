@@ -10,13 +10,7 @@
   --accent: #4338ca;
   --accent-text: #ffffff;
   --radius: 12px;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.6;
 }
 

@@ -53,6 +53,12 @@ export const billingWebhookEvent = pgTable(
 
 /** Internal, provider-neutral subscription status (ADR-0009). */
 export type SubscriptionStatus =
-  'active' | 'trialing' | 'past_due' | 'unpaid' | 'paused' | 'incomplete' | 'canceled'
+  | 'active'
+  | 'trialing'
+  | 'past_due'
+  | 'unpaid'
+  | 'paused'
+  | 'incomplete'
+  | 'canceled'
 
 export type BillingSubscription = typeof billingSubscription.$inferSelect

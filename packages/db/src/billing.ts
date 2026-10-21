@@ -34,7 +34,12 @@ export type BillingEvent = {
 }
 
 export type BillingEventOutcome =
-  'duplicate' | 'ignored' | 'unlinked' | 'conflict' | 'stale' | 'applied'
+  | 'duplicate'
+  | 'ignored'
+  | 'unlinked'
+  | 'conflict'
+  | 'stale'
+  | 'applied'
 
 const TERMINAL: SubscriptionStatus[] = ['canceled']
 

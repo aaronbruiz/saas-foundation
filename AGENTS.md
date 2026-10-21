@@ -28,9 +28,9 @@ The import boundaries above are enforced by `eslint.config.js`, along with raw d
 ```
 pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
 pnpm dev           # local Worker on http://localhost:3000 (strict port); DB via Hyperdrive localConnectionString
-pnpm check         # lint (ESLint v10) + format:check (Prettier) + typecheck (tsc --noEmit) + plans and Worker types drift checks
+pnpm check         # lint (ESLint v10) + format:check (Oxfmt) + typecheck (tsc --noEmit) + plans and Worker types drift checks
 pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
-pnpm format        # apply Prettier
+pnpm format        # apply Oxfmt
 pnpm build         # production build
 pnpm db:generate   # drizzle-kit: schema → new migration SQL (review it)
 pnpm db:migrate    # apply migrations (DATABASE_URL, default local `app`)
@@ -46,7 +46,7 @@ scripts/sites/*.sh   # static sites (SITE=docs|site): build checks, PR preview, 
 scripts/release/*.sh   # production release (preflight, restore point, migrate, 0% candidate, promote) and rollback steps; run by CI (release.yml, rollback.yml; ADR-0029)
 ```
 
-Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs and site: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group, with `@astrojs/*` and `prettier-plugin-astro`); `astro check` is their typecheck. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
+Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs and site: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group, with `@astrojs/*`); `astro check` is their typecheck. Oxfmt (the formatter, ADR-0006) pinned exactly while it's 0.x (own Dependabot group); `apps/app/scripts/export-plans.ts` formats `plans.json` through its API with `.oxfmtrc.json`'s options. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
 
 **Port 3000 busy:** `pnpm dev` uses `--strictPort` and fails if port 3000 is taken (auth origins depend on it). Don't switch ports and don't kill processes yourself. Stop and tell the user that port 3000 is in use, and recommend they free it with:
 
