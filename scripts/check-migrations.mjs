@@ -11,14 +11,17 @@
 // The base is compared with the working tree. A missing base commit is an error, never a pass; an
 // all-zero base (a newly created branch) skips check 1. scripts/check-schema-sql.sh checks that
 // the migrations' SQL builds the schema (needs Postgres). Run by ci.yml and `pnpm db:check`.
-// Usage: node scripts/check-migrations.mjs [<base-ref>] [--history-only]
+// Usage: node scripts/check-migrations.mjs [<base-ref> | --default-base] [--history-only]
+// --default-base (`pnpm db:check`): $BASE if set (never empty or all zeros), else origin/main, else
+// the merge base with upstream/main (a product not pushed yet, docs/runbooks/start-new-product.md),
+// but only while every migration here already exists there: git can't tell whether a migration
+// added after it was applied somewhere. Otherwise it fails and asks for BASE; it never skips check 1.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 const historyOnly = args.includes('--history-only')
-const base = args.find((a) => !a.startsWith('--'))
 
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8' })
 const root = git('rev-parse', '--show-toplevel').trim()
@@ -27,12 +30,56 @@ const JOURNAL = `${DIR}/meta/_journal.json`
 const AUTH_SCHEMA = 'packages/db/src/schema/auth.ts'
 const errors = []
 
+const isCommit = (ref) =>
+  spawnSync('git', ['cat-file', '-e', `${ref}^{commit}`], { cwd: root }).status === 0
+
+function noBase(why) {
+  console.error(
+    `check-migrations: no base: ${why}; set BASE=<commit> (the last commit whose migrations may have been applied anywhere)`,
+  )
+  process.exit(1)
+}
+
+const journalTags = (text) => JSON.parse(text).entries.map((e) => e.tag)
+
+function defaultBase() {
+  if (process.env.BASE !== undefined) {
+    if (process.env.BASE === '' || /^0+$/.test(process.env.BASE))
+      noBase(`BASE is ${process.env.BASE ? 'all zeros' : 'empty'}`)
+    return process.env.BASE
+  }
+  if (isCommit('origin/main')) return 'origin/main'
+  if (!isCommit('upstream/main')) noBase('neither origin/main nor upstream/main is here')
+  const r = spawnSync('git', ['merge-base', 'HEAD', 'upstream/main'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+  if (r.status !== 0) noBase('HEAD shares no history with upstream/main')
+  const mergeBase = r.stdout.trim()
+  const atBase = spawnSync('git', ['show', `${mergeBase}:${JOURNAL}`], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+  const known = new Set(atBase.status === 0 ? journalTags(atBase.stdout) : [])
+  const added = journalTags(readFileSync(join(root, JOURNAL), 'utf8')).filter((t) => !known.has(t))
+  if (added.length)
+    noBase(
+      `no origin/main, and ${added.join(', ')} postdate the merge base with upstream/main, so it can't tell whether they were applied`,
+    )
+  console.log(
+    `check-migrations: no origin/main; base is the merge base with upstream/main (${mergeBase})`,
+  )
+  return mergeBase
+}
+
+const base = args.includes('--default-base') ? defaultBase() : args.find((a) => !a.startsWith('--'))
+
 function checkHistory(base) {
   if (/^0+$/.test(base)) {
     console.log(`check-migrations: base ${base} is all zeros (new branch); history not checked`)
     return
   }
-  if (spawnSync('git', ['cat-file', '-e', `${base}^{commit}`], { cwd: root }).status !== 0) {
+  if (!isCommit(base)) {
     errors.push(`base ${base} is not a commit in this checkout (fetch it first)`)
     return
   }

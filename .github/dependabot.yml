@@ -27,7 +27,11 @@ updates:
       # break) and Astro integrations get their own PR. Dev dependencies of apps/docs and apps/site,
       # so titled `chore(deps-dev)` (no app release).
       astro:
-        patterns: [astro, '@astrojs/*', prettier-plugin-astro]
+        patterns: [astro, '@astrojs/*']
+      # ADR-0006: Oxfmt is 0.x and pinned exactly; a bump can change formatting, so it gets its own
+      # PR (`chore(deps-dev)`) whose reformatting diff is reviewed.
+      oxfmt:
+        patterns: [oxfmt]
       # Every other minor and patch update, one PR per dependency type so each title is either
       # `fix(deps)` or `chore(deps-dev)`; majors stay separate PRs.
       production-minor-and-patch:

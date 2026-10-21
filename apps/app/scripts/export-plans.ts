@@ -7,7 +7,7 @@
 // retired keeps its subscribers but isn't sold, so it isn't shown).
 // Usage: node apps/app/scripts/export-plans.ts [--check]
 import { readFileSync, writeFileSync } from 'node:fs'
-import { format, resolveConfig } from 'prettier'
+import { format } from 'oxfmt'
 import { CHECKOUT, DEFAULT_PLAN, PLANS, purchasablePrices } from '../src/modules/billing/policy.ts'
 
 const target = new URL('../../site/src/data/plans.json', import.meta.url)
@@ -34,11 +34,17 @@ const exported = {
     .filter((plan) => plan.key === DEFAULT_PLAN || plan.prices.length > 0),
 }
 
-const path = target.pathname
-const text = await format(JSON.stringify(exported), {
-  ...(await resolveConfig(path)),
-  filepath: path,
-})
+// Oxfmt's API doesn't read config files: pass the repository's options without the file selection,
+// so the output matches what `oxfmt --check` (in `pnpm check`) expects.
+const options = JSON.parse(readFileSync(new URL('../../../.oxfmtrc.json', import.meta.url), 'utf8'))
+delete options.$schema
+delete options.ignorePatterns
+const formatted = await format(target.pathname, JSON.stringify(exported), options)
+if (formatted.errors.length > 0) {
+  console.error('[plans] oxfmt failed:', formatted.errors.map((e) => e.message).join('; '))
+  process.exit(1)
+}
+const text = formatted.code
 if (check) {
   let committed = ''
   try {

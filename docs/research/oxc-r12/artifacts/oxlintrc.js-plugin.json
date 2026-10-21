@@ -1,0 +1,1 @@
+{ "jsPlugins": ["./spike-plugin.mjs"], "rules": { "spike/no-raw-sql": "error" } }
