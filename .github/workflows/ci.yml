@@ -13,7 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  # Keep one job: private-repo billing rounds each job up to a whole minute.
+  # Keep one job: on a private repo (e.g. a copy of this template) GitHub bills every job at least
+  # a whole minute, so the cheap checks run here instead of in their own jobs.
   check:
     name: check + test
     runs-on: ubuntu-latest
@@ -58,11 +59,9 @@ jobs:
           done
           docker logs ci-postgres
           exit 1
-      - name: Check documentation formatting
-        if: steps.scope.outputs.scope == 'light'
-        run: pnpm format:check
+      # Every PR: lint, formatting, typecheck (astro check for the static sites) and the plans/Worker
+      # types drift checks need no database, and nothing else runs them on a static-site PR.
       - run: pnpm check
-        if: steps.scope.outputs.scope != 'light'
       # Invariant 10: applied migrations stay untouched, the history has no collision, no schema
       # change lacks its migration, schema/auth.ts is current, and the migrations' SQL builds the
       # schema. Base: the PR's merge parent, or the commit a push to main replaced (fetched if the

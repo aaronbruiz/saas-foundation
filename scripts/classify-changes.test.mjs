@@ -80,6 +80,7 @@ test('CI keeps one job and gates every expensive step', () => {
     'id: scope',
     'uses: ./.github/actions/setup',
     'run: pnpm install --frozen-lockfile',
+    'run: pnpm check',
   ]
   for (const step of steps) {
     if (always.some((prefix) => step.startsWith(prefix))) continue
