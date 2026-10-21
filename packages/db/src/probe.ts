@@ -33,33 +33,34 @@ export async function hyperdriveProbe(connectionString: string): Promise<ProbeRe
   const run = crypto.randomUUID().slice(0, 8)
   const [orgA, orgB, creator] = [`probe-a-${run}`, `probe-b-${run}`, 'probe-user']
 
-  const fixtures = await open()
+  // Cleanup covers fixture setup too: organizations committed before a failed project insert go.
   try {
-    const now = new Date()
-    await rawDb(fixtures.db)
-      .insert(user)
-      .values({
-        id: creator,
-        name: 'probe',
-        email: `${creator}@probe.invalid`,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing()
-    await rawDb(fixtures.db)
-      .insert(organization)
-      .values([orgA, orgB].map((id) => ({ id, name: id, slug: id, createdAt: now })))
-    for (const orgId of [orgA, orgB])
-      await inTenant(fixtures.db, { orgId }, (tx) =>
-        tx
-          .insert(project)
-          .values({ organizationId: orgId, name: `p-${orgId}`, createdBy: creator }),
-      )
-  } finally {
-    await fixtures.close()
-  }
+    const fixtures = await open()
+    try {
+      const now = new Date()
+      await rawDb(fixtures.db)
+        .insert(user)
+        .values({
+          id: creator,
+          name: 'probe',
+          email: `${creator}@probe.invalid`,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+      await rawDb(fixtures.db)
+        .insert(organization)
+        .values([orgA, orgB].map((id) => ({ id, name: id, slug: id, createdAt: now })))
+      for (const orgId of [orgA, orgB])
+        await inTenant(fixtures.db, { orgId }, (tx) =>
+          tx
+            .insert(project)
+            .values({ organizationId: orgId, name: `p-${orgId}`, createdBy: creator }),
+        )
+    } finally {
+      await fixtures.close()
+    }
 
-  try {
     const { db, close } = await open()
     try {
       // (a) + (c): context and status inside, after COMMIT, after ROLLBACK, on the same client.
