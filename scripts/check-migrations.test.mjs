@@ -269,13 +269,53 @@ test('the default base is origin/main when it exists', () => {
   fails(checkDefault(cwd), /0004_giant_silver_surfer\.sql exists on origin\/main and was modified/)
 })
 
-test('without origin/main the default base is the merge base with upstream/main', () => {
+// The foundation at `base`, then upstream and the product each move on (no shared later commit).
+function diverged() {
   const { cwd, base } = repo()
-  git(cwd, 'update-ref', 'refs/remotes/upstream/main', base)
-  addMigration(cwd)
+  writeFileSync(join(cwd, 'upstream.txt'), 'upstream')
+  git(cwd, 'update-ref', 'refs/remotes/upstream/main', commitAll(cwd, 'upstream'))
+  git(cwd, 'reset', '-q', '--hard', base)
+  writeFileSync(join(cwd, 'product.txt'), 'product')
+  commitAll(cwd, 'product')
+  return { cwd, base }
+}
+
+test('without origin/main the default base is the merge base with upstream/main', () => {
+  const { cwd, base } = diverged()
   const r = checkDefault(cwd)
   passes(r)
   assert.match(r.stdout, new RegExp(`merge base with upstream/main \\(${base}\\)`))
   editApplied(cwd)
-  fails(checkDefault(cwd), /0004_giant_silver_surfer\.sql exists on .* was modified/)
+  fails(
+    checkDefault(cwd),
+    new RegExp(`0004_giant_silver_surfer\\.sql exists on ${base} and was modified`),
+  )
+})
+
+test('the upstream merge base is refused once the product has its own migration', () => {
+  const { cwd } = diverged()
+  addMigration(cwd)
+  fails(
+    checkDefault(cwd),
+    /0099_new_migration postdate the merge base with upstream\/main.*set BASE=/,
+  )
+})
+
+test('the default base refuses an upstream/main with no shared history', () => {
+  const cwd = tmp()
+  git(cwd, 'init', '-q', '-b', 'main')
+  writeFileSync(join(cwd, 'other.txt'), 'other')
+  git(cwd, 'update-ref', 'refs/remotes/upstream/main', commitAll(cwd, 'other'))
+  git(cwd, 'checkout', '-q', '--orphan', 'product')
+  git(cwd, 'rm', '-rq', '--cached', '.')
+  cpSync(join(repoRoot, DIR), join(cwd, DIR), { recursive: true })
+  commitAll(cwd, 'product')
+  fails(checkDefault(cwd), /HEAD shares no history with upstream\/main/)
+})
+
+test('an empty or all-zero BASE is refused instead of picking another base', () => {
+  const { cwd, base } = repo()
+  git(cwd, 'update-ref', 'refs/remotes/origin/main', base)
+  fails(checkDefault(cwd, { BASE: '' }), /no base: BASE is empty/)
+  fails(checkDefault(cwd, { BASE: '0'.repeat(40) }), /no base: BASE is all zeros/)
 })
