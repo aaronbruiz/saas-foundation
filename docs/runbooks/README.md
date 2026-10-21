@@ -436,7 +436,7 @@ select usename, count(*) from pg_stat_activity where datname = 'app' group by 1;
 Expected:
 
 - one role row with every flag false except `rolcanlogin` (true once it has a login);
-- no memberships;
+- no memberships. The query lists the roles `app_runtime` belongs to. On Neon, where migration 0005 creates the role as the non-superuser owner, `app_owner` holds an ADMIN-only membership in `app_runtime` (`admin_option` true, `inherit_option` and `set_option` false; PostgreSQL gives a role's creator one, and the owner needs it to set the password). That's expected, and this query doesn't list it. The local compose cluster has none: its init script creates the role as the superuser;
 - exactly ADR-0038's grants;
 - after the switch, the Worker's connections listed under `app_runtime`.
 
@@ -488,9 +488,11 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 - To revoke the runtime credential as well: `echo 'alter role app_runtime nologin' | psqlo`.
 - The role and its grants can stay; removing them is a contract migration.
 
-**After a restore or a promote:**
+**After a restore or a promote:** a dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. First compare the restored database's migration journal (`select count(*) from drizzle.__drizzle_migrations`, as the owner) with the entries in `packages/db/drizzle/meta/_journal.json` of the code version that will run on it, then follow one of the two procedures below. A journal with more rows than that file means the dump is newer than the code: deploy the matching version instead.
 
-- A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. Re-apply the grants as the owner, in this order (all idempotent):
+**(a) Same version** (equal counts: a snapshot branch, a promote, or a dump of the running version):
+
+- Re-apply the grants as the owner, in this order (all idempotent):
   1. `psqlo < packages/db/drizzle/0005_runtime_role.sql`
   2. `psqlo < packages/db/drizzle/0006_archive_audit.sql`: brings back the archive's `REVOKE`s.
   3. `psqlo < packages/db/drizzle/0007_hashed_verification.sql`
@@ -501,6 +503,14 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 
 - Then run the **definer check** below as the owner (`psqlo <<'SQL'` … `SQL`). It must end with `NOTICE:  definer check ok`. Any error stops the recovery until it's fixed: a missing function, role or property is an error, never a pass.
 - Give `app_runtime` a new password (step 1.2), and use it wherever "Full rollback" or "Real recovery" points Hyperdrive at `app_owner`. Snapshot branches keep the role, but its password can't be read back, so set a new one.
+
+**(b) A dump older than the code version** (fewer rows; for example a dump from before 0005 restored for code that includes 0008):
+
+- From a checkout of that code version, run its migrator as the owner: `DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST/$PGDATABASE?sslmode=require" pnpm db:migrate` after `owner_env` (as in step 1.1). It applies the missing migrations, grants included, and records them in the journal. Replaying the SQL files alone gives the same grants but leaves the journal behind, so the next migrator run, and the release and rollback guards that read the journal, would treat those migrations as pending.
+- The journal now has as many rows as that version's `_journal.json`.
+- Then (a)'s steps: re-apply the grants (a dump taken after 0005 lost the grants of the migrations it already had), the definer check, the identity check, and a new password for `app_runtime`.
+
+Verified locally on 2026-10-21 with a pre-0005 dump: (b) gives the same object privileges, function security settings and triggers as a freshly migrated database, and the definer check passes.
 
 **Definer check** (ADR-0040: `public.billing_subscription_held_elsewhere` is owner-owned, `SECURITY DEFINER` with a pinned `search_path`, and executable by `app_runtime` alone, without the grant option):
 
@@ -604,6 +614,8 @@ Code only, seconds, no build: **Actions → Rollback → Run workflow** with a s
 3. `COMMIT=<commit from step 1> NEON_PROJECT_ID=flat-cherry-23373668 NEON_DATABASE=app NEON_ROLE=app_owner NEON_API_KEY=<from neon auth> scripts/release/rollback-guard.sh`: refuses a target lacking an applied contract migration (or with an unknown commit) unless `CONFIRM_BREAKING=true`.
 4. **Stale check, right before rolling back:** `pnpm --dir apps/app exec wrangler deployments status` must show only the `live` version from step 1 at 100%. If anything else changed (a deploy, a candidate), start again at step 1. Then `pnpm --dir apps/app exec wrangler rollback <target> -m "rollback by <you>: <reason>"` (≤ 120 characters). Without `-y`, in an interactive terminal, wrangler asks before reverting changed secrets: answer as decided in step 2. It accepts on its own when not interactive (as in CI), so step 2's decision is the safeguard, not the prompt.
 5. `pnpm --dir apps/app exec wrangler deployments status` shows the target alone at 100%; `curl -s https://app.aaronlabr.dev/api/health` is `ok` (a release target also reports its version and build).
+
+**Password-reset links after a rollback across the hashed-identifier change (ADR-0039 decision 8):** rolling back to a version without it (app-v0.3.2 or older) leaves reset links issued by the newer version unusable: the older version answers `INVALID_TOKEN` and the password stays unchanged. A fresh request on the rolled-back version sends a link that works. Accepted: users request a new link, and links expire within an hour anyway. Verified locally on 2026-10-21 (link issued by b7278b0, tried with app-v0.3.2 on the same database).
 
 **Secrets while rolled back or after a `discard`:** the newest uploaded version is then not the deployed one, so `wrangler secret put` refuses, and `wrangler versions secret put` would build on that newest upload, re-shipping the code you just left. Redeploy the good tag first (Release → `redeploy`), then change the secret.
 
