@@ -140,3 +140,13 @@ Phase 2 tests (`billing.test.ts` "the subscription holder check", `database-role
 - With phase 3's policy shape enabled in a rolled-back transaction and the role switched to `app_runtime`, a direct read of the other tenant's row returns nothing while the function still answers `true`.
 - Catalog: `app_runtime` can execute exactly the functions in `FUNCTIONS` (this one), each `SECURITY DEFINER`, `STABLE`, `search_path=pg_catalog, pg_temp`, owned by the tables' owner, with `app_runtime:EXECUTE` (no grant option) the only non-owner grant. It can't replace, alter (`SECURITY INVOKER`, `search_path`, owner, name), drop or overload it, and its `GRANT … TO PUBLIC` changes nothing even inside its own transaction.
 - Mutation check (local, 2026-10-19): an unpinned function with unqualified names, one without the context check, a `SECURITY INVOKER` one and a runtime grant `WITH GRANT OPTION` each fail these tests.
+
+Preview checks (a)–(c) and (e), 2026-10-21 (roadmap M1 done-when 2), through a real Worker → Hyperdrive → Neon on a PR preview:
+
+- **What ran:** release candidate app 0.4.0 (release PR #175, head `c09bbf1`) plus a throwaway probe (PR #178, closed unmerged): a function running the checks below through the real `createDb` → `GuardedClient` → `inTenant`, behind an operator-only route. The deployed build `aa99159` (CI's merge commit) differs from `c09bbf1` only by the reviewed probe files; connection code, dependencies, compatibility settings and the binding config are unchanged (diff checked). Preview config `saas-pr-178`, caching `disabled: true`; the Worker connected as the preview branch's owner.
+- **(a)** `app.org_id` is the tenant inside a tenant call and empty after `COMMIT` and after a rolled-back call, on the same client (same backend pid inside and after).
+- **(b)** a tenant call that inserts a project and then throws leaves no row, and the client idle.
+- **(c)** `getTransactionStatus()` is `T` inside, `I` after `COMMIT` and after `ROLLBACK`.
+- **(e)** two tenants alternating 20 times on one client, and 100 requests (6 at a time) each on its own client, all see only their own context and projects.
+- **Not covered:** (d) latency (required before the phase 4 switch, roadmap M2); the runtime role (the preview ran as the owner); any RLS policy (phase 3).
+- Runs: CI https://github.com/aaronbruiz/saas-foundation/actions/runs/39553677263, preview https://github.com/aaronbruiz/saas-foundation/actions/runs/39554137732, cleanup https://github.com/aaronbruiz/saas-foundation/actions/runs/39554569326 (`saas-pr-178` and `preview/pr-178` deleted afterwards).
