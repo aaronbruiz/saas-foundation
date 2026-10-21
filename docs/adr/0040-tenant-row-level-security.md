@@ -144,9 +144,9 @@ Phase 2 tests (`billing.test.ts` "the subscription holder check", `database-role
 Preview checks (a)–(c) and (e), 2026-10-21 (roadmap M1 done-when 2), through a real Worker → Hyperdrive → Neon on a PR preview:
 
 - **What ran:** release candidate app 0.4.0 (release PR #175, head `c09bbf1`) plus a throwaway probe (PR #178, closed unmerged): a function running the checks below through the real `createDb` → `GuardedClient` → `inTenant`, behind an operator-only route. The deployed build `aa99159` (CI's merge commit) differs from `c09bbf1` only by the reviewed probe files; connection code, dependencies, compatibility settings and the binding config are unchanged (diff checked). Preview config `saas-pr-178`, caching `disabled: true`; the Worker connected as the preview branch's owner.
-- **(a)** `app.org_id` is the tenant inside a tenant call and empty after `COMMIT` and after a rolled-back call, on the same client (same backend pid inside and after).
+- **(a)** `app.org_id` is the tenant inside a tenant call and empty after `COMMIT` and after a rolled-back call, on the same application client (for the committed call, the same backend pid inside and after; not recorded for the rolled-back one).
 - **(b)** a tenant call that inserts a project and then throws leaves no row, and the client idle.
 - **(c)** `getTransactionStatus()` is `T` inside, `I` after `COMMIT` and after `ROLLBACK`.
-- **(e)** two tenants alternating 20 times on one client, and 100 requests (6 at a time) each on its own client, all see only their own context and projects.
+- **(e)** two tenants alternating 20 times on one client, and 100 tenant calls (6 at a time) each on its own client, all within one `/api/probe` request (separate Worker requests weren't exercised), all see only their own context and projects.
 - **Not covered:** (d) latency (required before the phase 4 switch, roadmap M2); the runtime role (the preview ran as the owner); any RLS policy (phase 3).
 - Runs: CI https://github.com/aaronbruiz/saas-foundation/actions/runs/39553677263, preview https://github.com/aaronbruiz/saas-foundation/actions/runs/39554137732, cleanup https://github.com/aaronbruiz/saas-foundation/actions/runs/39554569326 (`saas-pr-178` and `preview/pr-178` deleted afterwards).
