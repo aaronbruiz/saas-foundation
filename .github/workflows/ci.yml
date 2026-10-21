@@ -26,7 +26,10 @@ jobs:
     outputs:
       app: ${{ steps.filter.outputs.app }}
     steps:
+      # The PR files API stops at 3,000 files and the action doesn't check it got them all. Outside
+      # 1..3000 (or with no count) the step is skipped, `app` stays empty and everything runs.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event.pull_request.changed_files > 0 && github.event.pull_request.changed_files <= 3000
         id: filter
         with:
           predicate-quantifier: every
