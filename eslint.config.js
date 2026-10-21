@@ -206,6 +206,7 @@ export default defineConfig([
     '**/.astro',
     '**/routeTree.gen.ts',
     '**/worker-configuration.d.ts',
+    '.local/',
   ]),
   js.configs.recommended,
   tseslint.configs.recommended,
