@@ -13,20 +13,21 @@ permissions:
   contents: read
 
 jobs:
-  changes:
+  # Keep one job: private-repo billing rounds each job up to a whole minute.
+  check:
+    name: check + test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      scope: ${{ steps.scope.outputs.scope }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings and migrations
       # AGENTS.md invariant 14: a new binding or product needs a new ADR; storage bindings need a
-      # `previews` override. Run even when app checks are skipped.
+      # `previews` override. Before the install, so it fails fast.
       - name: Bindings need an ADR
         if: github.event_name == 'pull_request'
         run: node scripts/check-bindings.mjs HEAD^1
+      - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
       - id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -36,57 +37,41 @@ jobs:
             scope="$(node scripts/classify-changes.mjs HEAD^1)"
           fi
           echo "scope=$scope" >>"$GITHUB_OUTPUT"
-
-  format:
-    needs: changes
-    if: needs.changes.outputs.scope == 'light'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup
-        with:
-          cache: pnpm
-      - run: pnpm format:check
-
-  check:
-    needs: changes
-    if: needs.changes.outputs.scope == 'full'
-    name: check + test
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
-        env:
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app
-          POSTGRES_DB: app
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U app -d app"
-          --health-interval 2s --health-timeout 3s --health-retries 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings and migrations
       - uses: ./.github/actions/setup
         with:
           cache: pnpm
           install: false
-      - run: node scripts/check-secrets.mjs # ADR-0016: no EMAIL_VERIFICATION in the committed config
       - run: pnpm install --frozen-lockfile
-      - name: Create test database (mirrors docker/postgres-init)
-        run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
+      - name: Start test database
+        if: steps.scope.outputs.scope != 'light'
+        run: |
+          docker run --detach --name ci-postgres --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=app --env POSTGRES_PASSWORD=app --env POSTGRES_DB=app \
+            postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          for attempt in {1..30}; do
+            if docker exec ci-postgres pg_isready -h 127.0.0.1 -U app -d app; then
+              docker exec ci-postgres psql -h 127.0.0.1 -U app -d app -v ON_ERROR_STOP=1 \
+                -c "CREATE DATABASE app_test OWNER app"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ci-postgres
+          exit 1
+      - name: Check documentation formatting
+        if: steps.scope.outputs.scope == 'light'
+        run: pnpm format:check
       - run: pnpm check
+        if: steps.scope.outputs.scope != 'light'
       # Invariant 10: applied migrations stay untouched, the history has no collision, no schema
       # change lacks its migration, schema/auth.ts is current, and the migrations' SQL builds the
       # schema. Base: the PR's merge parent, or the commit a push to main replaced (fetched if the
       # depth-2 checkout lacks it).
       - name: Migrations are immutable and match the schema
+        if: steps.scope.outputs.scope != 'light'
         env:
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
-          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          POSTGRES_CONTAINER: ci-postgres
         run: |
           if [[ ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             git fetch --no-tags --depth=1 origin "$BASE"
@@ -95,22 +80,25 @@ jobs:
           SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh
           node --test scripts/check-schema-sql.test.mjs
       - run: pnpm test
+        if: steps.scope.outputs.scope != 'light'
       # dump.sh against a disposable Postgres and a local S3 stand-in, with the runner's AWS CLI
       # (runbook "Backups by hand"). Not in package.json: that path also triggers docs/site deploys.
       - run: node --test scripts/backup/dump.test.mjs
+        if: steps.scope.outputs.scope != 'light'
       - name: Build and scan the client bundle for secrets
+        if: steps.scope.outputs.scope != 'light'
         run: pnpm build && scripts/scan-client-bundle.sh
       # ADR-0021: this job runs PR code and holds no secrets. For same-repo PRs it hands the build
       # to preview.yml (workflow_run, default-branch code), which treats it strictly as data.
       - name: Assemble the preview artifact
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.scope != 'light' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           out="$RUNNER_TEMP/preview-artifact"
           mkdir -p "$out/apps/app" "$out/packages/db"
           rsync -a --exclude '.dev.vars*' --exclude '.env*' apps/app/dist "$out/apps/app/"
           rsync -a packages/db/drizzle "$out/packages/db/"
       - name: Upload the preview artifact
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.scope != 'light' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: preview-artifact
@@ -122,6 +110,7 @@ jobs:
       # the default branch's suite against the deployed preview). After the upload, so these local
       # dev vars can never reach the artifact.
       - name: E2E (local dev server)
+        if: steps.scope.outputs.scope != 'light'
         run: |
           { echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"; echo 'BETTER_AUTH_URL=http://localhost:3000'
             echo 'SIGNUP_MODE=open'; echo 'EMAIL_DELIVERY=console'
@@ -131,24 +120,3 @@ jobs:
           pnpm db:migrate
           pnpm --filter app exec playwright install --with-deps chromium
           pnpm test:e2e
-
-  ci-ok:
-    name: ci-ok
-    needs: [changes, format, check]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      CHANGES: ${{ needs.changes.result }}
-      SCOPE: ${{ needs.changes.outputs.scope }}
-      FORMAT: ${{ needs.format.result }}
-      CHECK: ${{ needs.check.result }}
-    steps:
-      - name: Selected checks passed
-        run: |
-          test "$CHANGES" = success
-          case "$SCOPE" in
-            light) test "$FORMAT" = success && test "$CHECK" = skipped ;;
-            full) test "$CHECK" = success && test "$FORMAT" = skipped ;;
-            *) exit 1 ;;
-          esac
