@@ -359,6 +359,8 @@ _First run 2026-10-18 (supervised, owner-authorized; before this section existed
 
 The app is meant to connect as `app_runtime`, which migration `0005_runtime_role` creates without a login (table grants in ADR-0038). Migrations, backups and previews stay on `app_owner`.
 
+The switch comes before any row-level security (ADR-0040 decision 7, roadmap M2): the gates below need no RLS policy, and RLS enforcement starts later, when ADR-0040's phase 3 is released (roadmap M4). ADR-0040's preview latency check (d) is recorded before the switch (decision 8).
+
 **Production keeps `app_owner` until every gate is recorded here:**
 
 - [x] **G1** role, grants and Hyperdrive login verified on a disposable preview-project branch: 2026-10-16 (ADR-0038 Notes; sanitized evidence in the owner's local `R06-artifacts/runtime-check-2026-10-16.txt`).
@@ -453,6 +455,7 @@ Expected:
    - On a PR preview, `owner_env preview/pr-<N> $P_PREVIEW`, then set a password on that branch (step 1.2).
    - `origin "$PGHOST" | jq '{origin: .}' | hd "/<id of saas-pr-N>" -X PATCH --data-binary @- | jq .success`, then `hd "/<id of saas-pr-N>/restart" -X POST`.
    - Re-run the preview's e2e job. It must pass with the Worker's connections listed under `app_runtime` (identity check, last query).
+   - If ADR-0040's latency check (d) isn't recorded yet, measure it in the same preview run and record it in ADR-0040 (decision 8).
    - Closing the PR deletes the config as usual (ADR-0021).
    - An isolated remote Worker smoke test is the alternative only with the owner's approval: it's a new Worker (invariant 14).
 3. **Production password (after G1–G4):** `owner_env main $P_PROD`, then step 1.2's three commands, then the identity check.
