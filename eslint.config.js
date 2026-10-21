@@ -1,4 +1,4 @@
-// ESLint flat config (ADR-0006). Style is Prettier's job; this file holds
+// ESLint flat config (ADR-0006). Style is the formatter's (Oxfmt) job; this file holds
 // correctness rules and the architecture boundaries from AGENTS.md.
 import { readdirSync } from 'node:fs'
 import js from '@eslint/js'
