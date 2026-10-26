@@ -11,7 +11,7 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "@astrojs/sitemap": "^3.7.4",
-    "astro": "^7.3.8",
+    "astro": "^7.4.2",
     "typescript": "~6.0.3",
     "wrangler": "^4.147.0"
   }
