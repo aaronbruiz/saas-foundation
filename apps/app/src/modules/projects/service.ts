@@ -9,7 +9,7 @@ import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
 import { HttpError, notFound, parseInput } from '../../server/errors'
 import { authorize, type Capability } from '../../server/permissions'
-import { entitlementsIn } from '../billing/entitlements'
+import { entitlementsOfSubscription } from '../billing/entitlements'
 
 // Plain functions (testable in workerd); server functions in ./functions.ts only adapt them.
 // Role checks come from the capability matrix (server/permissions.ts).
@@ -51,11 +51,16 @@ export async function createProject(headers: Headers, input: unknown): Promise<P
   const { tenant, project } = parseInput(CreateProjectInput, input)
   return withDb(async (db) => {
     const { ctx, repo } = await scoped(db, headers, tenant, 'project:create')
-    // Plan limit (ADR-0020): a hard stop for new projects; existing ones are never touched.
-    const { limits } = await entitlementsIn(db, ctx.orgId)
-    const created = await repo.createWithinLimit(project, ctx.userId, limits.projects)
+    // Plan limit (ADR-0020): a hard stop for new projects; existing ones are never touched. The
+    // plan is read in the creating transaction (ADR-0040 decision 8).
+    let limit: number | null = null
+    const created = await repo.createWithinLimit(
+      project,
+      ctx.userId,
+      (subscription) => (limit = entitlementsOfSubscription(subscription).limits.projects),
+    )
     if (!created)
-      throw new HttpError(403, `Your plan allows ${limits.projects} projects. Upgrade to add more.`)
+      throw new HttpError(403, `Your plan allows ${limit} projects. Upgrade to add more.`)
     return created
   })
 }

@@ -1,6 +1,7 @@
 import { and, count, desc, eq } from 'drizzle-orm'
 import { rawDb, type Db } from './client.ts'
 import { member, organization, user } from './schema/auth.ts'
+import { billingSubscription, type BillingSubscription } from './schema/billing.ts'
 import { project, type Project } from './schema/projects.ts'
 import { inTenant } from './tenant-transaction.ts'
 
@@ -99,17 +100,29 @@ export function projects(db: Db, scope: TenantScope) {
           )[0]?.n ?? 0,
       ),
     /**
-     * Creates a project unless the tenant already has `limit` (null = unlimited). Creations for one
-     * tenant serialize on its organization row, so concurrent requests can't overshoot the limit.
-     * Returns null at the limit.
+     * Creates a project unless the tenant already has the limit `limitFor` gives for its
+     * subscription (null = unlimited). Creations for one tenant serialize on its organization row,
+     * so concurrent requests can't overshoot the limit. The subscription is read in the same
+     * transaction, after the lock, to save a tenant transaction (ADR-0040 decision 8). Returns null
+     * at the limit.
      */
-    createWithinLimit: (fields: ProjectFields, createdBy: string, limit: number | null) =>
+    createWithinLimit: (
+      fields: ProjectFields,
+      createdBy: string,
+      limitFor: (subscription: BillingSubscription | null) => number | null,
+    ) =>
       inTenant(db, scope, async (tx): Promise<Project | null> => {
         await tx
           .select({ id: organization.id })
           .from(organization)
           .where(eq(organization.id, scope.orgId))
           .for('no key update')
+        const [subscription] = await tx
+          .select()
+          .from(billingSubscription)
+          .where(eq(billingSubscription.organizationId, scope.orgId))
+          .limit(1)
+        const limit = limitFor(subscription ?? null)
         if (limit !== null) {
           const [row] = await tx
             .select({ n: count() })
