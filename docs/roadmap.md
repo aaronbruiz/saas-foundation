@@ -23,7 +23,7 @@ Merged, validated, deployed and operational are different states. Report each on
 
 ## Milestones
 
-### M1: Verified release and operations restored (current)
+### M1: Verified release and operations restored (done 2026-10-29)
 
 - **Outcome:** production runs a verified release that contains the merged work (0005–0008, ADR-0040 phases 1–2). Backups, alerting and CI run unattended again.
 - **Why:** 31 commits wait unreleased, and they include a new connection layer that has never run through Hyperdrive. The batch gets riskier every day it waits. Without backups, pilot data can't be admitted.
@@ -44,6 +44,12 @@ Merged, validated, deployed and operational are different states. Report each on
      - the rollback target version recorded.
   5. Production verified after the release: health, smoke e2e, and the definer function's privileges ("After a restore or a promote").
 - **Deferred:** the runtime-role switch (M2), RLS policies (M4), and anything in the M5 backlog.
+- **Result (2026-10-29, owner-reviewed):** done; app 0.4.0 (`c8d6a2a`) is live.
+  1. Hosted CI passed on the candidate `c09bbf1` and on the released commit, which differs from it only by CI's workflow and an ADR-0021 note (#180); #151's three runs passed on 2026-10-21.
+  2. ADR-0040 checks (a)–(c) and (e) passed on a preview (ADR-0040 Notes, #182). (d) wasn't measured; it opens M2.
+  3. (ii) and (iii) passed: the heartbeat alerted on a failed ping and recovered; the runbook restore of a real production dump (2026-10-15, the latest available locally) passed with the 0005–0008 replay and the definer check. (i) was waived by the owner for this release: the scheduled runs of 2026-10-21 to 10-28 never started (an Actions billing block while the repository was private), and a manual run on 10-29 succeeded with its heartbeat ping. Unattended scheduled runs resume with the repository public.
+  4. Release run: preflight, restore point `pre-migrate-app-v0.4.0-20261029T042822Z`, migrations 0005–0008, the 0% candidate (held because `wrangler.jsonc` differed only in a comment and the local connection string), then promotion. Rollback target: app-v0.3.2, version `0ef56ba5`.
+  5. Health, the owner's smoke checklist (two accounts in separate tenants), the definer check and the identity check (G2: `app_runtime` with exactly ADR-0038's grants, no memberships) passed in production.
 
 ### Parallel track: Reuse validation
 
@@ -79,7 +85,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - ADR-0038 and ADR-0039 are Proposed while AGENTS.md treats their grants and archive triggers as binding; reconcile their status the way ADR-0040's was.
   - Optional (M5): a catalog test that discovers tenant-owned tables and checks each one's grant, archive trigger and registration, instead of the hand-kept lists.
 
-### M2: Production on the least-privilege runtime role
+### M2: Production on the least-privilege runtime role (current)
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
 - **Why:** M1 deploys the role, but it protects nothing until production uses it. This switch is worth doing without RLS: least privilege stands on its own.
