@@ -6,7 +6,18 @@ overrides:
   # pg-cloudflare 1.4.1: every client.end() emits an unhandled "This socket has been closed."
   # error on Workers (brianc/node-postgres#3805, open). pg itself may update. Drop once fixed.
   pg-cloudflare: 1.4.0
+  # seroval advisories (GHSA-wp97, GHSA-97r2, GHSA-7rv5, GHSA-3pfx; seroval-plugins GHSA-fc89,
+  # GHSA-6rwj): TanStack Start deserializes every server-function request with them. TanStack
+  # still declares ^1.6.7; drop these once it requires >=1.7.5.
+  '@tanstack/router-core>seroval': 1.7.5
+  '@tanstack/router-core>seroval-plugins': 1.7.5
+  '@tanstack/start-client-core>seroval': 1.7.5
+  '@tanstack/start-server-core>seroval': 1.7.5
 
 allowBuilds:
   esbuild: true
   workerd: true
+
+minimumReleaseAgeExclude:
+  - seroval-plugins@1.7.5
+  - seroval@1.7.5
