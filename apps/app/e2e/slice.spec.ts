@@ -139,6 +139,11 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await expect(carol.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
   await expect(carol.getByRole('link', { name: 'Go home' })).toBeVisible()
   await expect(carol.getByTestId('plan-name')).toHaveCount(0)
+  // The server-rendered page is the same one, before any script runs (not the framework's
+  // default boundary, which prints the error).
+  const html = await (await carol.context().request.get(`/t/${orgA}/billing`)).text()
+  expect(html).toContain('This page couldn&#x27;t be loaded')
+  expect(html).not.toContain('Hide Error')
 
   // Billing (ADR-0020): the owner sees the default plan and its usage. No provider is configured
   // locally or in previews, so starting a checkout fails closed with a clear message.
