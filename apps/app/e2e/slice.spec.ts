@@ -1,10 +1,10 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { verificationLink, verifiesEmail } from './mailbox'
+import { createAccount, createOrg, PASSWORD, rand, verifyAndSignIn } from './helpers'
+import { sessionFile } from './session'
 
 // Vertical Slice 001 end to end (spec §8/§11): sign-up → organization → project → invite →
 // accept, and cross-tenant isolation through real URLs (404 page, never data).
-const rand = () => Math.random().toString(36).slice(2, 8)
-const PASSWORD = 'correct-horse-battery-staple'
 const notFound = (page: Page) =>
   expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible()
 
@@ -16,8 +16,8 @@ const visited: string[] = []
 // twice); any such message means the widget lifecycle is broken.
 const turnstileLogs: string[] = []
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext()
+async function newPage(browser: Browser, storageState?: string): Promise<Page> {
+  const context = await browser.newContext({ storageState })
   contexts.push(context)
   const page = await context.newPage()
   page.on('framenavigated', (f) => visited.push(f.url()))
@@ -28,30 +28,6 @@ async function newPage(browser: Browser): Promise<Page> {
   return page
 }
 
-/** Fills the sign-up form on the current page. */
-async function createAccount(page: Page, name: string, email: string) {
-  await page.getByLabel('Name').fill(name)
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Create account' }).click()
-}
-
-/**
- * ADR-0016: after sign-up there's no session until the address is verified. Follows the emailed
- * link, then signs in; the page continues to the sign-up page's `redirect`. Without verification
- * (previews) sign-up signs in directly.
- */
-async function verifyAndSignIn(page: Page, email: string) {
-  if (!verifiesEmail) return
-  const target = new URL(page.url()).searchParams.get('redirect')
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
-  await page.goto(await verificationLink(email, target))
-  await expect(page.getByText('Email verified. Sign in to continue.')).toBeVisible()
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Sign in' }).click()
-}
-
 async function signUp(browser: Browser, name: string, path = '/signup') {
   const page = await newPage(browser)
   const email = `${name.toLowerCase()}-${rand()}@e2e.test`
@@ -59,23 +35,6 @@ async function signUp(browser: Browser, name: string, path = '/signup') {
   await createAccount(page, name, email)
   await verifyAndSignIn(page, email)
   return { page, email }
-}
-
-async function createOrg(page: Page, prefix: string) {
-  const slug = `${prefix}-${rand()}`
-  await expect(page).toHaveURL(/\/orgs\/new$/)
-  await page.getByLabel('Organization name').fill(`Org ${slug}`)
-  // The browser checks the slug before submitting (it ignores a `pattern` that isn't a valid
-  // `v`-flag regex, so a broken one would let this through).
-  const slugField = page.getByLabel('URL slug')
-  const mismatch = () => slugField.evaluate((el: HTMLInputElement) => el.validity.patternMismatch)
-  await slugField.fill('Bad_slug-')
-  expect(await mismatch()).toBe(true)
-  await slugField.fill(slug)
-  expect(await mismatch()).toBe(false)
-  await page.getByRole('button', { name: 'Create organization' }).click()
-  await expect(page).toHaveURL(new RegExp(`/t/${slug}/projects$`))
-  return slug
 }
 
 test.afterEach(async () => {
@@ -185,8 +144,10 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await alice.getByRole('button', { name: /^Upgrade to Pro \(monthly\)/ }).click()
   await expect(alice.getByRole('alert')).toHaveText('Billing is not configured')
 
-  // Bob: his own org B; none of A is reachable, by tenant URL or by project id.
-  const { page: bob } = await signUp(browser, 'Bob')
+  // Bob, the shared signed-in user (session.ts): his own org B; none of A is reachable, by tenant
+  // URL or by project id.
+  const bob = await newPage(browser, sessionFile)
+  await bob.goto('/orgs/new')
   const orgB = await createOrg(bob, 'b')
   expect((await bob.goto(`/t/${orgA}`))?.status()).toBe(404)
   await notFound(bob)
