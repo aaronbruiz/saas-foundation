@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.4.0...app-v0.4.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** send unexpected server-function errors to the client as a generic message ([ead359c](https://github.com/aaronbruiz/saas-foundation/commit/ead359c8ec1b199f53110fb25fbe80c3fc64804e))
+* **deps:** bump the production-minor-and-patch group across 1 directory with 6 updates ([#181](https://github.com/aaronbruiz/saas-foundation/issues/181)) ([1857f45](https://github.com/aaronbruiz/saas-foundation/commit/1857f451a79fdb6d671d3edcf96481e64460ee2b))
+* **deps:** update seroval to 1.7.5 in TanStack Start's request path ([5207886](https://github.com/aaronbruiz/saas-foundation/commit/52078860a9d155fa4f0fe3475b510ba50ace7f53))
+
+
+### Performance
+
+* **projects:** read the plan inside the creating transaction ([#189](https://github.com/aaronbruiz/saas-foundation/issues/189)) ([cf6d01b](https://github.com/aaronbruiz/saas-foundation/commit/cf6d01bb36361e55ff9e1f158ad025632c7321f6))
+
 ## [0.4.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.3.2...app-v0.4.0) (2026-10-21)
 
 
