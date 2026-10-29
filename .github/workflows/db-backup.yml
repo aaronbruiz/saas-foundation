@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # no git operation follows
       - uses: ./.github/actions/setup
       - name: Snapshot production main
         # Secrets only reach this step, not checkout/setup/install (dependency lifecycle scripts).
@@ -49,6 +51,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # no git operation follows
       - uses: ./.github/actions/setup
       - name: Dump production main to R2
         id: dump
