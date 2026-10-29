@@ -66,7 +66,8 @@ jobs:
           # the preview project's 10 Neon branches for nothing). Neither does one that changes only
           # documentation the app doesn't build from: docs/** and root-level *.md (ADR-0021 Notes
           # 2026-10-15). A rename counts at both paths, and a list that isn't complete (the files
-          # API stops at 3,000) keeps the preview.
+          # API stops at 3,000) keeps the preview. Same rules as ci.yml's `changes` filter; change
+          # both together.
           changed="$(gh api "repos/$REPO/pulls/$pr" --jq '.changed_files')"
           files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" \
             --jq '.[] | [.filename, .previous_filename // empty] | join("\t")')"
