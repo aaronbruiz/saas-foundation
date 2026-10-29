@@ -8,7 +8,7 @@ Details live in the ADRs (`docs/adr/`) and runbooks (`docs/runbooks/`). This fil
 
 - **Production:** app-v0.5.0 (`65d49b8`, released 2026-10-29). Since 2026-10-29 it connects as the least-privilege role `app_runtime` (M2). It holds only smoke-test accounts (ADR-0014 data gate; ADR-0032 not lifted).
 - **Milestones:** M1 and M2 are done; M3 is current but deferred (no pilot participants yet).
-- **Operations:** From 2026-10-15 every Actions job failed unstarted: October's included Free-plan minutes were used up (2,078, all in this repository; diagnosed from GitHub's billing API). Pull request and push runs work again since 2026-10-21, when the repository became public. Scheduled backups kept failing unstarted through 2026-10-28 (M1 records the waiver); the first scheduled backup since then succeeded on 2026-10-29, and unattended runs are still to be confirmed.
+- **Operations:** From 2026-10-15 every Actions job failed unstarted: October's included Free-plan minutes were used up (2,078, all in this repository; diagnosed from GitHub's billing API). Pull request and push runs work again since 2026-10-21. Scheduled backups kept failing unstarted through 2026-10-28 (M1 records the waiver); the first scheduled backup since then succeeded on 2026-10-29, and unattended runs are still to be confirmed.
 
 ## Status vocabulary
 
