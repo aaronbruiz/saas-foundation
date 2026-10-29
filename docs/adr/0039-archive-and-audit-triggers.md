@@ -39,7 +39,7 @@ Owner decisions (2026-10-18): keep self-service organization deletion; no deleti
 
 ## Limits (stated, not solved)
 
-- **It protects against `app_runtime`, not the owner.** `app_owner` can read, change, purge or drop the archive and disable the triggers. **Production runs as `app_owner` today** (ADR-0038 gates G2–G4 open), so until the runtime-role switch the archive records deletes and auth writes made through the app, attributed to `app_owner`, but anyone holding the production credential can erase it.
+- **It protects against `app_runtime`, not the owner.** `app_owner` can read, change, purge or drop the archive and disable the triggers. Production ran as `app_owner` until 2026-10-29: until then the archive recorded deletes and auth writes made through the app, attributed to `app_owner`, and anyone holding the production credential could erase it. Since the switch (ADR-0038 G1–G4 passed), the app's production credential is `app_runtime`, which has no privilege on the archive; the owner credential (migrations, backups) still can.
 - **`db_user` is a database login, not a person.** Every request from the app shows as the runtime role. The rows show what was written and when, not who asked.
 - **It's written in the same transaction.** A rolled-back attempt leaves nothing, by design. A committed attack can't remove its own rows without the owner's privileges.
 - **It records; it doesn't prevent.** No delete or write is refused (the cap was rejected: anyone could use it to block legitimate deletions). Nothing alerts on new rows yet; reading them is part of an investigation or a periodic owner review.

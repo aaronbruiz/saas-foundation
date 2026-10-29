@@ -372,7 +372,7 @@ The switch comes before any row-level security (ADR-0040 decision 7, roadmap M2)
     _2026-10-29 (production, read-only transaction): two entries, both `cloud_admin` → `neon_superuser` in `public` (tables `arwdDxtm`, sequences `rwU`, with grant option); nothing to `app_runtime` or PUBLIC; `app_runtime` isn't a member of `neon_superuser`, `pg_read_all_data` or `pg_write_all_data`._
   - **Effective roles:** `pg_roles` attributes and `pg_auth_members` memberships of `app_owner` and `app_runtime`. `app_runtime`: no superuser, BYPASSRLS, CREATEROLE, CREATEDB or REPLICATION, member of nothing. `app_owner`: as `check-schema-sql.sh`'s header describes (the gate mirrors it). Any difference: update the gate's role, or record why here.
     _2026-10-29 (production, read-only transaction): `app_runtime` has every attribute false (no login yet) and no memberships. `app_owner`: not superuser; CREATEROLE, CREATEDB, REPLICATION, BYPASSRLS, login, inherit; owns `app`; member of `neon_superuser` (inherit, **SET true**, granted by `cloud_admin`) and ADMIN-only in `app_runtime`. **Difference:** the gate grants its stand-in with SET FALSE (`scripts/check-schema-sql.sh`). Kept (owner, 2026-10-29): with SET the owner could `SET ROLE neon_superuser`, which no migration does; the gate is the stricter side (such a migration fails the gate while production would run it), never the reverse._
-- [ ] **G4** the owner's explicit approval to change production credentials (date and who, here).
+- [x] **G4** the owner's explicit approval to change production credentials (date and who, here). _2026-10-29 ~14:00Z (owner, in session with Claude): approved steps 3–5._
 
 **Secret handling.**
 
@@ -473,6 +473,8 @@ Expected:
    - Workers Issues and Logs show no `permission denied` (SQLSTATE `42501`) for an hour.
 
    Record the date here, then `unset RUNTIME_PW PGPASSWORD CLOUDFLARE_API_TOKEN`.
+
+   _Done 2026-10-29 (Claude, owner-approved; Wrangler `--profile aronlabr`, app 0.4.0 at `c8d6a2a`). Step 3: logging settings as step 1.2 requires (`log_min_error_statement` `panic`), password set without error, identity check on production `main`: login true, every other flag false, no memberships, grants on 11 tables exactly as `GRANTS`. Step 4: `hd_point app_runtime` at 14:02:30Z (update and pool restart succeeded); `wrangler hyperdrive get` shows user `app_runtime`, the same host, caching disabled. Step 5: `/api/health` 200 (`db: up`); `pg_stat_activity` lists 4 connections under `app_runtime` and only the checking session under `app_owner`; owner smoke (sign-in, tenant, create and delete a project) passed; no `42501` or `permission denied` 14:02–15:05Z (owner, Workers Logs and Issues in the dashboard; `wrangler tail` 14:03–15:03Z saw 4 events, none failed or matching, with one reconnect, so it's supporting evidence only; the Workers Logs API refused Wrangler's OAuth token). Way back: `owner_env main $P_PROD && hd_point app_owner`._
 
 **API alternative for setting the password (step 1.2):** Neon's reset-password endpoint generates the password itself, so nothing goes through SQL. It needs a Neon API key with access to the project (`read -rs NEON_API_KEY && export NEON_API_KEY`). It's **unverified for a role created in SQL**: try it on a disposable branch first, and re-run the identity check afterwards, which must still show no memberships (no `neon_superuser`).
 

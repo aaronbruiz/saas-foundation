@@ -94,12 +94,12 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - ADR-0040 decisions 7–8 and its staged rollout table, plus the runbook "Runtime role (ADR-0038)", revised so the role switch comes first and policies later (done: owner-approved docs PR, 2026-10-21).
   - ADR-0040 check (d), preview latency: not measured in M1, so it's M2's first task, and it's recorded before the production switch (done 2026-10-29: create-and-refresh +46 ms p50 at the 50 ms threshold; owner: material, switch anyway; ADR-0040 Notes).
 - **Done when:**
-  - ADR-0038 G3 passes: effective privileges through Hyperdrive, plus the Neon default-ACL and effective-role checks in the runbook.
-  - G4: owner approval recorded.
-  - The switch is made and recorded.
-  - Smoke e2e passes as `app_runtime`.
-  - The way back to `app_owner` is documented and ready.
-- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change.
+  - ADR-0038 G3 passes: effective privileges through Hyperdrive, plus the Neon default-ACL and effective-role checks in the runbook (done 2026-10-29).
+  - G4: owner approval recorded (done 2026-10-29).
+  - The switch is made and recorded (done 2026-10-29, 14:02Z; runbook "Runtime role (ADR-0038)" step 5).
+  - Smoke e2e passes as `app_runtime` (done 2026-10-29: owner's manual smoke, as for M1, plus `/api/health` and an hour without `42501`).
+  - The way back to `app_owner` is documented and ready (`hd_point app_owner`, runbook).
+- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change. Decided 2026-10-29: consolidate calls on create-and-refresh, with no `GuardedClient` change (ADR-0040 Notes); its PR is next.
 - **Deferred:** RLS policies and enforcement (M4).
 
 ### M3: Allowlisted pilot
