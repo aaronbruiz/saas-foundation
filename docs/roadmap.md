@@ -103,14 +103,15 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
 - **Result (2026-10-29, owner-reviewed):** done. Since 14:02:30Z production's Hyperdrive config connects as `app_runtime` (runbook "Runtime role (ADR-0038)" record: G1–G4, identity check, the owner's smoke, an hour without `42501`); the way back is `hd_point app_owner`. Decision 8's follow-up, #189, is measured above. Navigation's 26 ms runs are carried to M3 as an open observation.
 - **Deferred:** RLS policies and enforcement (M4).
 
-### M3: Allowlisted pilot (current)
+### M3: Allowlisted pilot (current; deferred 2026-10-29)
 
+- **Deferred (owner, 2026-10-29):** no participants are available. It isn't done. Meanwhile the owner approved two items: the "E2E sign-ins" follow-up of the reuse-validation track above and the failed-renewal check below.
 - **Outcome:** a small allowlisted group uses the foundation for a defined use case. The pilot checks that sign-up, organizations, invitations, the tenant domain and sandbox billing work for real users, not only for smoke tests.
 - **Why:** this is the first evidence that the foundation is usable, not only safe.
 - **Before it starts:**
   - M1 and M2 done.
   - The pilot's use case and success criteria written down before anyone is admitted.
-  - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal is still open; it's due after 2026-10-21 06:19 UTC. Ticking it completes step 1 but doesn't make the pilot ready on its own.
+  - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal was ticked on 2026-10-29 (the subscription canceled on 2026-10-21; runbook). That completes step 1 but doesn't make the pilot ready on its own.
 - **Done when:**
   - ADR-0032 rollout steps 2–7 are recorded.
   - The admitted users have exercised the defined use case.
