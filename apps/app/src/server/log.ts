@@ -69,6 +69,18 @@ export function logUnexpected(event: string, err: unknown, fields: Fields = {}):
   return true
 }
 
+/** What a client sees for an unexpected error: only an error's message reaches the browser (R01). */
+export const UNEXPECTED_MESSAGE = 'Something went wrong. Please try again.'
+
+/**
+ * Logs `err` unless it's an expected client error, then returns what the client may receive: an
+ * expected error as it is (its message is for the user), anything else as a generic error, since a
+ * library message can carry internal detail (ADR-0015).
+ */
+export function forClient(event: string, err: unknown, fields: Fields = {}): unknown {
+  return logUnexpected(event, err, fields) ? new Error(UNEXPECTED_MESSAGE) : err
+}
+
 /**
  * Better Auth's own log lines. It sometimes passes an Error (or other value) instead of a string;
  * only a redacted name/message is kept either way. Stable `auth.*` names from our auth package
