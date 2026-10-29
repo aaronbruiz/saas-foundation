@@ -57,7 +57,7 @@ try {
 } catch (e) {
   if (e?.code === '55P03' || e?.cause?.code === '55P03')
     fail(
-      `gave up after lock_timeout (${lockMs} ms); nothing was applied. Find the blocker with: SELECT pid, state, xact_start, left(query, 80) FROM pg_stat_activity WHERE pid IN (SELECT unnest(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE wait_event_type = 'Lock'); then retry in an idle window.`,
+      `gave up after lock_timeout (${lockMs} ms); nothing was applied. Find long open transactions holding table locks with: SELECT a.pid, a.state, a.xact_start, l.relation::regclass, l.mode, left(a.query, 80) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE l.granted AND l.relation IS NOT NULL AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database()) AND a.pid <> pg_backend_pid() ORDER BY a.xact_start; then retry in an idle window.`,
     )
   throw e
 } finally {

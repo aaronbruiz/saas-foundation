@@ -18,7 +18,7 @@ const url = (db) => {
   u.pathname = `/${db}`
   return u.toString()
 }
-const LOCK_MS = 1000
+const LOCK_MS = 2000
 const MARGIN_MS = 4000 // process start, connect and the migrator's own work
 const script = new URL('migrate.mjs', import.meta.url).pathname
 const dir = mkdtempSync(join(tmpdir(), 'migrate-lock-'))
@@ -46,7 +46,9 @@ ALTER TABLE t ADD COLUMN c int;`
 const v1 = () => folder([first])
 const v2 = () => folder([first, second])
 
-const run = (f, extra = {}) =>
+// A watchdog kills the migrator if it outlives `deadline`, so a lost limit fails the test instead of
+// hanging it with the blocker still open.
+const run = (f, extra = {}, deadline = 30_000) =>
   new Promise((resolve) => {
     const t0 = Date.now()
     const p = spawn('node', [script, f], {
@@ -58,8 +60,12 @@ const run = (f, extra = {}) =>
       },
     })
     let err = ''
+    const dog = setTimeout(() => p.kill('SIGKILL'), deadline)
     p.stderr.on('data', (d) => (err += d))
-    p.on('close', (code) => resolve({ code, err, ms: Date.now() - t0 }))
+    p.on('close', (code, signal) => {
+      clearTimeout(dog)
+      resolve({ code, signal, err, ms: Date.now() - t0 })
+    })
   })
 
 const snapshot = async (c) => {
@@ -106,18 +112,24 @@ test('a migration blocked by a conflicting lock fails within the limit, changes 
     await blocker.query('BEGIN')
     await blocker.query('INSERT INTO t (id) VALUES (1)') // ROW EXCLUSIVE, conflicts with ALTER's ACCESS EXCLUSIVE
 
-    const migration = run(v2())
-    // Once the migrator is queued on the lock, a competing write queues behind it.
-    for (let i = 0; i < 100; i++) {
-      const { rows } = await observer.query(
-        `SELECT 1 FROM pg_locks WHERE relation = 't'::regclass AND NOT granted`,
-      )
-      if (rows.length) break
-      await new Promise((r) => setTimeout(r, 50))
+    const migration = run(v2(), {}, LOCK_MS + MARGIN_MS + 2000)
+    const waiting = async (n) => {
+      for (let i = 0; i < 200; i++) {
+        const { rows } = await observer.query(
+          `SELECT count(*)::int AS n FROM pg_locks WHERE relation = 't'::regclass AND NOT granted`,
+        )
+        if (rows[0].n >= n) return true
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      return false
     }
+    // The migrator queues on the lock; then a competing write queues behind it.
+    assert.ok(await waiting(1), 'the migrator never waited on the lock')
     const w0 = Date.now()
     const blockedWrite = writer.query('INSERT INTO t (id) VALUES (2)').then(() => Date.now() - w0)
+    assert.ok(await waiting(2), 'the competing write never queued behind the migrator')
     const r = await migration
+    assert.equal(r.signal, null, `the migrator hung (killed after ${r.ms} ms)`)
     assert.notEqual(r.code, 0)
     assert.match(r.err, /lock_timeout/)
     assert.ok(r.ms < LOCK_MS + MARGIN_MS, `migrator took ${r.ms} ms`)
