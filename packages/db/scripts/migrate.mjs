@@ -39,13 +39,27 @@ for (const e of journal.entries) {
   if (!Number.isSafeInteger(e.when)) fail(`bad journal timestamp for ${e.tag}`)
 }
 
+// Bound every lock wait of the run (issue 174): a DDL statement stuck behind a long transaction
+// also queues every later writer on that table. 5 s: longer than any normal lock hand-off, short
+// enough that blocked sign-ins stay tolerable. Session-level, so it covers each migration's
+// transaction; a timeout aborts that transaction and the run, leaving the journal unchanged.
+const lockMs = Number(process.env.MIGRATE_LOCK_TIMEOUT_MS ?? 5000)
+if (!Number.isSafeInteger(lockMs) || lockMs < 1)
+  fail('MIGRATE_LOCK_TIMEOUT_MS must be a positive integer')
 const client = new pg.Client({ connectionString: process.env.DATABASE_URL })
 await client.connect()
 try {
+  await client.query(`SET lock_timeout = ${lockMs}`)
   await migrate(drizzle(client), { migrationsFolder: folder })
   console.error(
     `[migrate] applied ${journal.entries.length} journal entries (already-applied ones skipped)`,
   )
+} catch (e) {
+  if (e?.code === '55P03' || e?.cause?.code === '55P03')
+    fail(
+      `gave up after lock_timeout (${lockMs} ms); nothing was applied. Find the blocker with: SELECT pid, state, xact_start, left(query, 80) FROM pg_stat_activity WHERE pid IN (SELECT unnest(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE wait_event_type = 'Lock'); then retry in an idle window.`,
+    )
+  throw e
 } finally {
   await client.end()
 }
