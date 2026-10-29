@@ -7,7 +7,10 @@ export class TenantTransactionError extends Error {
 }
 
 /** One tenant transaction's claim on a connection. Dead once the transaction has ended. */
-export type Owner = { live: boolean; tenantSet: boolean }
+export type Owner = { live: boolean; tenantSet: boolean; timedOut?: boolean }
+
+// pg's `query_timeout` rejects with this message without cancelling the statement (pg 8.23.1).
+const isTimeout = (error: unknown) => (error as Error | null)?.message === 'Query read timeout'
 
 const owners = new AsyncLocalStorage<Owner>()
 
@@ -47,7 +50,24 @@ export class GuardedClient extends Client {
   // pg's overloads; the gate only reads the statement text.
   override query(...args: unknown[]): never {
     this.#gate(args[0])
-    return (Client.prototype.query as (...a: unknown[]) => never).apply(this, args)
+    // A statement reported as timed out may still finish and write, so its transaction must not
+    // commit (`runOwned` checks this), even if the caller catches the timeout.
+    const owner = this.#owner
+    const last = args.length - 1
+    const callback = args[last]
+    if (owner && typeof callback === 'function') {
+      args[last] = (error: unknown, ...rest: unknown[]) => {
+        if (isTimeout(error)) owner.timedOut = true
+        return (callback as (...a: unknown[]) => unknown)(error, ...rest)
+      }
+    }
+    const result = (Client.prototype.query as (...a: unknown[]) => unknown).apply(this, args)
+    if (owner && result instanceof Promise) {
+      result.catch((error: unknown) => {
+        if (isTimeout(error)) owner.timedOut = true
+      })
+    }
+    return result as never
   }
 
   #gate(config: unknown) {
@@ -100,6 +120,8 @@ export class GuardedClient extends Client {
           owner.live = false
         }
         const status = this.getTransactionStatus()
+        if (owner.timedOut)
+          throw new TenantTransactionError('a statement in the tenant transaction timed out')
         if (this.#pending() || status !== 'T') {
           throw new TenantTransactionError(
             this.#pending()
