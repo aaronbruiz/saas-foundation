@@ -49,19 +49,12 @@ export class GuardedClient extends Client {
 
   // pg's overloads; the gate only reads the statement text.
   override query(...args: unknown[]): never {
-    this.#gate(args[0])
-    // A statement reported as timed out may still finish and write, so its transaction must not
-    // commit (`runOwned` checks this), even if the caller catches the timeout.
-    const owner = this.#owner
-    const last = args.length - 1
-    const callback = args[last]
-    if (owner && typeof callback === 'function') {
-      args[last] = (error: unknown, ...rest: unknown[]) => {
-        if (isTimeout(error)) owner.timedOut = true
-        return (callback as (...a: unknown[]) => unknown)(error, ...rest)
-      }
-    }
+    this.#gate(args)
     const result = (Client.prototype.query as (...a: unknown[]) => unknown).apply(this, args)
+    // A statement reported as timed out may still finish and write, so its transaction must not
+    // commit (`runOwned` checks this), even if the caller catches the timeout. Inside an owner,
+    // `#gate` admits only the promise form, so this sees every statement's outcome.
+    const owner = this.#owner
     if (owner && result instanceof Promise) {
       result.catch((error: unknown) => {
         if (isTimeout(error)) owner.timedOut = true
@@ -70,7 +63,8 @@ export class GuardedClient extends Client {
     return result as never
   }
 
-  #gate(config: unknown) {
+  #gate(args: unknown[]) {
+    const config = args[0]
     if (this.#broken)
       throw new TenantTransactionError('connection unusable after a failed tenant transaction')
     const current = owners.getStore()
@@ -85,6 +79,10 @@ export class GuardedClient extends Client {
       throw new TenantTransactionError('connection owned by a tenant transaction')
     if (!PLAIN.test(text) || UNCHECKABLE.test(text)) {
       throw new TenantTransactionError('statement refused inside a tenant transaction')
+    }
+    const settled = config as { callback?: unknown; submit?: unknown }
+    if (args.some((a) => typeof a === 'function') || settled.callback || settled.submit) {
+      throw new TenantTransactionError('inside a tenant transaction, statements use promises')
     }
   }
 

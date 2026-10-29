@@ -453,6 +453,20 @@ describe('a tenant transaction owns its connection until it ends', () => {
     })
     expect(await withDb((db) => names(db, orgA))).not.toContain(name)
   }, 15_000)
+
+  it('inside it, statements answered through a callback instead of a promise are refused', async () => {
+    await withDb(async (db) => {
+      const query = client(db).query.bind(client(db)) as (...args: unknown[]) => unknown
+      await inTenant(db, { orgId: orgA }, async () => {
+        expect(() => query('select 1', () => {})).toThrow(TenantTransactionError)
+        expect(() => query('select 1', [], () => {})).toThrow(TenantTransactionError)
+        expect(() => query({ text: 'select 1', callback: () => {} })).toThrow(
+          TenantTransactionError,
+        )
+        expect(() => query({ text: 'select 1', submit: () => {} })).toThrow(TenantTransactionError)
+      })
+    })
+  })
 })
 
 describe('tenant context', () => {
