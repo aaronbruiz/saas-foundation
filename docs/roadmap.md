@@ -4,11 +4,11 @@ Owner-approved 2026-10-19. This file sets priorities. Session handoffs only resu
 
 Details live in the ADRs (`docs/adr/`) and runbooks (`docs/runbooks/`). This file links to them and doesn't copy their backlogs.
 
-## Where we are (2026-10-19)
+## Where we are (2026-10-29)
 
-- **Production:** app-v0.3.2 (`dbd38b7`, released 2026-10-14). It connects as `app_owner`. It holds only smoke-test accounts (ADR-0014 data gate; ADR-0032 not lifted).
-- **Merged, not released:** 31 commits on `main` (`caa9715`). They include migrations 0005–0008 (runtime role, archive/audit, hashed reset identifiers, webhook definer), ADR-0040 phases 1–2 (`GuardedClient`, tenant transactions) and atomic organization deletion. None has run in hosted CI.
-- **Not operational:** GitHub Actions has started no billable job since 2026-10-15. Diagnosed 2026-10-20 from GitHub's billing API: the account is on the Free plan, and October's included Linux minutes are used up (2,078 minutes, all in this repository, $0 charged). Every job since then fails unstarted with GitHub's "payments have failed or your spending limit needs to be increased" annotation. Scheduled backups, the heartbeat (ADR-0037), CI, previews and the release workflow are all stopped. One manual backup ran on 2026-10-18.
+- **Production:** app-v0.5.0 (`65d49b8`, released 2026-10-29). Since 2026-10-29 it connects as the least-privilege role `app_runtime` (M2). It holds only smoke-test accounts (ADR-0014 data gate; ADR-0032 not lifted).
+- **Milestones:** M1 and M2 are done; M3 is current but deferred (no pilot participants yet).
+- **Operations:** GitHub Actions runs again since 2026-10-21, when the repository became public. From 2026-10-15 every job had failed unstarted: October's included Free-plan minutes were used up (2,078, all in this repository; diagnosed from GitHub's billing API). The scheduled backup succeeded on 2026-10-29.
 
 ## Status vocabulary
 
