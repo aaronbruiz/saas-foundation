@@ -23,7 +23,7 @@ Merged, validated, deployed and operational are different states. Report each on
 
 ## Milestones
 
-### M1: Verified release and operations restored (current)
+### M1: Verified release and operations restored (done 2026-10-29)
 
 - **Outcome:** production runs a verified release that contains the merged work (0005–0008, ADR-0040 phases 1–2). Backups, alerting and CI run unattended again.
 - **Why:** 31 commits wait unreleased, and they include a new connection layer that has never run through Hyperdrive. The batch gets riskier every day it waits. Without backups, pilot data can't be admitted.
@@ -44,6 +44,12 @@ Merged, validated, deployed and operational are different states. Report each on
      - the rollback target version recorded.
   5. Production verified after the release: health, smoke e2e, and the definer function's privileges ("After a restore or a promote").
 - **Deferred:** the runtime-role switch (M2), RLS policies (M4), and anything in the M5 backlog.
+- **Result (2026-10-29, owner-reviewed):** done; app 0.4.0 (`c8d6a2a`) is live.
+  1. Hosted CI passed on the candidate `c09bbf1` (run 39553353113) and on the released commit (push run 40817834758), which differs from it only by CI's workflow and an ADR-0021 note (#180). #151's checks on 2026-10-21: the schema gate passed on pull request runs (39553353113 and others), the deliberately drifted #179 failed at it (39554689817), and the first push-to-main run passed (39544050597).
+  2. ADR-0040 checks (a)–(c) and (e) passed on a preview (ADR-0040 Notes, #182). (d) wasn't measured; it opens M2.
+  3. (ii) passed: the heartbeat alerted on a failed ping and recovered. (iii) passed on an older dump: the runbook restore of the owner-supplied production dump of 2026-10-15 passed with the 0005–0008 replay and the definer check; the newest dump (2026-10-29) wasn't restored. (i) was waived by the owner for this release: the scheduled runs of 2026-10-21 to 10-28 never started (an Actions billing block while the repository was private), and a manual run on 10-29 succeeded with its heartbeat ping. Scheduled runs succeeding unattended is still to be confirmed.
+  4. Release run: preflight, restore point `pre-migrate-app-v0.4.0-20261029T042822Z`, migrations 0005–0008, the 0% candidate (held because `wrangler.jsonc` differed only in a comment and the local connection string), then promotion. Rollback target: app-v0.3.2, version `0ef56ba5`.
+  5. Health, the definer check and the identity check (G2: `app_runtime` with exactly ADR-0038's grants, no memberships) passed in production. The owner's smoke checklist (two accounts in separate tenants) passed except the project rename, which wasn't captured.
 
 ### Parallel track: Reuse validation
 
@@ -79,14 +85,14 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - ADR-0038 and ADR-0039 are Proposed while AGENTS.md treats their grants and archive triggers as binding; reconcile their status the way ADR-0040's was.
   - Optional (M5): a catalog test that discovers tenant-owned tables and checks each one's grant, archive trigger and registration, instead of the hand-kept lists.
 
-### M2: Production on the least-privilege runtime role
+### M2: Production on the least-privilege runtime role (current)
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
 - **Why:** M1 deploys the role, but it protects nothing until production uses it. This switch is worth doing without RLS: least privilege stands on its own.
 - **Before it starts:**
   - M1 done.
   - ADR-0040 decisions 7–8 and its staged rollout table, plus the runbook "Runtime role (ADR-0038)", revised so the role switch comes first and policies later (done: owner-approved docs PR, 2026-10-21).
-  - ADR-0040 check (d), preview latency, recorded.
+  - ADR-0040 check (d), preview latency: not measured in M1, so it's M2's first task, and it's recorded before the production switch.
 - **Done when:**
   - ADR-0038 G3 passes: effective privileges through Hyperdrive, plus the Neon default-ACL and effective-role checks in the runbook.
   - G4: owner approval recorded.
