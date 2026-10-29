@@ -520,3 +520,26 @@ describe('tenant repositories', () => {
     })
   })
 })
+
+describe('round trips (ADR-0040 decision 8)', () => {
+  it('creating a project reads the plan and inserts in one tenant transaction', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'rt')
+    // Every BEGIN the guard sends goes through pg's own Client.prototype.query.
+    const base = await withDb(async (db) =>
+      Object.getPrototypeOf(Object.getPrototypeOf(client(db))),
+    )
+    const original = base.query
+    let begins = 0
+    base.query = function (this: unknown, ...args: unknown[]) {
+      if (args[0] === 'BEGIN') begins++
+      return original.apply(this, args)
+    }
+    try {
+      await createProject(owner.headers, { tenant: slug, project: { name: 'one' } })
+    } finally {
+      base.query = original
+    }
+    expect(begins).toBe(1)
+  })
+})
