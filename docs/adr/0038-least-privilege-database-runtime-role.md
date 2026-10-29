@@ -48,7 +48,7 @@ Tenant isolation stays in application code: `getTenantContext` and the `packages
 
 Stating these risks doesn't accept them: the owner decides which to accept and which controls to add (see "Residual-risk review, 2026-10-18" in Notes). For now the app keeps Better Auth's self-service organization deletion and one shared runtime credential.
 
-**Deployment state.** Until decision 5's gates pass, production runs as `app_owner` (migration 0005 isn't released; the release needs GitHub Actions, blocked since 2026-10-15). Everything an `app_runtime` holder could do below, the production credential can do today, plus DDL, `TRUNCATE` and bypassing RLS. Local development and tests already run as `app_runtime`.
+**Deployment state.** Production runs as `app_runtime` since 2026-10-29 (decision 5's gates G1–G4 passed; migration 0005 released with app 0.4.0; runbook "Runtime role (ADR-0038)" step 5 record). Before that it ran as `app_owner`, which can do everything below plus DDL, `TRUNCATE` and bypassing RLS. Local development and tests run as `app_runtime`.
 
 Two kinds of actor are distinguished:
 
