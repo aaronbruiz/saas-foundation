@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.4.1...app-v0.5.0) (2026-10-29)
+
+
+### Features
+
+* **app:** database-free /api/ping for uptime monitoring ([fdba3dd](https://github.com/aaronbruiz/saas-foundation/commit/fdba3dd03c4f6bb45f58978081b1bcd5f04d7d3e))
+* **app:** error page for loader failures, rendered on the server too ([37d8d9f](https://github.com/aaronbruiz/saas-foundation/commit/37d8d9f81094ecf58ca5fce89cbd72d49e6a4df5))
+
+
+### Bug Fixes
+
+* **db:** bound how long a migration waits for locks ([#207](https://github.com/aaronbruiz/saas-foundation/issues/207)) ([e4acd06](https://github.com/aaronbruiz/saas-foundation/commit/e4acd06363a833b097139c45de59962a9693d24b))
+
 ## [0.4.1](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.4.0...app-v0.4.1) (2026-10-29)
 
 
