@@ -51,7 +51,7 @@ Owner decisions (2026-10-18): keep self-service organization deletion; no deleti
 
 - **Adding a tenant table** (AGENTS.md recipe) also means adding the `archive_delete` trigger in a migration; the catalog test in `apps/app/test/archive.test.ts` fails without it.
 - **New access-granting auth columns** (for example two-factor secrets) need a decision on auditing, recorded here.
-- **Restores:** after a `--no-acl` restore, re-apply `0006_archive_audit.sql` and then `0007_hashed_verification.sql` as the owner, with `0005` (runbook "Runtime role" → After a restore). `0007` replaces `audit_auth()` and the `verification` triggers and revokes `DELETE` on `account` again.
+- **Restores:** after a `--no-acl` restore, re-apply `0006_archive_audit.sql` and then `0007_hashed_verification.sql` as the owner, with `0005` (runbook "Runtime role" → After a restore; a database older than the code version runs that version's migrator first, procedure (b)). `0007` replaces `audit_auth()` and the `verification` triggers and revokes `DELETE` on `account` again.
 - **Removing** a trigger or the schema is a contract migration (`!` in the PR title) and needs a superseding ADR.
 
 ## Alternatives
