@@ -151,3 +151,20 @@ Preview checks (a)–(c) and (e), 2026-10-21 (roadmap M1 done-when 2), through a
 - **Released:** app 0.4.0 shipped as `c8d6a2a` (2026-10-29), which differs from `c09bbf1` only by CI's workflow and an ADR-0021 note (#180), neither part of the app build.
 - **Not covered:** (d) latency (required before the phase 4 switch, roadmap M2); the runtime role (the preview ran as the owner); any RLS policy (phase 3).
 - Runs: CI https://github.com/aaronbruiz/saas-foundation/actions/runs/39553677263, preview https://github.com/aaronbruiz/saas-foundation/actions/runs/39554137732, cleanup https://github.com/aaronbruiz/saas-foundation/actions/runs/39554569326 (`saas-pr-178` and `preview/pr-178` deleted afterwards).
+
+Preview check (d), latency of decision 8, 2026-10-29 (roadmap M2), through a real Worker → Hyperdrive → Neon on a PR preview:
+
+- **What ran:** `main` (8576a0b) plus a throwaway probe (PR #185, closed unmerged); the deployed build `0d12a54` (CI's merge commit) differs from `main` only by the reviewed probe files. Preview config `saas-pr-185`, caching `disabled: true` (read from the config); the Worker connected as the preview branch's owner. The preview ran at `cf-placement: remote-IAD`, as production does, against a Neon endpoint in `us-east-1`.
+- **Method (owner-approved):** an unwrapped path can't run, since `GuardedClient` refuses `project` outside `inTenant`, so the baseline is an estimate. Each path runs the app's own repository calls: session and user read, organization, membership, then the list (navigation); the entitlements read and `createWithinLimit` (create); or the create followed by the two refresh loaders in parallel on their own clients (create-and-refresh). Right after each path sample, a matched sample on the same client runs one empty `inTenant` per newly wrapped call (+3) and one `select 1` per call that was already a transaction (+1). Added cost = the matched sample. Estimated baseline = path minus matched, per sample; percentiles are taken afterwards. Material (predeclared): p50 added > 50 ms on create-and-refresh or > 25 ms on navigation. Timer steps were 3–5 ms (Workers' clock).
+- **Results** (9 runs × 200 samples; ms; per-run p50 range and median of run p50s; pooled p95):
+
+  | Path                    | Path p50            | Added p50        | Estimated baseline p50 | Path p95 | Added p95 |
+  | ----------------------- | ------------------- | ---------------- | ---------------------- | -------- | --------- |
+  | Navigation (+3)         | 41–72, median 54    | 15–25, median 19 | 34 (pooled)            | 91       | 34        |
+  | Create (+4)             | 71–122, median 94   | 19–34, median 25 | 67 (pooled)            | 155      | 44        |
+  | Create and refresh (+7) | 119–193, median 150 | 37–61, median 46 | 102 (pooled)           | 235      | 76        |
+
+  One round trip (`select 1`) was 7 ms at p50 and an empty `inTenant` 19 ms, so the added cost is about 6.5 ms per round trip. Runs 1–3 gave 44/37/39 ms on create-and-refresh; the rerun near the threshold gave 61 ms, and five more runs gave 52/55/40/51/46 ms. One sample after about 5 minutes idle (descriptive only) showed no connection cost (open 2 ms; create-and-refresh 177 ms, of which 52 ms added).
+
+- **Verdict:** navigation isn't material (0 of 9 runs over 25 ms). Create-and-refresh sits at the threshold (median 46 ms, 4 of 9 runs over 50 ms). **Owner decision (2026-10-29): material, and the switch goes ahead anyway.** The switch to `app_runtime` doesn't change the cost (phase 1 has run in production since app 0.4.0, whatever the role). Reopening per-request contexts (design B) or batching is the next M2 item after the switch.
+- Runs: CI https://github.com/aaronbruiz/saas-foundation/actions/runs/40823876829, preview https://github.com/aaronbruiz/saas-foundation/actions/runs/40824314952, cleanup https://github.com/aaronbruiz/saas-foundation/actions/runs/40827360780 (`saas-pr-185` and `preview/pr-185` deleted, preview URL 404).
