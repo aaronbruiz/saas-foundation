@@ -86,7 +86,7 @@ The projects feature is the complete pattern for a tenant-owned resource; copy i
 
 Then follow the AGENTS.md recipes in order: "Add a tenant-owned table" (including child tables), "Add a tenant-scoped server function", and "Add a plan limit or feature" if it has one. The checks name most missed steps: `pnpm db:check` prints the `sql-only-objects.tsv` line, the catalog tests fail without the grant or the archive trigger, `pnpm check` fails on a stale `plans.json` (`pnpm plans:export`) or route tree (`pnpm build`).
 
-E2E: a local run signs in from one IP, and the login rate limit (5 sign-ins and 5 sign-ups a minute per IP, ADR-0005, no test exemption) is nearly used up by the existing suite. A new test that signs in can make the full run fail with "Too many requests". Check it alone (`pnpm test:e2e -g "<test name>"`; each local run starts with a cleared counter), and reuse a signed-in page within a test instead of signing in again.
+E2E: a local run signs in from one IP, and the login rate limit (5 sign-ins and 5 sign-ups a minute per IP, ADR-0005, no test exemption) caps a run's real sign-ins. They're kept for the tests about signing up and signing in: a run uses 4 sign-ups and 5 sign-ins locally. A test that only needs someone signed in starts from the shared session instead (`test.use({ storageState: sessionFile })`, from `apps/app/e2e/session.ts`; `e2e/projects.spec.ts` is an example). The `setup` project (`e2e/auth.setup.ts`) signs that user up once per run; the user has no organization yet, so the test creates its own with `createOrg` (`e2e/helpers.ts`) and doesn't rely on other tests' data. A new test that signs in for real costs budget: if the full run fails with "Too many requests", it has run out.
 
 ## 7. Record product decisions
 

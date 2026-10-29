@@ -81,7 +81,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
 
 - **Feeds M3:** the pilot tests what this track found easy or hard.
 - **Result (2026-10-21, owner-reviewed):** done. A fresh session built the flow from the docs; `pnpm check`, `pnpm test` and `pnpm test:e2e` passed (the new e2e test alone, see below). The fixes the owner approved are documentation (child tables, first-feature walkthrough, regeneration commands, test troubleshooting, ADR-0040's partial acceptance) and `pnpm db:check` without `origin/main`. Follow-ups:
-  - E2E sign-ins: the existing suite nearly uses up the login rate limit, so one more test that signs in fails the full run. Shared signed-in fixtures, keeping real sign-in in the tests about it. ADR-0005 rules out a test exemption from the limit.
+  - E2E sign-ins: the existing suite nearly uses up the login rate limit, so one more test that signs in fails the full run. Shared signed-in fixtures, keeping real sign-in in the tests about it. ADR-0005 rules out a test exemption from the limit. Done 2026-10-29 (owner-approved while M3 is deferred): a `setup` project signs one user up per run, and the tests that only need a session reuse it.
   - ADR-0038 and ADR-0039 are Proposed while AGENTS.md treats their grants and archive triggers as binding; reconcile their status the way ADR-0040's was.
   - Optional (M5): a catalog test that discovers tenant-owned tables and checks each one's grant, archive trigger and registration, instead of the hand-kept lists.
 

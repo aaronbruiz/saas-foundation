@@ -30,3 +30,6 @@ test-results
 .claude/scheduled_tasks.lock
 .claude/skills/
 .agents/
+
+# e2e shared session (written per run)
+apps/app/e2e/.auth/
