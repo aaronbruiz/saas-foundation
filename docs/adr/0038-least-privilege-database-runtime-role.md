@@ -1,6 +1,6 @@
 # ADR-0038: Least-privilege database runtime role
 
-Status: Proposed · Date: 2026-10-16
+Status: Accepted (owner 2026-10-29) · Date: 2026-10-16
 
 ## Context
 
@@ -97,3 +97,4 @@ What that second actor can do with decision 2's grants (verified on a fresh loca
   - **What such an archive would and wouldn't give:** it's protected against `app_runtime`, not against the owner; it attributes a database login, not a verified person; it's written in the deleting transaction, so rolled-back attempts leave nothing; and it doesn't replace an independently recoverable backup.
 - **2026-10-18, ADR-0039** adds the owner-owned archive/audit triggers (migration `0006_archive_audit`): copies of deleted tenant, `user` and `account` rows and a record of access-granting auth writes, unreachable by `app_runtime`. They record and don't prevent; the limits above still apply.
 - **2026-10-19, `DELETE` on `account` revoked** (migration `0007_hashed_verification`, owner decision: least privilege over keeping an unused grant). In Better Auth 1.7.7 only these delete `account` rows: `/unlink-account` (which refuses a user's last account, and with email and password every user has exactly one: a clean 400, tested), self-service user deletion (`user.deleteUser`, off), and the magic-link and email-OTP plugins (promoting an unproven account; not installed). A user delete's cascade runs as the table owner and still removes accounts. **Enabling user deletion, account linking with unlinking, magic links or email OTP needs `GRANT DELETE ON account TO app_runtime` again**, in a migration with this table and `GRANTS` updated; without it those flows fail with `42501` (a 500). Verified with `has_table_privilege` (which counts PUBLIC and role memberships; the role has none) in `database-role.test.ts`, and a raw `DELETE FROM account` as the runtime role is refused.
+- **2026-10-29, accepted by the owner.** Evidence: migrations 0005–0008 shipped with app 0.4.0 (`c8d6a2a`, release run with restore point `pre-migrate-app-v0.4.0-20261029T042822Z`); since 14:02:30Z production's Hyperdrive config connects as `app_runtime` (runbook "Runtime role (ADR-0038)" record in `docs/runbooks/README.md`: G1–G4, identity check, the owner's smoke, an hour without `42501`). The way back stays `hd_point app_owner`.
