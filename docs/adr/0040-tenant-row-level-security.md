@@ -16,7 +16,7 @@ The 2026-10-15 and 2026-10-19 research (owner's local R06 results and `R06-phase
 - pg's `client.getTransactionStatus()` reports `I`/`T`/`E` from the last ReadyForQuery, with no round trip.
 - None of our Better Auth hooks runs inside a Better Auth transaction today (`membershipLimit`, `afterAcceptInvitation`, `beforeDeleteOrganization`, the role-update hooks and our `hooks.before` all run outside it), but nothing enforced that across upgrades.
 - Only `project` and `billing_subscription` hold tenant data outside Better Auth; 8 repository functions reach them. `getTenantContext` reads only `organization` and `member`.
-- FK cascades bypass RLS; the runtime role can set any `app.*` setting itself; production still runs as `app_owner`, which bypasses RLS, until ADR-0038's G3/G4 switch.
+- FK cascades bypass RLS; the runtime role can set any `app.*` setting itself; production ran as `app_owner`, which bypasses RLS, until ADR-0038's G3/G4 switch on 2026-10-29; it now runs as `app_runtime`.
 
 ## Decision
 
