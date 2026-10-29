@@ -26,6 +26,13 @@ jobs:
     outputs:
       app: ${{ steps.filter.outputs.app }}
     steps:
+      # These rules are mirrored by preview.yml's `resolve` job (a shell grep on the files API):
+      # preview runs on `workflow_run`, where this action would need the PR head fetched into the
+      # job, so it can't share them. Change both together.
+      # `pnpm-lock.yaml` and root files count as app changes, even for a docs- or site-only bump:
+      # paths can't tell which importers a lockfile change reaches (shared transitive packages
+      # such as typescript or wrangler), and a lockfile graph walk isn't worth it for the rare
+      # `astro` group PR (2026-10-29).
       # The PR files API stops at 3,000 files and the action doesn't check it got them all. Outside
       # 1..3000 (or with no count) the step is skipped, `app` stays empty and everything runs.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
