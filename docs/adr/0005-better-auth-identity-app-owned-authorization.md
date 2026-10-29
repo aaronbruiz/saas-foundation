@@ -11,7 +11,7 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 ## Decision
 
 - Better Auth `^1.7` runs in-process, with the organization plugin and the Drizzle adapter. Sessions are stored in Postgres; no KV `secondaryStorage` (with it, sessions leave the DB unless `storeSessionInDatabase` is set).
-- The schema is generated with `npx auth@latest generate` into `packages/db`; migrations go only through drizzle-kit.
+- The schema is generated with the `auth` CLI into `packages/db` (now the pinned CLI via `pnpm auth:generate`; Notes 2026-10-15); migrations go only through drizzle-kit.
 - Default roles: `owner`, `admin`, `member`. Members can't invite; only the owner can delete the org.
 - **Authorization is ours:** every tenant request resolves `{userId, orgId, role}` server-side by verifying membership (see ADR-0010).
 - **Capability matrix** (`apps/web/src/server/permissions.ts`): server functions call `authorize(ctx, capability)` right after `getTenantContext`, so outsiders get 404 before any role check and members with an insufficient role get 403. Unknown roles grant nothing; comma-separated Better Auth multi-roles get the union.
@@ -65,4 +65,4 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
 
 ## Notes (2026-10-15)
 
-**Schema generation command.** The `auth` CLI is now a pinned dev dependency of `packages/auth` (1.7.7), run with `pnpm auth:generate`, instead of `npx auth@latest generate`. The decision (generated schema, migrations only through drizzle-kit) is unchanged.
+**Schema generation command.** The `auth` CLI is now a pinned dev dependency of `packages/auth` (its version is in `packages/auth/package.json`; 1.7.7 when this note was written), run with `pnpm auth:generate`, instead of `npx auth@latest generate`. The decision (generated schema, migrations only through drizzle-kit) is unchanged.
