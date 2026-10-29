@@ -72,4 +72,4 @@ A gap found while doing this: TanStack Start turns errors thrown in server funct
 
 - **Server-function error envelope (2026-10-29, research R01, local probe on TanStack Start 1.169):**
   - An error thrown inside a server-function handler reaches the browser as HTTP 200 with a serialized body. Only the error's `message` crosses; `status`, `name` and `stack` don't. Expected errors' statuses are therefore an application contract (`HttpError.status`, tested at the service level), not an HTTP one.
-  - An unexpected error is logged once (`server_fn.unhandled`, redacted) and then reaches the client as a generic message (`forClient` in `server/log.ts`), since a library message can carry internal detail. Expected errors (`HttpError`, Better Auth 4xx) keep their messages.
+  - An unexpected error thrown through `serve()` (every server function except `getTurnstileConfigFn`) is logged once (`server_fn.unhandled`, redacted) and then reaches the client as a generic message (`forClient` in `server/log.ts`), since a library message can carry internal detail. Expected errors (`HttpError`, Better Auth 4xx) keep their messages.
