@@ -83,3 +83,7 @@ Owner, in the Cloudflare dashboard and Slack; then Claude records the result her
 - A failure the Worker turns into a non-5xx response without an error log (for example an expected 4xx) doesn't alert. That's intended.
 - Anyone could cause such a `500` from outside: unknown server-function ids were answered with `500`, not `404`. Grouping limits the noise to one alert per new issue, plus one per hour of recurrence. **Follow-up done (2026-10-14):** a global request middleware (`apps/app/src/start.ts`) answers an unknown or not client-callable server-function id with a plain `404`, logging nothing. An empty id (`POST /_serverFn/`) still returns a logged `500`, because TanStack Start throws it before request middleware runs. To repeat Rollout step 3, use that path instead of `/_serverFn/alert-test-…`.
 - ADR-0015 gets a "Superseded in part by ADR-0031" line for its alerting requirement (both clauses, restated in decision 3) and the "not configured here" note. Its log contract and Sentry triggers stand.
+
+## Notes
+
+- **`GET /api/ping` (2026-10-29, research R09):** an always-200, database-free route for an external uptime monitor. It covers DNS, TLS, the custom domain and a Worker that no longer runs, failures Workers Issues can't see without traffic, without the Neon cost that rules out polling `/api/health` (Alternatives above). The route exists; the monitor isn't set up yet. That choice (vendor, interval, alert channel) is the owner's, recorded here when made.
