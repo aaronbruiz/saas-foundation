@@ -436,6 +436,37 @@ describe('a tenant transaction owns its connection until it ends', () => {
     })
     expect(await withDb((db) => names(db, orgA))).not.toContain(name)
   })
+
+  it('a write reported as timed out commits nothing, even when the tenant call catches the timeout', async () => {
+    const name = `timed-out-${crypto.randomUUID()}`
+    await withDb(async (db) => {
+      const caught = inTenant(db, { orgId: orgA }, async () => {
+        const slow = (client(db).query as (sql: string, values: unknown[]) => Promise<unknown>)(
+          `insert into project (id, organization_id, name, created_by) select gen_random_uuid()::text, $1, $2, $3 from pg_sleep(6)`,
+          [orgA, name, creator],
+        )
+        await expect(slow).rejects.toThrow('Query read timeout')
+        // The statement still runs on the server; wait for it to finish before ending the call.
+        while (!client(db).readyForQuery) await new Promise((r) => setTimeout(r, 50))
+      })
+      await expect(caught).rejects.toThrow(TenantTransactionError)
+    })
+    expect(await withDb((db) => names(db, orgA))).not.toContain(name)
+  }, 15_000)
+
+  it('inside it, statements answered through a callback instead of a promise are refused', async () => {
+    await withDb(async (db) => {
+      const query = client(db).query.bind(client(db)) as (...args: unknown[]) => unknown
+      await inTenant(db, { orgId: orgA }, async () => {
+        expect(() => query('select 1', () => {})).toThrow(TenantTransactionError)
+        expect(() => query('select 1', [], () => {})).toThrow(TenantTransactionError)
+        expect(() => query({ text: 'select 1', callback: () => {} })).toThrow(
+          TenantTransactionError,
+        )
+        expect(() => query({ text: 'select 1', submit: () => {} })).toThrow(TenantTransactionError)
+      })
+    })
+  })
 })
 
 describe('tenant context', () => {
