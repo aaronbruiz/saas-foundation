@@ -26,7 +26,7 @@ it('the probe route answers 404 outside a workers.dev host or without the operat
   )
 })
 
-it('the probe deletes its organization, membership and projects afterwards', async () => {
+it('the probe deletes its organization, membership, projects and session afterwards', async () => {
   const { db, close } = await createDb(env.DB.connectionString)
   const count = async () =>
     (
@@ -35,7 +35,7 @@ it('the probe deletes its organization, membership and projects afterwards', asy
           $client: { query: (q: string) => Promise<{ rows: Record<string, string>[] }> }
         }
       ).$client.query(
-        "select (select count(*) from organization where id like 'probe-%') as o, (select count(*) from member where organization_id like 'probe-%') as m, (select count(*) from project where organization_id like 'probe-%') as p",
+        "select (select count(*) from organization where id like 'probe-%') as o, (select count(*) from member where organization_id like 'probe-%') as m, (select count(*) from project where organization_id like 'probe-%') as p, (select count(*) from session where id like 'probe-%') as s",
       )
     ).rows[0]
   try {

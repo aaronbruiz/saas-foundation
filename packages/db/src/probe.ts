@@ -8,12 +8,12 @@
 // (+1) per call that was already a transaction (createWithinLimit). Estimated baseline = path minus
 // its matched sample, per sample; percentiles are taken afterwards.
 //
-// Writes one synthetic organization (with a membership and projects), deleted at the end, and one
-// fixed probe user (`probe-user`, created once).
+// Writes one synthetic organization (with a membership and projects) and one session, deleted at
+// the end, and one fixed probe user (`probe-user`, created once).
 import { eq } from 'drizzle-orm'
 import { createDb, rawDb, type Db } from './client.ts'
 import { billing } from './billing.ts'
-import { member, organization, user } from './schema/auth.ts'
+import { member, organization, session, user } from './schema/auth.ts'
 import { findMembership, findOrganizationBySlug, projects } from './tenancy.ts'
 import { inTenant } from './tenant-transaction.ts'
 
@@ -38,6 +38,7 @@ const timed = async (fn: () => Promise<unknown>) => {
 export async function latencyProbe(connectionString: string, n: number): Promise<LatencyResult> {
   const run = crypto.randomUUID().slice(0, 8)
   const [orgId, slug, userId] = [`probe-l-${run}`, `probe-l-${run}`, 'probe-user']
+  const [sessionId, token] = [`probe-s-${run}`, `probe-t-${run}`]
   const scope = { orgId }
 
   let openMs = 0
@@ -73,13 +74,28 @@ export async function latencyProbe(connectionString: string, n: number): Promise
         role: 'owner',
         createdAt: now,
       })
+    await rawDb(db)
+      .insert(session)
+      .values({
+        id: sessionId,
+        token,
+        userId,
+        expiresAt: new Date(now.getTime() + 3_600_000),
+        createdAt: now,
+        updatedAt: now,
+      })
     await projects(db, scope).createWithinLimit({ name: 'seed' }, userId, null)
     // The refresh's two loaders run as parallel requests, each on its own client (R04 §2.2).
     const [db2, db3] = [await open(), await open()]
 
     const wrapper = (d: Db) => inTenant(d, scope, async () => undefined)
     const roundTrip = (d: Db) => client(d).query('select 1')
+    // getTenantContext: Better Auth's in-app getSession (session read, then user read; R04 §2.2),
+    // then organization and membership.
     const tenant = async (d: Db) => {
+      const [s] = await rawDb(d).select().from(session).where(eq(session.token, token)).limit(1)
+      const [u] = s ? await rawDb(d).select().from(user).where(eq(user.id, s.userId)).limit(1) : []
+      if (!u) throw new Error('probe session')
       const org = await findOrganizationBySlug(d, slug)
       if (!org || !(await findMembership(d, org.id, userId))) throw new Error('probe fixture')
       return org
@@ -152,12 +168,15 @@ export async function latencyProbe(connectionString: string, n: number): Promise
       info,
     }
   } finally {
+    await Promise.allSettled(opened.map((h) => h.close()))
+    // A fresh connection: a measurement connection may be unusable by now.
+    const cleanup = await createDb(connectionString)
     try {
-      const cleanup = opened[0]?.db ?? (await open())
       // Organization delete cascades to its membership and projects (archived, ADR-0039).
-      await rawDb(cleanup).delete(organization).where(eq(organization.id, orgId))
+      await rawDb(cleanup.db).delete(organization).where(eq(organization.id, orgId))
+      await rawDb(cleanup.db).delete(session).where(eq(session.id, sessionId))
     } finally {
-      await Promise.allSettled(opened.map((h) => h.close()))
+      await cleanup.close()
     }
   }
 }
