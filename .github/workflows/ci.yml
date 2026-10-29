@@ -68,6 +68,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2 # on a PR: the merge commit and its base parent, for check-bindings and migrations
+          # Credentials stay: the migrations check may `git fetch` its base, which needs the read-only
+          # token in a private repository (products made from this template).
       - uses: ./.github/actions/setup
         with:
           cache: pnpm
