@@ -3,10 +3,11 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const SCRIPT = new URL('./check-agents-size.mjs', import.meta.url).pathname
+const SCRIPT = fileURLToPath(new URL('./check-agents-size.mjs', import.meta.url))
 const dir = mkdtempSync(join(tmpdir(), 'check-agents-size-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
 

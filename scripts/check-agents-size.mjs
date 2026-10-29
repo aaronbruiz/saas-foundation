@@ -6,9 +6,10 @@
 // ADR or runbook it condenses, with a pointer.
 // Usage: node scripts/check-agents-size.mjs [file]
 import { statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const BUDGET = 28_000
-const file = process.argv[2] ?? new URL('../AGENTS.md', import.meta.url).pathname
+const file = process.argv[2] ?? fileURLToPath(new URL('../AGENTS.md', import.meta.url))
 const { size } = statSync(file)
 if (size > BUDGET) {
   console.error(
