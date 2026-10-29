@@ -18,7 +18,8 @@ const unknownServerFnAs404 = createMiddleware().server(async ({ next, handlerTyp
   }
 })
 
-// Global request middleware: runs for server routes, SSR and server functions.
+// Global request middleware: runs for server routes, SSR and server functions, `/api/ping` included,
+// so keep it free of database work (the uptime monitor polls that route; ADR-0031 note).
 export const startInstance = createStart(() => ({
   requestMiddleware: [csrf, unknownServerFnAs404],
 }))
