@@ -109,7 +109,7 @@ jobs:
           fi
           node scripts/check-migrations.mjs "$BASE"
           SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh
-          node --test scripts/check-schema-sql.test.mjs
+          node --test scripts/check-schema-sql.test.mjs packages/db/scripts/migrate-lock-timeout.test.mjs
       - run: pnpm test
         if: env.APP == 'true'
       # dump.sh against a disposable Postgres and a local S3 stand-in, with the runner's AWS CLI
