@@ -99,7 +99,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - The switch is made and recorded (done 2026-10-29, 14:02Z; runbook "Runtime role (ADR-0038)" step 5).
   - Smoke e2e passes as `app_runtime` (done 2026-10-29: owner's manual smoke, as for M1, plus `/api/health` and an hour without `42501`).
   - The way back to `app_owner` is documented and ready (`hd_point app_owner`, runbook).
-- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change. Decided 2026-10-29: consolidate calls on create-and-refresh, with no `GuardedClient` change (ADR-0040 Notes); its PR is next.
+- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change. Decided 2026-10-29: consolidate calls on create-and-refresh, with no `GuardedClient` change (ADR-0040 Notes). Done in #189; re-measured on a preview 2026-10-29: about 25 ms saved at p50, added cost 30 ms, below the 50 ms threshold (ADR-0040 Notes).
 - **Deferred:** RLS policies and enforcement (M4).
 
 ### M3: Allowlisted pilot
