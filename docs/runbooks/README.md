@@ -45,6 +45,9 @@ Where to look when production fails:
   - On an alert: open the issue, find its `event` and `rayId` in Logs, and treat it as ongoing until resolved in Issues (a still-occurring issue doesn't alert again).
   - Don't forward alert content to other channels or tickets (it carries error messages and stack traces).
 - **Health:** `curl -s https://<domain>/api/health` returns `{ ok, db, version, commit, build }` (ADR-0029: root `package.json` version, 7-character commit, CI build id or `local`). A `503` means the database is unreachable; the reason is in the `health.db_down` event.
+- **Watch: log volume (pricing from 2026-12-01).** Workers Logs, Traces and Issues then share one meter: Workers Paid includes 50 GB ingest and 10 GB-month storage per cycle, then $0.25/GB and $0.10/GB-month. The app logs every invocation (`head_sampling_rate` 1, traces off); docs and site log nothing.
+  - **Baseline (2026-10-29, GraphQL `workersInvocationsAdaptive`, last 30 days):** `saas-foundation` 5,300 requests, `saas-foundation-preview` 7,420, about 0.1% of the allowance at an assumed ~1 KB per event (the per-event size isn't measured: the observability telemetry API refused the Wrangler token, `10104`).
+  - **When:** monthly with the Neon check, and before enabling traces or raising sampling or traffic. **What:** Dashboard → Billing (or Observability) → ingested events and GB for the cycle. Revisit sampling if a cycle passes 5 GB.
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
 
