@@ -148,5 +148,6 @@ Preview checks (a)–(c) and (e), 2026-10-21 (roadmap M1 done-when 2), through a
 - **(b)** a tenant call that inserts a project and then throws leaves no row, and the client idle.
 - **(c)** `getTransactionStatus()` is `T` inside, `I` after `COMMIT` and after `ROLLBACK`.
 - **(e)** two tenants alternating 20 times on one client, and 100 tenant calls (6 at a time) each on its own client, all within one `/api/probe` request (separate Worker requests weren't exercised), all see only their own context and projects.
+- **Released:** app 0.4.0 shipped as `c8d6a2a` (2026-10-29), which differs from `c09bbf1` only by CI's workflow and an ADR-0021 note (#180), neither part of the app build.
 - **Not covered:** (d) latency (required before the phase 4 switch, roadmap M2); the runtime role (the preview ran as the owner); any RLS policy (phase 3).
 - Runs: CI https://github.com/aaronbruiz/saas-foundation/actions/runs/39553677263, preview https://github.com/aaronbruiz/saas-foundation/actions/runs/39554137732, cleanup https://github.com/aaronbruiz/saas-foundation/actions/runs/39554569326 (`saas-pr-178` and `preview/pr-178` deleted afterwards).
