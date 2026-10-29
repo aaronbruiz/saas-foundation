@@ -10,6 +10,8 @@ export {
 } from './billing.ts'
 export { createDb, type Db } from './client.ts'
 export { currentDatabase, ping } from './health.ts'
+// THROWAWAY probe (never merged): ADR-0040 check (d), re-measured after #189.
+export { latencyProbe, type LatencyResult } from './probe.ts'
 export {
   countMembers,
   findMembership,
