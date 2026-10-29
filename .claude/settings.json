@@ -35,7 +35,18 @@
       "Bash(wrangler deploy *)",
       "Bash(pnpm exec wrangler deploy *)",
       "Bash(scripts/preview/*)",
-      "Bash(scripts/backup/*)"
+      "Bash(scripts/backup/*)",
+      "Bash(gh workflow run *)",
+      "Bash(gh run rerun *)",
+      "Bash(gh api *approve*)",
+      "Bash(gh api *pending_deployments*)",
+      "Bash(gh api *dispatches*)",
+      "Bash(scripts/release/*)",
+      "Bash(./scripts/release/*)",
+      "Bash(scripts/sites/deploy.sh*)",
+      "Bash(scripts/sites/rollback.sh*)",
+      "Bash(*wrangler versions deploy*)",
+      "Bash(*wrangler rollback*)"
     ],
     "deny": [
       "Read(./.dev.vars)",
