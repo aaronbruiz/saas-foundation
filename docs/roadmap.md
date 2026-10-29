@@ -85,7 +85,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - ADR-0038 and ADR-0039 are Proposed while AGENTS.md treats their grants and archive triggers as binding; reconcile their status the way ADR-0040's was.
   - Optional (M5): a catalog test that discovers tenant-owned tables and checks each one's grant, archive trigger and registration, instead of the hand-kept lists.
 
-### M2: Production on the least-privilege runtime role (current)
+### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
 - **Why:** M1 deploys the role, but it protects nothing until production uses it. This switch is worth doing without RLS: least privilege stands on its own.
@@ -99,10 +99,11 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - The switch is made and recorded (done 2026-10-29, 14:02Z; runbook "Runtime role (ADR-0038)" step 5).
   - Smoke e2e passes as `app_runtime` (done 2026-10-29: owner's manual smoke, as for M1, plus `/api/health` and an hour without `42501`).
   - The way back to `app_owner` is documented and ready (`hd_point app_owner`, runbook).
-- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change. Decided 2026-10-29: consolidate calls on create-and-refresh, with no `GuardedClient` change (ADR-0040 Notes); its PR is next.
+- **After the switch (owner, 2026-10-29):** reopen ADR-0040 decision 8's cost, per-request contexts (design B) or batching, because check (d) found it material. Start with the decision; the stabilization rule below still holds until the owner approves a change. Decided 2026-10-29: consolidate calls on create-and-refresh, with no `GuardedClient` change (ADR-0040 Notes). Done in #189 (`cf6d01b`); re-measured on a preview on 2026-10-29 (ADR-0040 Notes). Create-and-refresh: paired saving about 25 ms (the median of the five per-run paired p50s; pooled, 23 ms; neither is the difference of the aggregate medians); the new path's added cost is 30 ms, below its 50 ms threshold.
+- **Result (2026-10-29, owner-reviewed):** done. Since 14:02:30Z production's Hyperdrive config connects as `app_runtime` (runbook "Runtime role (ADR-0038)" record: G1–G4, identity check, the owner's smoke, an hour without `42501`); the way back is `hd_point app_owner`. Decision 8's follow-up, #189, is measured above. Navigation's 26 ms runs are carried to M3 as an open observation.
 - **Deferred:** RLS policies and enforcement (M4).
 
-### M3: Allowlisted pilot
+### M3: Allowlisted pilot (current)
 
 - **Outcome:** a small allowlisted group uses the foundation for a defined use case. The pilot checks that sign-up, organizations, invitations, the tenant domain and sandbox billing work for real users, not only for smoke tests.
 - **Why:** this is the first evidence that the foundation is usable, not only safe.
@@ -115,6 +116,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - The admitted users have exercised the defined use case.
   - The outcome is measured against the success criteria.
   - Operations stayed operational throughout.
+- **Open observation (from M2, owner 2026-10-29):** the navigation path's added cost, threshold 25 ms p50 (ADR-0040 check (d)). The re-measurement after #189 (2026-10-29, which didn't change navigation) gave 20/22/22/26/26 ms per run: median 22, 2 of 5 runs over. Check (d) had given 15–25 ms, 0 of 9 over. The cause isn't established; that session's base round trip was also higher. It's unresolved, not dismissed as noise: settle it with evidence, for example a repeat navigation measurement during the pilot. It isn't a pilot gate unless the owner makes it one.
 - **Deferred:** opening sign-up (`SIGNUP_MODE=open`, its own ADR), live Polar billing, and features beyond the pilot's use case.
 
 ### M4: RLS reassessment
