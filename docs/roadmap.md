@@ -156,6 +156,7 @@ These items wait here until a milestone needs them. Each one is pulled in by a r
 - further `GuardedClient` or lint hardening;
 - session-token fingerprint and audit-retention work (ADR-0039);
 - pgAudit;
+- overlapping password changes through Better Auth's `/change-password` (owner accepted the race 2026-10-30, for the account page's PR): it checks the current password outside its write, so overlapping requests can both report success while only the last password written works. Reproduced on Better Auth 1.7.12, 10 of 10 pairs through the HTTP handler: both answered 200, exactly one new password signed in, the old one was refused. The caller told success may hold a password that doesn't work. It takes the current password and a session. The account page stops its own duplicate submissions only, not other tabs or clients. Closing it means our own conditional write;
 - remaining research topics;
 - IaC.
 

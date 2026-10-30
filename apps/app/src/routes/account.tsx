@@ -1,8 +1,8 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { authClient } from '../lib/auth-client'
 import { getViewerFn } from '../modules/organizations/functions'
-import { ErrorText, Field, buttonClass, inputClass, useHydrated } from '../lib/ui'
+import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
 
 // The signed-in user's own account: Better Auth's endpoints through the HTTP client, which rate
 // limit password guesses (ADR-0005). Email changes aren't offered (they touch verification, ADR-0016).
@@ -55,19 +55,28 @@ function NameForm({ name }: { name: string }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (pending.current) return
     setSaved(false)
     const next = String(new FormData(e.currentTarget).get('name')).trim()
     if (!next) return setError('Enter a name.')
     setError(null)
+    pending.current = true
     setBusy(true)
-    const { error } = await authClient.updateUser({ name: next })
-    setBusy(false)
-    if (error) return setError(error.message ?? "Your name couldn't be saved.")
-    setSaved(true)
-    await router.invalidate()
+    try {
+      const { error } = await authClient.updateUser({ name: next })
+      if (error) return setError(error.message ?? "Your name couldn't be saved.")
+      setSaved(true)
+      await router.invalidate()
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
   }
 
   return (
@@ -93,25 +102,38 @@ function PasswordForm() {
   const [changed, setChanged] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Set before the first await: the disabled button only renders after a submit that's already in.
+  const pending = useRef(false)
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (pending.current) return
+    pending.current = true
     const formEl = e.currentTarget
     const form = new FormData(formEl)
     setChanged(false)
     setError(null)
     setBusy(true)
     // Other sessions end, as after a password reset: a change is often the answer to a suspected
-    // compromise. This session continues on the new token Better Auth sets.
-    const { error } = await authClient.changePassword({
-      currentPassword: String(form.get('currentPassword')),
-      newPassword: String(form.get('newPassword')),
-      revokeOtherSessions: true,
-    })
-    setBusy(false)
-    if (error) return setError(error.message ?? "Your password couldn't be changed.")
-    formEl.reset()
-    setChanged(true)
+    // compromise. This session continues on the new token Better Auth sets. Better Auth checks the
+    // current password outside its write, so overlapping changes can both report success while only
+    // the last password written works. `pending` stops this page's duplicates, not requests from
+    // other tabs or clients (owner accepted 2026-10-30; roadmap M5).
+    try {
+      const { error } = await authClient.changePassword({
+        currentPassword: String(form.get('currentPassword')),
+        newPassword: String(form.get('newPassword')),
+        revokeOtherSessions: true,
+      })
+      if (error) return setError(error.message ?? "Your password couldn't be changed.")
+      formEl.reset()
+      setChanged(true)
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
   }
 
   return (

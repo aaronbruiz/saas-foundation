@@ -25,9 +25,11 @@ test('the organization menu switches between the signed-in user’s organization
   await expect(page.getByRole('heading', { name: `Org ${second}` })).toBeVisible()
 
   await page.getByText(`Org ${second}`, { exact: true }).click()
+  await expect(page.getByRole('link', { name: `Org ${second}` })).toHaveCount(0)
   await page.getByRole('link', { name: `Org ${first}` }).click()
   await expect(page).toHaveURL(new RegExp(`/t/${first}/projects$`))
   await expect(page.getByRole('heading', { name: `Org ${first}` })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'New organization' })).toBeHidden()
 })
 
 test('a signed-in user changes their name on the account page', async ({ page }) => {
@@ -36,6 +38,10 @@ test('a signed-in user changes their name on the account page', async ({ page })
   await page.getByRole('link', { name: 'Account' }).click()
   await expect(page).toHaveURL(/\/account$/)
   await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible()
+
+  await page.getByLabel('Name').fill('   ')
+  await page.getByRole('button', { name: 'Save name' }).click()
+  await expect(page.getByRole('alert')).toHaveText('Enter a name.')
 
   const name = `Sam ${rand()}`
   await page.getByLabel('Name').fill(name)
@@ -81,6 +87,57 @@ test('the password form asks to sign out other sessions and says it did', async 
     revokeOtherSessions: true,
   })
   await expect(page.getByLabel('Current password')).toHaveValue('')
+})
+
+test('the password form sends one request while one is pending', async ({ page }) => {
+  let requests = 0
+  let finish = () => {}
+  const held = new Promise<void>((resolve) => (finish = resolve))
+  await page.route('**/api/auth/change-password', async (route) => {
+    requests++
+    await held
+    await route.fulfill({ json: { token: 'stub', user: {} } })
+  })
+  await page.goto('/account')
+  const button = page.getByRole('button', { name: 'Change password' })
+  await expect(button).toBeEnabled()
+  await page.getByLabel('Current password').fill(PASSWORD)
+  await page.getByLabel('New password').fill(`new-${PASSWORD}`)
+  // Two submits in one task, before React can render the disabled button.
+  await button.evaluate((el: HTMLButtonElement) => {
+    el.form!.requestSubmit()
+    el.form!.requestSubmit()
+  })
+  await expect(button).toBeDisabled()
+  await expect.poll(() => requests).toBe(1)
+  finish()
+  await expect(page.getByRole('status')).toHaveText(
+    'Password changed. Other sessions were signed out.',
+  )
+  expect(requests).toBe(1)
+})
+
+test('the name form sends one request while one is pending', async ({ page }) => {
+  let requests = 0
+  let finish = () => {}
+  const held = new Promise<void>((resolve) => (finish = resolve))
+  await page.route('**/api/auth/update-user', async (route) => {
+    requests++
+    await held
+    await route.fulfill({ json: { status: true } })
+  })
+  await page.goto('/account')
+  const button = page.getByRole('button', { name: 'Save name' })
+  await expect(button).toBeEnabled()
+  await button.evaluate((el: HTMLButtonElement) => {
+    el.form!.requestSubmit()
+    el.form!.requestSubmit()
+  })
+  await expect(button).toBeDisabled()
+  await expect.poll(() => requests).toBe(1)
+  finish()
+  await expect(page.getByRole('status')).toHaveText('Name saved.')
+  expect(requests).toBe(1)
 })
 
 test('signed out, the account page sends you to sign in and back', async ({ browser }) => {

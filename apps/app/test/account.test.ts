@@ -120,6 +120,17 @@ describe('changing the name while signed in', () => {
     await expect(getViewer(user.headers)).resolves.toMatchObject({ email: user.email })
   })
 
+  it('never changes the email, even when an empty one comes with a new name', async () => {
+    // Better Auth refuses only a non-empty email; an empty one is ignored and the name still saves.
+    const user = await signUp()
+    const res = await authPost('/update-user', { name: 'Changed', email: '' }, randomIp(), user)
+    expect(res.status).toBe(200)
+    await expect(getViewer(user.headers)).resolves.toMatchObject({
+      name: 'Changed',
+      email: user.email,
+    })
+  })
+
   it('refuses a request without a session', async () => {
     expect((await authPost('/update-user', { name: 'Nobody' })).status).toBe(401)
   })
