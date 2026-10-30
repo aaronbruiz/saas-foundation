@@ -7,7 +7,7 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0003](0003-neon-postgres-via-hyperdrive-drizzle.md): Neon PostgreSQL via Hyperdrive, with Drizzle (backup option B: superseded by ADR-0023; Neon plan: ADR-0026)
 - [ADR-0004](0004-uncached-hyperdrive-binding.md): Read auth and permission data through an uncached Hyperdrive binding
 - [ADR-0005](0005-better-auth-identity-app-owned-authorization.md): Better Auth for identity; authorization is application code
-- [ADR-0006](0006-toolchain.md): Toolchain: pnpm, TypeScript 6, ESLint 9 + Prettier, Zod, Vitest 4, Playwright
+- [ADR-0006](0006-toolchain.md): Toolchain: pnpm, TypeScript 6, ESLint 9 + Prettier, Zod, Vitest 4, Playwright (ESLint 10 and Oxfmt instead of Prettier: see its Notes)
 - [ADR-0007](0007-defer-cloudflare-products.md): Defer Cloudflare products until a named trigger
 - [ADR-0008](0008-agents-md-canonical.md): AGENTS.md and ADRs are the canonical agent context
 - [ADR-0009](0009-billing-plans-entitlements-stripe-adapter.md): Billing: plans → entitlements, Stripe behind an adapter
