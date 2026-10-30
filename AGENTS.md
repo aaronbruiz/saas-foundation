@@ -2,6 +2,8 @@
 
 Multi-tenant SaaS on Cloudflare Workers. **One app Worker** (`apps/app`, TanStack Start + Workers Static Assets, placed near the DB in `aws:us-east-1`; the public docs site `apps/docs` and the marketing site `apps/site` are separate assets-only Workers, ADR-0028 and ADR-0033) talks to **Neon PostgreSQL through Hyperdrive** (caching off). Better Auth handles identity and organizations; authorization is our own code. Tenants are addressed by path: `/t/<slug>/…`. Architecture: `docs/architecture/`. Decisions: `docs/adr/`. Research archives (spikes, measurements, deferred options): `docs/research/`. Read the relevant ADR before changing anything it covers. Accepted ADRs are binding until a later ADR supersedes them. ADR-0040 is accepted only in part: its decisions 1–4 (repositories on tenant tables run through `inTenant`, `GuardedClient`, the webhook definer) are binding; so are decisions 7–8 (the runtime-role switch comes before any RLS enforcement, with the latency check before the switch; roadmap M2); its row-level security policies and their enforcement (decisions 5–6) are still proposed and aren't requirements yet (roadmap M4); a significant new architectural choice (a runtime, deployable, data store, trust boundary or repo-wide convention) gets an ADR in the same PR.
 
+Product instructions: if `docs/product/AGENTS.md` exists, read it before planning or changing anything; its rules add to these and never override the invariants below. @docs/product/AGENTS.md
+
 Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the current scope, the engineering constraints (freezes, review limits) and what needs the owner's approval.
 
 ## Module map
