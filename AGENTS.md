@@ -93,7 +93,7 @@ kill -9 $(lsof -t -i:3000)
 - **The PR description is the spec** (`.github/pull_request_template.md`): Goal, Behaviour (including failure cases), Out of scope, Checks. For non-trivial work, write it before the code.
 - Stacks at most 3 deep. Update a child by merging its base into it (no rebase and force-push). Merged branches are deleted automatically, and GitHub then retargets a stacked child to the merged PR's base. Never delete a base branch by hand; if a child needs retargeting, use `gh api -X PATCH repos/<owner>/<repo>/pulls/N -f base=main`.
 - Tests are named for the behaviour they prove ("a non-member gets 404 on another tenant's overview"); no Gherkin.
-- No branch protection (GitHub Free): the owner merges only when CI is green.
+- `main` has no branch protection or ruleset: merging is the owner's decision, made only when CI is green.
 
 ## Do not edit
 
