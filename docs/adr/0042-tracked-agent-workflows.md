@@ -49,3 +49,11 @@ Personal skills are kept; nothing needs deleting.
 - Symlinks need a checkout that keeps them (git's default on Linux and macOS). On Windows without symlink support the link becomes a small text file and Claude Code misses the skill; Codex still finds it.
 - A PR that renames or removes an `AGENTS.md` section a skill cites updates the skill (Code Review Rules).
 - When to revisit: Claude Code reading `.agents/skills` itself (the link can go), or a skill that turns out to need rules of its own (then the rule belongs in `AGENTS.md`).
+
+## Notes (2026-10-30)
+
+Owner-approved amendment to decision 4, for the Starting kit (`docs/roadmap.md`):
+
+- `product-rules`, `feature-spec` and `coordinate` ship as a trial ahead of the evidence rule, because a product can't exercise them until they exist. The owner keeps, reworks or removes each after the first real product's first 3 PRs.
+- `.claude/agents/worker.md` is tracked on the same terms: a procedure that cites the rules. `coordinate`'s limits and stop conditions are its own procedure, not repository rules.
+- ADR-0012's loop doesn't change: each PR is still implemented by Claude, reviewed by Codex in a separate tree and merged by the owner.

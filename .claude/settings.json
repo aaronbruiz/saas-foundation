@@ -25,10 +25,17 @@
       "Bash(gh run view *)",
       "Bash(gh run list *)",
       "Bash(gh workflow list *)",
-      "Bash(gh workflow view *)"
+      "Bash(gh workflow view *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git fetch *)",
+      "Bash(git rev-parse *)",
+      "Bash(git push *)",
+      "Bash(scripts/test-lock.sh *)",
+      "Bash(pnpm install --frozen-lockfile*)"
     ],
     "ask": [
-      "Bash(git push *)",
       "Bash(gh pr merge *)",
       "Bash(pnpm db:migrate *)",
       "Bash(pnpm deploy *)",
@@ -40,7 +47,6 @@
       "Bash(gh run rerun *)",
       "Bash(gh api */approve*)",
       "Bash(gh api */pending_deployments*)",
-      "Bash(gh api */dispatches*)",
       "Bash(gh api */rerun*)",
       "Bash(scripts/release/*)",
       "Bash(./scripts/release/*)",
@@ -69,7 +75,29 @@
       "Read(./**/.env.test)",
       "Edit(./packages/db/src/schema/auth.ts)",
       "Edit(./**/routeTree.gen.ts)",
-      "Edit(./**/worker-configuration.d.ts)"
+      "Edit(./**/worker-configuration.d.ts)",
+      "Bash(git push *--force*)",
+      "Bash(git push *-f *)",
+      "Bash(git push *-f)",
+      "Bash(git push *+*)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *refs/heads/main*)",
+      "Bash(git push)",
+      "Bash(git push origin)",
+      "Bash(git push -u origin)",
+      "Bash(git push --set-upstream origin)",
+      "Bash(git push * HEAD)",
+      "Bash(git push --all*)",
+      "Bash(git push --mirror*)",
+      "Bash(git -C * push *)",
+      "Bash(git -c * push *)",
+      "Bash(gh api */merge*)",
+      "Bash(gh api */dispatches*)",
+      "Bash(gh api graphql *mergePullRequest*)",
+      "Bash(gh api graphql *enablePullRequestAutoMerge*)"
     ]
   },
   "hooks": {
@@ -85,5 +113,8 @@
         ]
       }
     ]
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }
