@@ -4,6 +4,25 @@ A product is its own repository and its own infrastructure, built from this foun
 
 Steps marked **owner** need dashboard or account access.
 
+## 0. Define the product
+
+Do this before configuring or provisioning anything: it decides what gets provisioned, and it needs no account. Write the files below, using the outlines in step 7, and commit them as the first commit in step 1:
+
+- `docs/product/overview.md` and `docs/product/glossary.md`;
+- `docs/product/AGENTS.md`, for the product rules already decided;
+- `docs/product/roadmap.md`.
+
+An open authorization, tenancy, billing or tenant-data decision stays a question for the owner (AGENTS.md "Working rules"), not a rule.
+
+The later steps don't all come at once:
+
+| To reach                    | Steps                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Local development and tests | 1, then step 5's local setup                                                    |
+| Hosted CI on a pull request | the above, with step 4's repository settings; CI needs no infrastructure secret |
+| A preview                   | the above, with 2, 3 and 4, then step 5                                         |
+| Production                  | all of them, with the data gate (ADR-0014)                                      |
+
 ## 1. Repository
 
 - Clone, keep the foundation as `upstream` so its fixes can be merged later (not a GitHub template, which drops history; not a fork, which stays tied to this repo):
@@ -95,6 +114,7 @@ Product documentation lives in `docs/product/` ([ADR-0041](../adr/0041-product-o
 - **`docs/product/overview.md`**, before the first feature merges: target users and which organization role they hold; the problems the product solves; 3–7 core workflows, each naming its module or route; what's in scope; non-goals; how success is measured (with a baseline taken before launch); constraints and open questions, each naming who decides; links to the product ADRs. It's the living description of the product, updated by the PRs that add or remove a user-visible workflow.
 - **`docs/product/glossary.md`**, before the first feature merges: each product concept explained in a sentence or two. Where it helps, add its relation to foundation terms (owned by an organization or a user, the capability that guards it, the entitlement that limits it) and synonyms to avoid; those are optional. The PR that introduces or renames a term edits its entry.
 - **`docs/product/architecture.md`**, when the first product service, integration or changed foundation default lands: each added service and integration with its responsibility, decision and config (like the table in [`docs/architecture/README.md`](../architecture/README.md)); each changed foundation default with the product ADR that supersedes it; each new deployable with its ADR-0027 checklist. For each added service and integration, also its trust boundaries and abuse cases, and the invariant, capability or review rule that covers each; an uncovered one is an open question for the owner.
+- **`docs/product/roadmap.md`**, before the first feature: in a product repo it replaces `docs/roadmap.md` (AGENTS.md), which stays as the foundation's record; the foundation's milestones and freezes don't apply unless the product adopts them. The current milestone and scope; what needs the owner's approval; "Engineering rules" with the review stopping rule (`review-pr` cites that section; the foundation's rule is a starting point); and the gates every product inherits: the data gate (ADR-0014), credential isolation before real customer data, and the triggers for reassessing row-level security (foundation roadmap, M4).
 - **`docs/product/AGENTS.md`**, when the product has rules agents must follow: module map rows for the product's modules, product rules, and product checks for reviews. The root `AGENTS.md` loads it through its "Product instructions" line, so keep that line when merging upstream. Its rules add to the root file's and never override the invariants; keep it short, since every agent session reads it.
 
 `docs/product/` reduces upstream conflicts but doesn't remove them: product edits to foundation-owned files (code, `wrangler.jsonc`, workflows, `policy.ts`, `README.md`) can still conflict with `git merge upstream/main`.

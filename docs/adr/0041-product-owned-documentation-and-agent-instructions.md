@@ -34,3 +34,7 @@ This amends nothing in ADR-0008: the root `AGENTS.md` stays the canonical rulebo
 - Claude subagents that start without project instructions get neither file; their prompts have to carry the rules they need.
 - The product file isn't counted in Codex's `project_doc_max_bytes` budget (it's read by a tool, not auto-loaded), but it still costs context in every session: keep it short and specific.
 - The root line costs about 200 bytes of the root file's size budget (ADR-0008 Notes).
+
+## Notes (2026-10-30)
+
+Owner-approved amendment: `docs/product/roadmap.md` is a product-owned file too. In a product repo it replaces `docs/roadmap.md` as the file that sets scope, engineering rules and approvals, through a clause on the root `AGENTS.md` line that names the roadmap. Otherwise a clone would follow the foundation's milestones and freezes. Outline: `docs/runbooks/start-new-product.md` step 7.
