@@ -2,6 +2,8 @@
 
 Multi-tenant SaaS on Cloudflare Workers. **One app Worker** (`apps/app`, TanStack Start + Workers Static Assets, placed near the DB in `aws:us-east-1`; the public docs site `apps/docs` and the marketing site `apps/site` are separate assets-only Workers, ADR-0028 and ADR-0033) talks to **Neon PostgreSQL through Hyperdrive** (caching off). Better Auth handles identity and organizations; authorization is our own code. Tenants are addressed by path: `/t/<slug>/…`. Architecture: `docs/architecture/`. Decisions: `docs/adr/`. Research archives (spikes, measurements, deferred options): `docs/research/`. Read the relevant ADR before changing anything it covers. Accepted ADRs are binding until a later ADR supersedes them. ADR-0040 is accepted only in part: its decisions 1–4 (repositories on tenant tables run through `inTenant`, `GuardedClient`, the webhook definer) are binding; so are decisions 7–8 (the runtime-role switch comes before any RLS enforcement, with the latency check before the switch; roadmap M2); its row-level security policies and their enforcement (decisions 5–6) are still proposed and aren't requirements yet (roadmap M4); a significant new architectural choice (a runtime, deployable, data store, trust boundary or repo-wide convention) gets an ADR in the same PR.
 
+Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the current scope, the engineering constraints (freezes, review limits) and what needs the owner's approval.
+
 ## Module map
 
 | Path                                 | Owns                                                                                                                                                                                                                                                                   | May import                                                                        |
@@ -89,9 +91,9 @@ kill -9 $(lsof -t -i:3000)
 - Trunk-based: short-lived branches named `<type>/<scope>-<description>` off `main`, merged within about two days. No release branches; fix forward (in an emergency, roll back first, ADR-0029).
 - **The PR title is a Conventional Commit**: `<type>(<scope>)!: <description>`, types `feat fix perf refactor revert docs test chore ci build`, scope optional and lowercase, at most 100 characters, `!` = breaking (mainly a contract migration). `pr-title.yml` checks it, and fails a PR whose migration drops, renames, moves or retypes anything, or contains an SQL comment other than drizzle-kit's `--> statement-breakpoint` (fail-closed), unless its title has `!` (ADR-0029 decision 7). Squash merge only: the PR title becomes the commit on `main` (body blank), and release-please reads it (ADR-0029).
 - **The PR description is the spec** (`.github/pull_request_template.md`): Goal, Behaviour (including failure cases), Out of scope, Checks. For non-trivial work, write it before the code.
-- Stacks at most 3 deep. Update a child by merging its base into it (no rebase and force-push). Merged branches are deleted automatically, and GitHub then retargets a stacked child to the merged PR's base (tested 2026-10-13, ADR-0030 Notes). Never delete a base branch by hand; if a child needs retargeting, use `gh api -X PATCH repos/<owner>/<repo>/pulls/N -f base=main`.
+- Stacks at most 3 deep. Update a child by merging its base into it (no rebase and force-push). Merged branches are deleted automatically, and GitHub then retargets a stacked child to the merged PR's base. Never delete a base branch by hand; if a child needs retargeting, use `gh api -X PATCH repos/<owner>/<repo>/pulls/N -f base=main`.
 - Tests are named for the behaviour they prove ("a non-member gets 404 on another tenant's overview"); no Gherkin.
-- No branch protection (GitHub Free): the owner merges only when CI is green.
+- `main` has no branch protection or ruleset: merging is the owner's decision, made only when CI is green.
 
 ## Do not edit
 
