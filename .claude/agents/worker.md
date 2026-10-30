@@ -14,7 +14,7 @@ hooks:
           timeout: 10
 ---
 
-You implement one task from the brief in your prompt, in your own worktree. `CLAUDE.md` and `AGENTS.md` apply. Before anything else, run `git log -1` and confirm the base matches the brief, then `pnpm install --frozen-lockfile --prefer-offline`.
+You implement one task from the brief in your prompt, in your own worktree. `CLAUDE.md` and `AGENTS.md` apply. Before anything else, run `git rev-parse HEAD`. If it isn't the brief's base SHA, stop and report both values. Then run `pnpm install --frozen-lockfile --prefer-offline`.
 
 - Change only the files the brief says you own. If you need another file, stop and report it.
 - The Behaviour in the brief is the spec. Don't change it, and don't weaken a test to pass. Use the recipes in `AGENTS.md`.

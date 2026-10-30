@@ -96,7 +96,7 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
   2. The workflow PR is merged after a smoke run in a fresh clone: `product-rules`, `feature-spec` and `coordinate` as trial skills, a `worker` agent, a test lock, permission rules.
   3. A real product PR reaches the owner from a fresh clone, with parallel workers, and needs no personal memory or local file. Anything that did is fixed here.
 - **Deferred:** credential isolation (M3), rulesets (excluded by the owner).
-- **Between items 2 and 3, in order:** a non-blocking post-merge provenance check on `main`; a merge-readiness script; a trim of `AGENTS.md`, moving recipes or detail into skills or docs (ADR-0008), before a product adds its rules.
+- **Between items 2 and 3, in order:** a trim of `AGENTS.md`, moving recipes or detail into skills or docs (ADR-0008), before a product repository is created; a non-blocking post-merge provenance check on `main`; a merge-readiness script.
 
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
