@@ -34,12 +34,12 @@ E2E (`apps/app/e2e/`):
 
 These must pass unchanged in every product: they're the tenancy guarantees.
 
-- [`tenancy.test.ts`](../apps/app/test/tenancy.test.ts): `getTenantContext`, the cross-tenant matrix (another tenant's resources are 404, by URL and by server-function input), repository scoping, input contracts (no `organizationId`).
+- [`tenancy.test.ts`](../apps/app/test/tenancy.test.ts): `getTenantContext`, the cross-tenant matrix through services and server-function input (another tenant's resources are 404), repository scoping, input contracts (no `organizationId`).
 - [`roles.test.ts`](../apps/app/test/roles.test.ts): the capability matrix, one case per role, and Better Auth's organization endpoints.
 - [`database-isolation.test.ts`](../apps/app/test/database-isolation.test.ts): tests run against `app_test`, never the dev database.
 - [`database-role.test.ts`](../apps/app/test/database-role.test.ts): `app_runtime`'s exact grants (`GRANTS`) and executable functions (`FUNCTIONS`); a new table fails until it's granted and listed.
 - [`archive.test.ts`](../apps/app/test/archive.test.ts): every tenant table has its `archive_delete` trigger, and the runtime role can't reach the archive (ADR-0039).
-- The E2E slice (`e2e/slice.spec.ts`).
+- The E2E slice ([`e2e/slice.spec.ts`](../apps/app/e2e/slice.spec.ts)): cross-tenant isolation through real URLs (404 page, never data).
 
 What new code adds (the AGENTS.md recipes are the authority): every tenant-owned table gets cross-tenant tests by URL **and** by server-function input, a `GRANTS` entry and its archive trigger; every tenant-scoped server function gets a case per role in `roles.test.ts` for its capability; a plan limit gets tests for the cap, upgrade, downgrade and concurrency.
 
@@ -55,11 +55,11 @@ E2E sign-ins are budgeted: a local run signs in from one IP, and the login rate 
 
 1. **Applied migrations unchanged**: none edited, deleted or renamed, and the journal only grows, compared with a base: `$BASE` if set, else `origin/main`, else the merge base with `upstream/main` while every migration exists there (a product not pushed yet); otherwise it fails and asks for `BASE`. It's never skipped (header of `scripts/check-migrations.mjs`).
 2. No colliding migrations, none missing (`drizzle-kit generate` writes nothing), and `packages/db/src/schema/auth.ts` matches the Better Auth config.
-3. The migrations' SQL builds the schema plus the SQL-only objects registered in `packages/db/sql-only-objects.tsv`, applied by a non-superuser login mirroring `app_owner` (`scripts/check-schema-sql.sh`; needs Postgres). A new SQL-only object (grant, trigger) makes it print the line to register.
+3. The migrations' SQL builds the schema plus the SQL-only objects registered in `packages/db/sql-only-objects.tsv`, applied by a non-superuser login mirroring `app_owner` (`scripts/check-schema-sql.sh`; needs Postgres). A new SQL-only object (function, trigger) makes it print the line to register; grants are checked by `database-role.test.ts` instead.
 
 ## CI vs local
 
-CI (`.github/workflows/ci.yml`, job "check + test", with a Postgres 17 service) runs the bindings ADR check, the secret check, `pnpm check`, the parts of `pnpm db:check` (with the PR's parent as base), `pnpm test`, the backup script tests, `pnpm build` with the client-bundle secret scan, and `pnpm test:e2e` against a local dev server. A PR that only changes docs (`docs/**`, `apps/docs/**`, `apps/site/**`, `*.md`) runs only the bindings and secret checks and `pnpm check`. After CI, the preview workflow runs the preview E2E above.
+CI (`.github/workflows/ci.yml`, job "check + test", with a Postgres 17 service) runs the bindings ADR check, the secret check, `pnpm check`, the parts of `pnpm db:check` (with the PR's parent as base), `pnpm test`, the backup script tests, `pnpm build` with the client-bundle secret scan, and `pnpm test:e2e` against a local dev server. A PR that only changes docs (`docs/**`, `apps/docs/**`, `apps/site/**`, `*.md`) runs only the bindings and secret checks and `pnpm check`. The preview E2E above runs only for app PRs from this repository after CI succeeds: `preview.yml` skips docs-only and static-site-only PRs, forks, release-please and Dependabot PRs.
 
 Locally, before handing a change over: `pnpm check`, `pnpm test` and `pnpm test:e2e` (AGENTS.md "Done means"), plus `pnpm db:check` when the schema or migrations change.
 
