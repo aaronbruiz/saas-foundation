@@ -23,7 +23,7 @@ PR previews: Worker `saas-foundation-preview` (app, own Neon branch + Hyperdrive
 
 ## Stack and services
 
-What each part does and where it's decided and configured. Versions live in the `package.json` files; secrets live only in Worker and GitHub environment settings, never here.
+What each part does and where it's decided and configured. Versions live in the `package.json` files. Secrets are never written here; they stay in the providers' settings (Worker secrets, GitHub environments, Cloudflare notification destinations).
 
 | Part | Responsibility | Decision | Configured in |
 | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ What each part does and where it's decided and configured. Versions live in the 
 | Cloudflare Email Service (`EMAIL`) | transactional email (verification, reset, invitations) | [ADR-0016](../adr/0016-transactional-email.md), [ADR-0024](../adr/0024-email-activation-send-email-binding.md) | `apps/app/wrangler.jsonc`, `apps/app/src/server/email.ts` |
 | Cloudflare Turnstile | bot protection on sign-up, sign-in and auth email | [ADR-0025](../adr/0025-turnstile-bot-protection-on-auth.md) | `apps/app/src/server/turnstile.ts`, `server/auth.ts` |
 | Docs and marketing Workers (Astro, Starlight) | public docs (`docs.<zone>`) and landing/pricing (apex); static, no bindings | [ADR-0028](../adr/0028-public-docs-site.md), [ADR-0033](../adr/0033-marketing-site-and-app-naming.md) | `apps/docs/`, `apps/site/` (each `wrangler.jsonc`) |
-| Workers Logs + Issues → Slack | logs and error alerting | [ADR-0015](../adr/0015-observability-baseline.md), [ADR-0031](../adr/0031-production-alerting-issues-to-slack.md) | `apps/app/wrangler.jsonc` (`observability`), `apps/app/src/server/log.ts` |
+| Workers Logs + Issues → Slack | logs and error alerting | [ADR-0015](../adr/0015-observability-baseline.md), [ADR-0031](../adr/0031-production-alerting-issues-to-slack.md) | `apps/app/wrangler.jsonc` (`observability`), `apps/app/src/server/log.ts`; alert automations and the Slack destination in the Cloudflare dashboard ([runbook "Observability"](../runbooks/README.md#observability-adr-0015)) |
 | UptimeRobot (external) | uptime checks on the app, apex and docs | — | [runbook "Observability"](../runbooks/README.md#observability-adr-0015) |
 | Neon snapshots + R2 dumps + Healthchecks.io | daily backups and their dead-man's switch | [ADR-0023](../adr/0023-off-provider-database-dumps-to-r2.md), [ADR-0036](../adr/0036-recovery-objectives.md), [ADR-0037](../adr/0037-backup-heartbeat-healthchecks.md) | `.github/workflows/db-backup.yml`, `scripts/backup/` |
 | GitHub Actions | CI, per-PR previews, releases (release-please), rollback, backups | [ADR-0013](../adr/0013-ci-credential-tiers.md), [ADR-0021](../adr/0021-per-pr-preview-data-behind-a-trusted-boundary.md), [ADR-0029](../adr/0029-releases-deploys-and-rollback.md), [ADR-0030](../adr/0030-git-workflow.md) | `.github/workflows/`, `.github/release-please-config.json`, `.github/dependabot.yml` |
