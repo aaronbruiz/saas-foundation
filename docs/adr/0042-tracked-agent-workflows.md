@@ -25,7 +25,7 @@ Discovery was tested on 2026-10-30 in a throwaway repository and a fresh clone o
    codex exec -C <worktree> -s read-only -o <result>.md "Use \$review-pr for a correction review. Previous result: <file>. Corrections: 1) … 2) …"
    ```
 
-4. **A new skill needs evidence of a repeated procedure** and is added by a PR that adds its two `.gitignore` lines and its link. Candidates reviewed but not added: `feature-spec` (feature request → PR description drafts) and `product-rules` (drafting a product's `docs/product/AGENTS.md`, ADR-0041); they're tried on real product tasks first. A release-check skill waits for an identifiable manual gap in the release process (ADR-0029 automates its gates today).
+4. **A new skill needs evidence of a repeated procedure** and is added by a PR that adds its link and the `.gitignore` exceptions for exactly its `SKILL.md` and that link. Candidates reviewed but not added: `feature-spec` (feature request → PR description drafts) and `product-rules` (drafting a product's `docs/product/AGENTS.md`, ADR-0041); they're tried on real product tasks first. A release-check skill waits for an identifiable manual gap in the release process (ADR-0029 automates its gates today).
 
 ## Migration of an existing checkout
 

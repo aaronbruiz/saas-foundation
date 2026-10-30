@@ -36,6 +36,8 @@ test-results
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/review-pr/
+.agents/skills/review-pr/*
+!.agents/skills/review-pr/SKILL.md
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/
