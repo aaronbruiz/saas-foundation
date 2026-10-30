@@ -49,18 +49,26 @@ export async function createDb(
   // read loop and stops it, so `end()` never sees the socket close and the request hangs (#173).
   // Statements in flight reject with that error anyway, and the client refuses new ones.
   client.on('error', () => {})
+  // A socket that fails, which includes closing it just as the server does (#221), reports an
+  // 'error' and no 'close', and `end()` only listens for the close.
+  const socketFailed = new Promise<'failed'>((resolve) => {
+    client.connection.stream.once('error', () => resolve('failed'))
+  })
   await client.connect()
-  return { db: asDb(drizzle(client, { schema })), close: () => end(client) }
+  return { db: asDb(drizzle(client, { schema })), close: () => end(client, socketFailed) }
 }
 
-/** `client.end()`, or the socket dropped if the server hasn't closed it within the bound. */
-async function end(client: GuardedClient): Promise<void> {
+/**
+ * `client.end()`, or the socket dropped if it has failed or the server hasn't closed it within
+ * the bound.
+ */
+async function end(client: GuardedClient, socketFailed: Promise<'failed'>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timedOut = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), CLOSE_TIMEOUT_MS)
   })
   try {
-    if ((await Promise.race([client.end(), timedOut])) === 'timeout') {
+    if ((await Promise.race([client.end(), socketFailed, timedOut])) !== undefined) {
       try {
         client.connection.stream.destroy()
       } catch {

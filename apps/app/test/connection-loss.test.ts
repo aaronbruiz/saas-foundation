@@ -23,14 +23,19 @@ const within = <T>(ms: number, promise: Promise<T>) =>
 describe('a lost database connection', () => {
   it('still closes when its backend is terminated as the request ends', async () => {
     // The server's FATAL reaches the client after it has started closing, with nothing in flight.
+    // Running rounds side by side widens the window where closing the socket races the server's
+    // close (issue #221).
     const killer = await createDb(env.DB.connectionString)
     try {
-      for (let i = 0; i < 20; i++) {
-        const { db, close } = await createDb(env.DB.connectionString)
-        const { pid } = (await client(db).query('select pg_backend_pid() as pid')).rows[0]!
-        await client(killer.db).query('select pg_terminate_backend($1)', [pid])
-        await within(1000, close())
+      const rounds = async () => {
+        for (let i = 0; i < 15; i++) {
+          const { db, close } = await createDb(env.DB.connectionString)
+          const { pid } = (await client(db).query('select pg_backend_pid() as pid')).rows[0]!
+          await client(killer.db).query('select pg_terminate_backend($1)', [pid])
+          await within(1000, close())
+        }
       }
+      await Promise.all(Array.from({ length: 16 }, rounds))
     } finally {
       await killer.close()
     }
