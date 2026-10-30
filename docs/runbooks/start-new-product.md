@@ -66,7 +66,7 @@ Repository settings (ADR-0029, ADR-0030): squash merge only, with the PR title a
 
 ## 5. Verify, including tenant isolation
 
-1. Local setup as in `README.md`: `pnpm install --frozen-lockfile`; `cp apps/app/.dev.vars.example apps/app/.dev.vars` and set a new `BETTER_AUTH_SECRET` (`openssl rand -base64 32`; the Turnstile test keys are in runbook "Turnstile"); `pnpm db:up`, `pnpm db:migrate`; `pnpm --filter app exec playwright install --with-deps chromium`. Then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass. If tests time out, see `README.md` "Troubleshooting".
+1. Local setup as in `README.md`: `pnpm install --frozen-lockfile`; `cp apps/app/.dev.vars.example apps/app/.dev.vars` and set a new `BETTER_AUTH_SECRET` (`openssl rand -base64 32`; the Turnstile test keys are in runbook "Turnstile"); `pnpm db:up`, `pnpm db:migrate`; `pnpm --filter app exec playwright install --with-deps chromium`. Then `pnpm check`, `pnpm test`, `pnpm test:e2e` all pass. If tests time out, see [`docs/testing.md`](../testing.md#troubleshooting) "Troubleshooting".
 2. Tenant isolation is covered by `apps/app/test/tenancy.test.ts`, `database-isolation.test.ts` and `roles.test.ts`, plus the E2E slice. They must pass unchanged. Every tenant-owned table the product adds gets cross-tenant tests for URL **and** server-function input (AGENTS.md recipe "Add a tenant-owned table").
 3. Open a first PR: CI green, the preview deploys from its own Neon branch, and preview E2E passes.
 4. Production: follow runbook "First production deploy" from step 0 with the product's values. The data gate (ADR-0014) and the launch milestones apply to each product separately.
