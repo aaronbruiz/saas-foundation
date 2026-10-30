@@ -6,7 +6,7 @@
 
 ## Behaviour
 
-<!-- What a user or caller observes after this PR, including the failure cases (404/403, limits, errors). -->
+<!-- What a user or caller observes after this PR, including the failure cases (404/403, limits, errors). Name the actor and preconditions; cover another tenant's resource, an insufficient role and concurrent requests where they apply. One line per case, e.g. "When a member invites, the server returns 403 and nothing changes." Open authorization, tenancy, billing or tenant-data questions: who decides; the behaviour that depends on them isn't built yet. -->
 
 ## Out of scope
 
@@ -14,4 +14,4 @@
 
 ## Checks
 
-<!-- Commands run and their results: pnpm check, pnpm test, pnpm test:e2e, manual checks. -->
+<!-- Commands run and their results: pnpm check, pnpm test, pnpm test:e2e, manual checks. How each Behaviour item is verified (test or manual check), and what stays unverified and why. A check not run says "not run" and why; a waived check names who waived it. Docs: ADR and AGENTS.md updated, or "no impact". Migrations: forward-safe (expand → migrate → contract, invariant 10); a contract migration has `!` in the title because rolling back past it isn't code-only, and the database is recovered only from a restore point by the runbook (ADR-0029). -->
