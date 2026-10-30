@@ -133,6 +133,8 @@ Claude implements and Codex reviews (ADR-0012), with one coordinating session an
 - Create `../<product>-review/` for Codex's detached worktrees and result files.
 - Create `.local/tasks/`, and `.local/handoff.md` from `.agents/skills/coordinate/handoff-template.md`. `.local/` is git-ignored.
 
-Run the session in normal permission mode, never `bypassPermissions`, because workers inherit it. Tracked `.claude/settings.json` allows routine work and asks or denies the rest. Those rules match command text, so they stop mistakes, not a determined or injected command, and agent sessions hold your logins: isolate credentials before real customer data (`docs/product/roadmap.md`).
+Start `claude` once in the clone and accept the workspace trust dialog: until you do, Claude Code ignores the project's allow rules, so everything prompts (`deny` rules apply either way). Run the session in normal permission mode, never `bypassPermissions`, because workers inherit it.
+
+Tracked `.claude/settings.json` allows routine work and asks or denies the rest. Those rules match command text. They stop the usual forms of pushing to `main`, and a form they miss prompts you if it isn't allowed, so your attention to prompts is part of the control. A push built from variables or run inside a script isn't caught: that residual risk is accepted, and agent sessions also hold your logins, so isolate credentials before real customer data (`docs/product/roadmap.md`).
 
 On a private repository, Actions minutes are limited, and running out stops CI. Push once per PR. Until step 3 is done, disable the workflows that need it (owner): `gh workflow disable` for Preview, Preview cleanup, Docs deploy, Docs preview, Site deploy, Site preview, Release and DB backups. Enable each when its step is done.
