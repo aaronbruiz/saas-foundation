@@ -5,7 +5,7 @@ description: Run one feature or task as the coordinating session, with parallel 
 
 # Coordinate a task
 
-Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and hands off. It applies `CLAUDE.md` and `AGENTS.md`; it never merges, deploys or spends. Run in normal permission mode, never `bypassPermissions`: workers inherit it.
+Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and hands off. It applies `CLAUDE.md` and `AGENTS.md`; it never merges, deploys or spends. Run in auto mode, not `bypassPermissions`, while workers run: they inherit the mode, and in `bypassPermissions` nothing judges a command the rules don't list.
 
 ## Steps
 
