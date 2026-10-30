@@ -91,7 +91,9 @@ test('a password reset request shows the same confirmation for any address', asy
   await expect(page).toHaveURL(/\/login/)
 })
 
-test('sign-up, organization, projects, invitation and tenant isolation', async ({ browser }) => {
+test('sign-up, organization, projects, invitation, managing members and tenant isolation', async ({
+  browser,
+}) => {
   // Alice: account → org A → project Alpha.
   const { page: alice } = await signUp(browser, 'Alice')
   const orgA = await createOrg(alice, 'a')
@@ -157,6 +159,33 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await expect(alice.getByText('Members: 2 of 3')).toBeVisible()
   await alice.getByRole('button', { name: /^Upgrade to Pro \(monthly\)/ }).click()
   await expect(alice.getByRole('alert')).toHaveText('Billing is not configured')
+
+  // Managing members (owner decisions 2026-10-30): the owner's row has no actions, and a member
+  // gets none. Here, since a test of its own would need a sign-in the login limit doesn't leave.
+  await alice.getByRole('link', { name: 'Members' }).click()
+  await expect(alice.getByRole('button', { name: `Make ${carolEmail} admin` })).toBeEnabled()
+  await expect(alice.getByRole('button', { name: /^Remove / })).toHaveCount(1)
+  await carol.goto(`/t/${orgA}/members`)
+  await expect(carol.getByText(carolEmail)).toBeVisible()
+  await expect(carol.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+
+  // Promoted, Carol demotes herself and loses the actions.
+  await alice.getByRole('button', { name: `Make ${carolEmail} admin` }).click()
+  await expect(alice.getByRole('button', { name: `Make ${carolEmail} member` })).toBeVisible()
+  await carol.reload()
+  await carol.getByRole('button', { name: `Make ${carolEmail} member` }).click()
+  await expect(carol.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+
+  // Promoted again, Carol removes herself and leaves the tenant.
+  await alice.reload()
+  await alice.getByRole('button', { name: `Make ${carolEmail} admin` }).click()
+  await expect(alice.getByRole('button', { name: `Make ${carolEmail} member` })).toBeVisible()
+  await carol.reload()
+  await carol.getByRole('button', { name: `Remove ${carolEmail}` }).click()
+  await expect(carol).toHaveURL(/\/orgs\/new$/)
+  expect((await carol.goto(`/t/${orgA}/members`))?.status()).toBe(404)
+  await alice.reload()
+  await expect(alice.getByText(carolEmail)).toHaveCount(0)
 
   // Bob, the shared signed-in user (session.ts): his own org B; none of A is reachable, by tenant
   // URL or by project id.
