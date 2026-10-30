@@ -96,7 +96,7 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
   2. The workflow PR is merged after a smoke run in a fresh clone: `product-rules`, `feature-spec` and `coordinate` as trial skills, a `worker` agent, a test lock, permission rules.
   3. A real product PR reaches the owner from a fresh clone, with parallel workers, and needs no personal memory or local file. Anything that did is fixed here.
 - **Deferred:** credential isolation (M3), rulesets (excluded by the owner).
-- **After it, in order:** a non-blocking post-merge provenance check on `main`, then a merge-readiness script.
+- **Between items 2 and 3, in order:** a non-blocking post-merge provenance check on `main`; a merge-readiness script; a trim of `AGENTS.md`, moving recipes or detail into skills or docs (ADR-0008), before a product adds its rules.
 
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
@@ -124,7 +124,7 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
 - **Before it starts:**
   - M1 and M2 done.
   - The pilot's use case and success criteria written down before anyone is admitted.
-  - Agent credentials. On 2026-10-29 the owner accepted two risks while production holds only smoke-test accounts: agent sessions reach the owner's logins, and their token can start production workflows (K1, K2; record: `.local/credential-narrowing-2026-10/proposal.md`, the owner's local file). Credential isolation is done before real customer data enters.
+  - Agent credentials: an accepted credential exposure is recorded in the owner's notes; isolation is required before real customer data enters.
   - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal was ticked on 2026-10-29 (the subscription canceled on 2026-10-21; runbook). That completes step 1 but doesn't make the pilot ready on its own.
 - **Done when:**
   - ADR-0032 rollout steps 2–7 are recorded.
