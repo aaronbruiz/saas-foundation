@@ -48,6 +48,14 @@ for (const command of [
   test(`a worker can run: ${command}`, () => assert.equal(guard(command), 0))
 }
 
+test('the worker guard refuses input without a command', () => {
+  const r = spawnSync('bash', [GUARD], {
+    input: JSON.stringify({ tool_input: {} }),
+    encoding: 'utf8',
+  })
+  assert.equal(r.status, 2)
+})
+
 test('the test lock refuses anything but test and e2e', () => {
   for (const args of [[], ['deploy'], ['run', 'deploy']]) {
     assert.equal(spawnSync('bash', [LOCK, ...args], { encoding: 'utf8' }).status, 2)
