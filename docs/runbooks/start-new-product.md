@@ -9,7 +9,7 @@ Steps marked **owner** need dashboard or account access.
 Do this before configuring or provisioning anything: it decides what gets provisioned, and it needs no account. Write the files below, using the outlines in step 7, and commit them as the first commit in step 1:
 
 - `docs/product/overview.md` and `docs/product/glossary.md`;
-- `docs/product/AGENTS.md`, for the product rules already decided;
+- `docs/product/AGENTS.md`, for the product rules already decided (`/product-rules` drafts it);
 - `docs/product/roadmap.md`.
 
 An open authorization, tenancy, billing or tenant-data decision stays a question for the owner (AGENTS.md "Working rules"), not a rule.
@@ -103,7 +103,7 @@ The projects feature is the complete pattern for a tenant-owned resource; copy i
 | Pages                     | `apps/app/src/routes/t.$tenant.projects.index.tsx`, `t.$tenant.projects.$id.tsx`      | loaders, `method="post"` forms disabled until hydrated                                                 |
 | Tests                     | `apps/app/test/tenancy.test.ts`, `roles.test.ts`, `billing.test.ts` ("plan limits …") | cross-tenant by URL and by input, one case per role, the cap                                           |
 
-Then follow the AGENTS.md recipes in order: "Add a tenant-owned table" (including child tables), "Add a tenant-scoped server function", and "Add a plan limit or feature" if it has one. The checks name most missed steps: `pnpm db:check` prints the `sql-only-objects.tsv` line, the catalog tests fail without the grant or the archive trigger, `pnpm check` fails on a stale `plans.json` (`pnpm plans:export`) or route tree (`pnpm build`).
+Plan it with `/feature-spec` and run it with `/coordinate` (step 9). Then follow the AGENTS.md recipes in order: "Add a tenant-owned table" (including child tables), "Add a tenant-scoped server function", and "Add a plan limit or feature" if it has one. The checks name most missed steps: `pnpm db:check` prints the `sql-only-objects.tsv` line, the catalog tests fail without the grant or the archive trigger, `pnpm check` fails on a stale `plans.json` (`pnpm plans:export`) or route tree (`pnpm build`).
 
 E2E: a local run signs in from one IP, and the login rate limit (5 sign-ins and 5 sign-ups a minute per IP, ADR-0005, no test exemption) caps a run's real sign-ins. They're kept for the tests about signing up and signing in: a run uses 4 sign-ups and 5 sign-ins locally. A test that only needs someone signed in starts from the shared session instead (`test.use({ storageState: sessionFile })`, from `apps/app/e2e/session.ts`; `e2e/projects.spec.ts` is an example). The `setup` project (`e2e/auth.setup.ts`) signs that user up once per run; the user has no organization yet, so the test creates its own with `createOrg` (`e2e/helpers.ts`) and doesn't rely on other tests' data. A new test that signs in for real costs budget: if the full run fails with "Too many requests", it has run out.
 
@@ -124,3 +124,17 @@ Product documentation lives in `docs/product/` ([ADR-0041](../adr/0041-product-o
 - Foundation ADRs stay as they are: they're the product's history too. A product decision that differs gets a **new ADR in the product repo** naming the one it amends or supersedes (ADR README convention). Don't edit the inherited ones except to mark them superseded, as the ADR README allows.
 - Product ADRs record decisions and deviations from the foundation; the product overview (step 7) describes the product and isn't an ADR. First product ADRs, typically: any foundation default the product changes (plan, region, sign-up mode); any new deployable or runtime (ADR-0027 criteria and checklist).
 - A fix or pattern that every product needs goes back to the foundation as a PR there, then reaches products through `git merge upstream/main`.
+
+## 9. Run the agent workflow
+
+Claude implements and Codex reviews (ADR-0012), with one coordinating session and parallel workers (`/coordinate`, ADR-0042 Notes). Setup, once per machine:
+
+- Log in to Claude Code and Codex, and run `pnpm install --frozen-lockfile`, `pnpm db:up` and step 5's `.dev.vars` copy. `.worktreeinclude` copies `.dev.vars` into each worker's worktree.
+- Create `../<product>-review/` for Codex's detached worktrees and result files.
+- Create `.local/tasks/`, and `.local/handoff.md` from `.agents/skills/coordinate/handoff-template.md`. `.local/` is git-ignored.
+
+Start `claude` once in the clone and accept the workspace trust dialog: until you do, Claude Code ignores the project's allow rules and the worker's hook. In an untrusted clone, `deny` rules still block pushes to `main` and branch pushes prompt; the hook only adds protection after trust. Run a coordinated session in auto mode, not `bypassPermissions`: workers inherit the mode, and in `bypassPermissions` nothing judges a command the rules don't list. Run every `pnpm test` and `pnpm test:e2e` through `scripts/test-lock.sh`, manual ones too: all clones on a machine share the test database, and the lock can't see a run that skips it.
+
+Tracked `.claude/settings.json` allows routine work and asks or denies the rest. Those rules match command text. `deny` and `ask` rules hold in every mode: they stop the usual forms of pushing to `main`, and merges, deploys and workflow dispatch prompt you. In auto mode, a command no rule lists, such as `sh -c 'git push origin main'`, is decided by Claude Code's classifier, not by a prompt. Such forms, and a push built from variables or run inside a script, are the accepted residual risk. Nothing detects one that lands until the post-merge check on `main` exists (`docs/roadmap.md`, Starting kit follow-ups), and agent sessions also hold your logins, so isolate credentials before real customer data (`docs/product/roadmap.md`).
+
+On a private repository, Actions minutes are limited, and running out stops CI. Push once per PR. Until step 3 is done, disable the workflows that need it (owner): `gh workflow disable` for Preview, Preview cleanup, Docs deploy, Docs preview, Site deploy, Site preview, Release and DB backups. Enable each when its step is done.

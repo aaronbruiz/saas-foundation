@@ -32,12 +32,26 @@ test-results
 .claude/scheduled_tasks.lock
 .claude/skills/*
 !.claude/skills/review-pr
+!.claude/skills/product-rules
+!.claude/skills/feature-spec
+!.claude/skills/coordinate
 .agents/*
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/review-pr/
 .agents/skills/review-pr/*
 !.agents/skills/review-pr/SKILL.md
+!.agents/skills/product-rules/
+.agents/skills/product-rules/*
+!.agents/skills/product-rules/SKILL.md
+!.agents/skills/feature-spec/
+.agents/skills/feature-spec/*
+!.agents/skills/feature-spec/SKILL.md
+!.agents/skills/coordinate/
+.agents/skills/coordinate/*
+!.agents/skills/coordinate/SKILL.md
+!.agents/skills/coordinate/brief-template.md
+!.agents/skills/coordinate/handoff-template.md
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/

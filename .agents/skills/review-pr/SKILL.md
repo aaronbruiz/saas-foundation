@@ -26,7 +26,9 @@ Inputs from the invoker: the base (default `origin/main`), the PR number or its 
 2. **Abuse**, when the diff adds or changes a route, server function, repository function, migration, auth hook or webhook: for each new input, try another tenant's slug or resource id, a role without the capability, input outside its contract in `packages/contracts`, a replayed or out-of-order event, and concurrent requests: for each check followed by a write, including a write a library makes, whether the condition holds in the write (AGENTS.md recipe "Add a tenant-scoped server function"). The expected outcome comes from the cited invariant and the contract. Name the test that proves each case, or report it missing; a missing test isn't a proven vulnerability.
 3. **Verification:** one row per Behaviour item in the PR description, failure cases included: the test (file:line), the manual check recorded under Checks, "unverified, listed" or "unverified, not listed". Judge the rows against the Code Review Rules bullet on Behaviour items.
 4. **Checks:** compare the PR's Checks section with the diff and CI (AGENTS.md "Working rules" on reporting checks).
-5. **Docs:** AGENTS.md "Done means" and, in a product repository, the `docs/product/` triggers in `docs/runbooks/start-new-product.md` step 7. Open the links in changed docs.
+5. **Governance:** name any change to `.github/workflows/**`, `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`, `.claude/agents/**`, `.claude/hooks/**`, `.agents/skills/**`, `scripts/check-*`, `scripts/test-lock.sh`, `eslint.config.js`, `apps/app/vitest*.config.ts`, `apps/app/playwright.config.ts`, `.github/pull_request_template.md`, and modified or deleted tests (new tests don't count). Say what each change does to the checks or permissions that judge this PR.
+6. **Behaviour after approval:** given the approved description and the current one, flag any Behaviour line that differs and has no amendment the owner saw.
+7. **Docs:** AGENTS.md "Done means" and, in a product repository, the `docs/product/` triggers in `docs/runbooks/start-new-product.md` step 7. Open the links in changed docs.
 
 ## 3. Evidence
 
@@ -42,6 +44,7 @@ Given the previous result and the corrections: mark each earlier finding resolve
 
 ```
 Base <sha> → head <sha> (PR head: same | <sha>), <n> files
+Governance files changed: <files | none>
 BLOCKER | SHOULD-FIX | NIT: <file:line>: <finding>. Rule: <bullet or ADR>. Failure: <scenario>. Evidence: <code, command output or quote>
 Verification: | Behaviour item | evidence | status |
 Checks by the reviewer: verified: … / not run: …
