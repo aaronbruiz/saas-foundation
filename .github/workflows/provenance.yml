@@ -7,8 +7,8 @@ name: Provenance
 # settings send failed runs to whoever triggered it. Its own workflow, with no concurrency group,
 # so a later push can't cancel the check of an earlier one (ci.yml cancels in progress on main).
 # A push whose message has `[skip ci]` (or `[skip actions]`, `skip-checks: true`) starts no run, so
-# each run checks every commit since the previous run's, and the daily run catches one even with
-# no later push. GitHub pauses scheduled runs after 60 days without repository activity.
+# each run checks every commit since the previous finished run's, and the daily run catches one even with
+# no later push. On a public repository GitHub pauses scheduled runs after 60 days without activity.
 # Read-only token; no install, no secrets.
 on:
   push:

@@ -30,6 +30,13 @@ const MERGED = '2026-10-30T12:00:00Z'
 const GREEN = [{ conclusion: 'success', completed: '2026-10-30T11:50:00Z' }]
 
 const job = (completed_at) => ({ completed_at })
+/** A provenance run that finished checking up to head_sha. */
+const finished = (id, head_sha, conclusion = 'success') => ({
+  id,
+  head_sha,
+  status: 'completed',
+  conclusion,
+})
 
 /** Answers for a CI run with attempts [{ conclusion, completed }] (completed: ISO time or null). */
 function ciAnswers(id, attempts) {
@@ -47,12 +54,14 @@ function ciAnswers(id, attempts) {
  * the PR number merged as that commit (null for none) and runs its CI runs' attempts. The last
  * commit's parent is `previous`, the commit the previous provenance run checked.
  */
-function github(commits, { previous = PREV, provenanceRuns } = {}) {
-  const answers = {
-    [`${R}/actions/workflows/provenance.yml/runs?branch=main&per_page=10`]: {
-      workflow_runs: provenanceRuns ?? (previous ? [{ id: 99, head_sha: previous }] : []),
-    },
-  }
+function github(commits, { previous = PREV, provenancePages } = {}) {
+  const pages = provenancePages ?? (previous ? [[finished(99, previous)]] : [])
+  const answers = {}
+  ;[...pages, []].forEach((workflow_runs, i) => {
+    answers[`${R}/actions/workflows/provenance.yml/runs?branch=main&per_page=100&page=${i + 1}`] = {
+      workflow_runs,
+    }
+  })
   commits.forEach(({ sha, parents, pr = 7, runs = [GREEN] }, i) => {
     const head = `head-${sha}`
     answers[`${R}/commits/${sha}`] = {
@@ -231,14 +240,49 @@ test('the first run checks only the tip', () => {
 
 test('the check ignores its own run when finding the previous one', () => {
   const answers = github([{ sha: SHA }], {
-    provenanceRuns: [
-      { id: 100, head_sha: SHA },
-      { id: 99, head_sha: PREV },
-    ],
+    provenancePages: [[{ id: 100, head_sha: SHA, status: 'in_progress' }, finished(99, PREV)]],
   })
   const r = run(answers)
   passes(r)
   assert.match(r.output, /1 commit\(s\)/)
+})
+
+test("a cancelled or unfinished earlier run isn't taken as checked, so its commits are checked", () => {
+  const answers = github([{ sha: SHA }, { sha: 'skipped', pr: null }], {
+    provenancePages: [
+      [
+        { id: 98, head_sha: SHA, status: 'completed', conclusion: 'cancelled' },
+        { id: 97, head_sha: 'skipped', status: 'in_progress', conclusion: null },
+        finished(96, PREV),
+      ],
+    ],
+  })
+  fails(
+    run(answers, { name: 'schedule', event: {} }),
+    /no merged pull request into main has skipped/,
+  )
+})
+
+test('an earlier run that failed counts as checked, since it already alerted', () => {
+  const answers = github([{ sha: SHA }], { provenancePages: [[finished(98, PREV, 'failure')]] })
+  passes(run(answers))
+})
+
+test('a rerun of an old run finds its predecessor on a later page instead of checking only the tip', () => {
+  const newer = Array.from({ length: 100 }, (_, i) => finished(1000 + i, `later-${i}`))
+  const answers = github([{ sha: SHA }, { sha: 'skipped', pr: null }], {
+    provenancePages: [newer, [finished(99, PREV)]],
+  })
+  fails(
+    run(answers, { name: 'schedule', event: {} }),
+    /no merged pull request into main has skipped/,
+  )
+})
+
+test('no finished run in the latest 1,000 fails instead of checking only the tip', () => {
+  const page = Array.from({ length: 100 }, (_, i) => finished(1000 + i, `later-${i}`))
+  const answers = github([{ sha: SHA }], { provenancePages: Array(10).fill(page) })
+  fails(run(answers), /no finished provenance run in the latest 1,000/)
 })
 
 test('a failed GitHub API call fails the check', () => {

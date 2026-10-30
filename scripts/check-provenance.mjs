@@ -4,7 +4,7 @@
 // permission rules miss (docs/runbooks/start-new-product.md step 9); it blocks nothing, a failed
 // run is the alert.
 // Checked commits: main's first-parent history from the tip back to the commit the previous
-// provenance run checked (at most 20), so a push that started no run (`[skip ci]` in its message)
+// finished provenance run checked (at most 20), so a push that started no run (`[skip ci]` in its message)
 // is checked by the next push or the daily run. Fails when
 //   - on a push: it was forced, holds other than one commit, or the commit's parent isn't `before`;
 //   - the previous run's commit isn't within the last 20 of main's history (rewritten or too many);
@@ -44,12 +44,25 @@ function checkPush() {
   return errors
 }
 
-/** The commit the latest earlier provenance run checked, or null for the first run. */
+/**
+ * The commit the latest earlier provenance run checked, or null for the first run. Only a run that
+ * finished checking counts: success, or failure (it already alerted; rerun one that failed on an
+ * API error). A cancelled, skipped or unfinished run checked nothing.
+ */
 function previousHead() {
-  const { workflow_runs } = api(
-    `repos/${repo}/actions/workflows/provenance.yml/runs?branch=main&per_page=10`,
-  )
-  return workflow_runs.find((r) => r.id < Number(process.env.GITHUB_RUN_ID))?.head_sha ?? null
+  const own = Number(process.env.GITHUB_RUN_ID)
+  for (let page = 1; page <= 10; page++) {
+    const { workflow_runs } = api(
+      `repos/${repo}/actions/workflows/provenance.yml/runs?branch=main&per_page=100&page=${page}`,
+    )
+    if (!workflow_runs.length) return null
+    const run = workflow_runs.find(
+      (r) =>
+        r.id < own && r.status === 'completed' && ['success', 'failure'].includes(r.conclusion),
+    )
+    if (run) return run.head_sha
+  }
+  throw new Error('no finished provenance run in the latest 1,000; check by hand')
 }
 
 /** Main's first-parent commits from the tip back to `stop` (excluded), at most LOOKBACK. */
