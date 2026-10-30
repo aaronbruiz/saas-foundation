@@ -16,12 +16,12 @@ An open authorization, tenancy, billing or tenant-data decision stays a question
 
 The later steps don't all come at once:
 
-| To reach                    | Steps                                                                  |
-| --------------------------- | ---------------------------------------------------------------------- |
-| Local development and tests | 1, then step 5's local setup                                           |
-| Hosted CI on a pull request | the above, with step 4's repository settings; CI's job holds no secret |
-| A preview                   | the above, with 2, 3 and 4, then step 5                                |
-| Production                  | all of them, with the data gate (ADR-0014)                             |
+| To reach                    | Steps                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Local development and tests | 1, then step 5's local setup                                                    |
+| Hosted CI on a pull request | the above, with step 4's repository settings; CI needs no infrastructure secret |
+| A preview                   | the above, with 2, 3 and 4, then step 5                                         |
+| Production                  | all of them, with the data gate (ADR-0014)                                      |
 
 ## 1. Repository
 
