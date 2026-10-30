@@ -3,7 +3,7 @@
 ```
 browser ──HTTPS──▶ Cloudflare edge
                     ├─ static assets (served at the edge)
-                    └─ Worker `saas-foundation` (TanStack Start SSR + server functions, placed in aws:us-east-1)
+                    └─ app Worker (TanStack Start SSR + server functions, placed in aws:us-east-1)
                           ├─ Better Auth (in-process)          → packages/auth
                           ├─ getTenantContext (/t/<slug>)      → apps/app/src/server
                           ├─ domain modules                    → apps/app/src/modules
@@ -12,14 +12,15 @@ browser ──HTTPS──▶ Cloudflare edge
                                    ▼
                           Hyperdrive `DB` (caching disabled) ──▶ Neon Postgres (aws-us-east-1)
 
-browser ──HTTPS──▶ docs.<zone> ──▶ Worker `saas-foundation-docs` (static assets only: Starlight
-                                   site, Pagefind index, llms.txt, .md twins; no bindings, ADR-0028)
-browser ──HTTPS──▶ <zone> (apex) ──▶ Worker `saas-foundation-site` (static assets only: landing,
-                                   pricing from billing/policy.ts; links to app.<zone>; ADR-0033)
-PR previews: Worker `saas-foundation-preview` (app, own Neon branch + Hyperdrive config, ADR-0021),
-             `saas-foundation-docs-preview` and `saas-foundation-site-preview` (no bindings), on
-             workers.dev
+browser ──HTTPS──▶ docs.<zone> ──▶ docs Worker (static assets only: Starlight site, Pagefind
+                                   index, llms.txt, .md twins; no bindings, ADR-0028)
+browser ──HTTPS──▶ <zone> (apex) ──▶ marketing Worker (static assets only: landing, pricing
+                                   from billing/policy.ts; links to app.<zone>; ADR-0033)
+PR previews: app preview Worker (own Neon branch + Hyperdrive config, ADR-0021), docs and
+             marketing preview Workers (no bindings), on workers.dev
 ```
+
+Worker names are set in configuration, not here: the app Worker's is `name` in [`apps/app/wrangler.jsonc`](../../apps/app/wrangler.jsonc) (repeated as `WORKER_NAME` in [`scripts/preview/prepare-config.mjs`](../../scripts/preview/prepare-config.mjs)), the app preview Worker's is `PREVIEW_WORKER` in [`scripts/preview/lib.sh`](../../scripts/preview/lib.sh), the docs and marketing Workers' are `name` in [`apps/docs/wrangler.jsonc`](../../apps/docs/wrangler.jsonc) and [`apps/site/wrangler.jsonc`](../../apps/site/wrangler.jsonc), and each one's preview Worker is that name plus `-preview` ([`scripts/sites/preview.sh`](../../scripts/sites/preview.sh)).
 
 ## Stack and services
 

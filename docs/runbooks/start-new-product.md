@@ -34,10 +34,10 @@ Every value below names a foundation resource. Replace each with the product's o
 | `apps/app/src/routes/__root.tsx`, root `package.json` `name`                            | page title, workspace name                                                                                                                                              |
 | `apps/app/src/modules/billing/policy.ts`                                                | plans, prices by price key, limits, trial (ADR-0020)                                                                                                                    |
 | `apps/app/src/lib/legal.ts` and the legal pages                                         | operator, contact, subprocessors                                                                                                                                        |
-| `README.md`, `docs/architecture/README.md`                                              | product name and purpose                                                                                                                                                |
+| `README.md`                                                                             | product name and purpose                                                                                                                                                |
 | `docs/runbooks/README.md`                                                               | resource names and dated rollout notes (they describe the foundation's production)                                                                                      |
 
-Then `pnpm --filter app cf-typegen`. Search for leftovers (skips the `@saas-foundation/*` imports): `git grep -n -P -e '(?<!@)saas-foundation(?!/)' -e aaronlabr -- ':!pnpm-lock.yaml' ':!docs/adr'`. Test fixtures that only use the names as sample strings can stay. The ADRs keep the foundation's ids as history (step 7).
+Then `pnpm --filter app cf-typegen`. Search for leftovers (skips the `@saas-foundation/*` imports): `git grep -n -P -e '(?<!@)saas-foundation(?!/)' -e aaronlabr -- ':!pnpm-lock.yaml' ':!docs/adr'`. Test fixtures that only use the names as sample strings can stay. The ADRs keep the foundation's ids as history (step 8).
 
 ## 3. Provision independent infrastructure (owner)
 
@@ -88,8 +88,19 @@ Then follow the AGENTS.md recipes in order: "Add a tenant-owned table" (includin
 
 E2E: a local run signs in from one IP, and the login rate limit (5 sign-ins and 5 sign-ups a minute per IP, ADR-0005, no test exemption) caps a run's real sign-ins. They're kept for the tests about signing up and signing in: a run uses 4 sign-ups and 5 sign-ins locally. A test that only needs someone signed in starts from the shared session instead (`test.use({ storageState: sessionFile })`, from `apps/app/e2e/session.ts`; `e2e/projects.spec.ts` is an example). The `setup` project (`e2e/auth.setup.ts`) signs that user up once per run; the user has no organization yet, so the test creates its own with `createOrg` (`e2e/helpers.ts`) and doesn't rely on other tests' data. A new test that signs in for real costs budget: if the full run fails with "Too many requests", it has run out.
 
-## 7. Record product decisions
+## 7. Document the product
+
+Product documentation lives in `docs/product/` ([ADR-0041](../adr/0041-product-owned-documentation-and-agent-instructions.md)). The foundation ships no file there and never edits it, so upstream merges don't touch it. Write each file when its trigger arrives:
+
+- **`docs/product/overview.md`**, before the first feature merges: target users and which organization role they hold; the problems the product solves; 3–7 core workflows, each naming its module or route; what's in scope; non-goals; links to the product ADRs. It's the living description of the product, updated by the PRs that add or remove a user-visible workflow.
+- **`docs/product/glossary.md`**, before the first feature merges: each product concept explained in a sentence or two. Where it helps, add its relation to foundation terms (owned by an organization or a user, the capability that guards it, the entitlement that limits it) and synonyms to avoid; those are optional. The PR that introduces or renames a term edits its entry.
+- **`docs/product/architecture.md`**, when the first product service, integration or changed foundation default lands: each added service and integration with its responsibility, decision and config (like the table in [`docs/architecture/README.md`](../architecture/README.md)); each changed foundation default with the product ADR that supersedes it; each new deployable with its ADR-0027 checklist.
+- **`docs/product/AGENTS.md`**, when the product has rules agents must follow: module map rows for the product's modules, product rules, and product checks for reviews. The root `AGENTS.md` loads it through its "Product instructions" line, so keep that line when merging upstream. Its rules add to the root file's and never override the invariants; keep it short, since every agent session reads it.
+
+`docs/product/` reduces upstream conflicts but doesn't remove them: product edits to foundation-owned files (code, `wrangler.jsonc`, workflows, `policy.ts`, `README.md`) can still conflict with `git merge upstream/main`.
+
+## 8. Record product decisions
 
 - Foundation ADRs stay as they are: they're the product's history too. A product decision that differs gets a **new ADR in the product repo** naming the one it amends or supersedes (ADR README convention). Don't edit the inherited ones except to mark them superseded, as the ADR README allows.
-- First product ADRs, typically: what the product is and its non-goals; any foundation default it changes (plan, region, sign-up mode); any new deployable or runtime (ADR-0027 criteria and checklist).
+- Product ADRs record decisions and deviations from the foundation; the product overview (step 7) describes the product and isn't an ADR. First product ADRs, typically: any foundation default the product changes (plan, region, sign-up mode); any new deployable or runtime (ADR-0027 criteria and checklist).
 - A fix or pattern that every product needs goes back to the foundation as a PR there, then reaches products through `git merge upstream/main`.
