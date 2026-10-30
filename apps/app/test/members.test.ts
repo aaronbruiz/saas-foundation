@@ -411,6 +411,10 @@ describe('managing members', () => {
       )
     await expectStatus(() => removeMember(owner.headers, { tenant: orgA, memberId: '' }), 400)
     await expectStatus(
+      () => updateMemberRole(owner.headers, { tenant: orgA, memberId: '', role: 'admin' }),
+      400,
+    )
+    await expectStatus(
       () => removeMember(owner.headers, { tenant: orgA, memberId, organizationId: 'x' }),
       400,
     )
@@ -439,5 +443,18 @@ describe('managing members', () => {
     expect(ids).toContain(invitationId)
     await acceptInvitation(invitee.headers, { invitationId })
     expect((await rowOf(invitee))?.role).toBe('member')
+  })
+
+  it("a removed admin's pending invitation can still be revoked", async () => {
+    const inviter = await joinAs(owner, orgA, 'admin')
+    const invitee = await signUp()
+    const { invitationId } = await inviteMember(inviter.headers, {
+      tenant: orgA,
+      email: invitee.email,
+    })
+    await removeMember(owner.headers, { tenant: orgA, memberId: await idOf(inviter) })
+    await revokeInvitation(owner.headers, { tenant: orgA, invitationId })
+    await expectStatus(() => acceptInvitation(invitee.headers, { invitationId }), 404)
+    expect(await rowOf(invitee)).toBeUndefined()
   })
 })
