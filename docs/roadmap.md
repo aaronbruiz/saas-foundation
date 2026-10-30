@@ -85,6 +85,19 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
   - ADR-0038 and ADR-0039 are Proposed while AGENTS.md treats their grants and archive triggers as binding; reconcile their status the way ADR-0040's was. Done 2026-10-29: both accepted by the owner (they're live since app 0.4.0 and the M2 switch).
   - Optional (M5): a catalog test that discovers tenant-owned tables and checks each one's grant, archive trigger and registration, instead of the hand-kept lists.
 
+### Parallel track: Starting kit
+
+Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for the owner's first real product, in its own repository.
+
+- **Outcome:** a fresh clone and a fresh session go from a product idea to a first reviewed PR using only tracked files, with one coordinating session and parallel subagents.
+- **Why:** a clone inherits the foundation's rules and review loop, but nothing that defines a product or runs agents in parallel.
+- **Done when:**
+  1. The product-start PR is merged: a "Define the product" step first in `start-new-product.md`, a product roadmap, and the `AGENTS.md` rules for unknown outcomes and GitHub text.
+  2. The workflow PR is merged after a smoke run in a fresh clone: `product-rules`, `feature-spec` and `coordinate` as trial skills, a `worker` agent, a test lock, permission rules.
+  3. A real product PR reaches the owner from a fresh clone, with parallel workers, and needs no personal memory or local file. Anything that did is fixed here.
+- **Deferred:** credential isolation (M3), rulesets (excluded by the owner).
+- **After it, in order:** a non-blocking post-merge provenance check on `main`, then a merge-readiness script.
+
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
@@ -111,6 +124,7 @@ Owner-approved 2026-10-20. It runs while M1 is blocked on GitHub Actions. When h
 - **Before it starts:**
   - M1 and M2 done.
   - The pilot's use case and success criteria written down before anyone is admitted.
+  - Agent credentials. On 2026-10-29 the owner accepted two risks while production holds only smoke-test accounts: agent sessions reach the owner's logins, and their token can start production workflows (K1, K2; record: `.local/credential-narrowing-2026-10/proposal.md`, the owner's local file). Credential isolation is done before real customer data enters.
   - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal was ticked on 2026-10-29 (the subscription canceled on 2026-10-21; runbook). That completes step 1 but doesn't make the pilot ready on its own.
 - **Done when:**
   - ADR-0032 rollout steps 2–7 are recorded.

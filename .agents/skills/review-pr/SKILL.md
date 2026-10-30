@@ -36,7 +36,7 @@ Inputs from the invoker: the base (default `origin/main`), the PR number or its 
 
 ## 4. Correction review
 
-Given the previous result and the corrections: mark each earlier finding resolved or not resolved, with evidence; then check only whether the corrections introduced a new problem. Don't re-review untouched code. If a correction changed behaviour or the PR description changed, redo the verification rows it affects. How many rounds: `docs/roadmap.md` "Engineering rules".
+Given the previous result and the corrections: mark each earlier finding resolved or not resolved, with evidence; then check only whether the corrections introduced a new problem. Don't re-review untouched code. If a correction changed behaviour or the PR description changed, redo the verification rows it affects. How many rounds: "Engineering rules" in `docs/roadmap.md` (`docs/product/roadmap.md` in a product repository).
 
 ## Output
 
