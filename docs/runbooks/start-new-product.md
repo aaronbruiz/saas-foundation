@@ -133,7 +133,7 @@ Claude implements and Codex reviews (ADR-0012), with one coordinating session an
 - Create `../<product>-review/` for Codex's detached worktrees and result files.
 - Create `.local/tasks/`, and `.local/handoff.md` from `.agents/skills/coordinate/handoff-template.md`. `.local/` is git-ignored.
 
-Start `claude` once in the clone and accept the workspace trust dialog: until you do, Claude Code ignores the project's allow rules, so everything prompts (`deny` rules apply either way). Run the session in normal permission mode, never `bypassPermissions`, because workers inherit it.
+Start `claude` once in the clone and accept the workspace trust dialog: until you do, Claude Code ignores the project's allow rules and the worker's hook. In an untrusted clone, `deny` rules still block pushes to `main` and branch pushes prompt; the hook only adds protection after trust. Run the session in normal permission mode, never `bypassPermissions`, because workers inherit it. Run every `pnpm test` and `pnpm test:e2e` through `scripts/test-lock.sh`, manual ones too: all clones on a machine share the test database, and the lock can't see a run that skips it.
 
 Tracked `.claude/settings.json` allows routine work and asks or denies the rest. Those rules match command text. They stop the usual forms of pushing to `main`, and a form they miss prompts you if it isn't allowed, so your attention to prompts is part of the control. A push built from variables or run inside a script isn't caught: that residual risk is accepted, and agent sessions also hold your logins, so isolate credentials before real customer data (`docs/product/roadmap.md`).
 

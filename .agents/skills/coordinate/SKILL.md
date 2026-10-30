@@ -28,7 +28,7 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
 - PRs waiting on the owner: at most 3, then start no new work.
 - A worker owns the files in its brief. One worker at a time is the integrator for migrations, contracts, generated files, the lockfile and `wrangler.jsonc`.
 - Migrations in flight: one task at a time, because tests apply a branch's migrations to the shared `app_test`.
-- Test runs go through `scripts/test-lock.sh`, one at a time.
+- Test runs go through `scripts/test-lock.sh`, one at a time on this machine, including any manual `pnpm test` or `pnpm test:e2e`: every clone and worktree shares `app_test`, and the lock can't see a run that skips it.
 - Data: synthetic only. No preview or production resources.
 - A side effect that isn't an observed clean success is reported as UNKNOWN (AGENTS.md "Working rules").
 
