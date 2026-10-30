@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision, Consequences. Superseding a decision = a new ADR that names the old one; old ADRs are never edited except to mark them superseded.
+One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision, Consequences and, where they help, Alternatives (each option and why it lost) and when to revisit (the condition that would reopen it). Superseding a decision = a new ADR that names the old one; old ADRs are never edited except to mark them superseded or to add a dated Notes section with later facts that don't change the decision.
 
 - [ADR-0001](0001-build-own-starter.md): Build our own starter instead of adopting or forking a template
 - [ADR-0002](0002-single-tanstack-start-worker.md): One TanStack Start Worker on Workers Static Assets

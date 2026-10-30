@@ -86,3 +86,7 @@ Writes down the workflow the repo already follows and adds the settings and chec
 **Repo settings applied** by the owner: squash merge only, `squash_merge_commit_title: PR_TITLE`, `squash_merge_commit_message: BLANK` (#92 landed as `64bef87` with its PR title and an empty body), then `delete_branch_on_merge: true`.
 
 **Stack test passed; auto-delete stays on.** Throwaway stack off `main`, never merged into it: `test/stack-root` ← #93 (`test/stack-base`) ← #94 (`test/stack-child`). With auto-delete on, squash-merging #93 deleted `test/stack-base`, and GitHub retargeted #94 to `test/stack-root` (timeline event `automatic_base_change_succeeded`, 18:42:31Z); #94 stayed open. #94 was then closed and the throwaway branches deleted. A child whose base is deleted any other way (manually, or before its PR merges) can still be closed, as #38 was. The `gh api … -f base=main` retarget stays the fallback.
+
+## Notes (2026-10-30)
+
+**When to reassess the PR description as the spec.** PR descriptions record behaviour per change, not per requirement: a product's current behaviour lives in its code, its tests and `docs/product/overview.md` (ADR-0041). These are reasons to reassess that choice, not to adopt a spec store automatically: a product with more than one implementing team, or a customer or regulator asking for requirement-to-test traceability. A reassessment is a new ADR that weighs a spec store and requirement IDs against today's PR-based records.
