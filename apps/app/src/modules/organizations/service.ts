@@ -6,6 +6,7 @@ import {
   InviteMemberInput,
 } from '@saas-foundation/contracts'
 import {
+  cancelPendingInvitation,
   findOrganizationById,
   findPendingInvitation,
   listMembers as membersOf,
@@ -77,8 +78,9 @@ export async function listInvitations(
 
 /**
  * Cancels a pending invitation of this tenant (`member:invite`). Another tenant's, unknown or no
- * longer pending invitation is a 404 before the role check; Better Auth's cancel doesn't check the
- * status, so this does.
+ * longer pending invitation is a 404 before the role check. The cancel is a conditional write in
+ * packages/db, not Better Auth's cancel, which overwrites any status (an acceptance racing it
+ * would end up "canceled" with its membership kept); no organization hook covers cancelling.
  */
 export async function revokeInvitation(headers: Headers, input: unknown): Promise<{ id: string }> {
   const { tenant, invitationId } = parseInput(InvitationRef, input)
@@ -86,7 +88,7 @@ export async function revokeInvitation(headers: Headers, input: unknown): Promis
     const ctx = await getTenantContext(db, headers, tenant)
     if (!(await findPendingInvitation(db, ctx.orgId, invitationId))) throw notFound()
     authorize(ctx, 'member:invite')
-    await authFor(db).api.cancelInvitation({ body: { invitationId }, headers })
+    if (!(await cancelPendingInvitation(db, ctx.orgId, invitationId))) throw notFound()
     return { id: invitationId }
   })
 }

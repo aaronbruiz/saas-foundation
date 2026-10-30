@@ -120,6 +120,20 @@ export async function findPendingInvitation(
   return row ?? null
 }
 
+/**
+ * Cancels a pending, unexpired invitation of this organization in one conditional write, so an
+ * acceptance racing it can't be overwritten (Better Auth's own cancel doesn't check the status).
+ * False when no such invitation is left.
+ */
+export async function cancelPendingInvitation(db: Db, orgId: string, id: string): Promise<boolean> {
+  const rows = await rawDb(db)
+    .update(invitation)
+    .set({ status: 'canceled' })
+    .where(and(eq(invitation.id, id), pendingIn(orgId)))
+    .returning({ id: invitation.id })
+  return rows.length > 0
+}
+
 export type ProjectFields = { name: string; description?: string | null }
 
 /**

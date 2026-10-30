@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { cancelPendingInvitation } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { withDb } from '../src/server/db'
 import {
@@ -39,6 +40,31 @@ const sql = (q: string, p: unknown[]) =>
 const statusOf = async (id: string) =>
   (await sql('SELECT status FROM invitation WHERE id = $1', [id])).rows[0]?.status
 
+const expire = (id: string) =>
+  sql(`UPDATE invitation SET expires_at = now() - interval '1 second' WHERE id = $1`, [id])
+
+// One call per new server boundary, for the checks every one of them shares.
+const boundaries = {
+  listMembers: (h: Headers, input: object) => listMembers(h, input),
+  listInvitations: (h: Headers, input: object) => listInvitations(h, input),
+  revokeInvitation: (h: Headers, input: object) =>
+    revokeInvitation(h, { invitationId: 'any', ...input }),
+}
+
+describe('every boundary', () => {
+  for (const [name, call] of Object.entries(boundaries)) {
+    it(`${name}: an unknown tenant is a 404`, async () => {
+      await expectStatus(
+        () => call(owner.headers, { tenant: `none-${crypto.randomUUID().slice(0, 8)}` }),
+        404,
+      )
+    })
+    it(`${name}: a malformed slug is an unknown tenant (404, not 400)`, async () => {
+      await expectStatus(() => call(owner.headers, { tenant: 'Not A Slug!' }), 404)
+    })
+  }
+})
+
 describe('member list', () => {
   it('every member sees all members with name, email and role, oldest first', async () => {
     for (const user of [owner, admin, member]) {
@@ -77,9 +103,7 @@ describe('pending invitations', () => {
     const accepted = await inviteMember(owner.headers, { tenant: orgA, email: carol.email })
     await acceptInvitation(carol.headers, { invitationId: accepted.invitationId })
     const expired = await invite(owner, orgA)
-    await sql(`UPDATE invitation SET expires_at = now() - interval '1 second' WHERE id = $1`, [
-      expired.invitationId,
-    ])
+    await expire(expired.invitationId)
     const ids = (await listInvitations(owner.headers, { tenant: orgA })).map((i) => i.id)
     expect(ids).not.toContain(accepted.invitationId)
     expect(ids).not.toContain(expired.invitationId)
@@ -144,6 +168,26 @@ describe('revoking an invitation', () => {
       () => revokeInvitation(owner.headers, { tenant: orgA, invitationId: revoked.invitationId }),
       404,
     )
+  })
+
+  it('an expired invitation is a 404 and stays as it is', async () => {
+    const { invitationId } = await invite(owner, orgA)
+    await expire(invitationId)
+    await expectStatus(() => revokeInvitation(owner.headers, { tenant: orgA, invitationId }), 404)
+    expect(await statusOf(invitationId)).toBe('pending')
+  })
+
+  it("the cancel write doesn't overwrite an invitation accepted after the pending check", async () => {
+    // The race the service's 404 check can't close on its own: acceptance lands between the
+    // check and the write. The write itself must refuse a non-pending invitation.
+    const fay = await signUp()
+    const { invitationId } = await inviteMember(owner.headers, { tenant: orgA, email: fay.email })
+    await acceptInvitation(fay.headers, { invitationId })
+    const orgId = (
+      await sql('SELECT organization_id FROM invitation WHERE id = $1', [invitationId])
+    ).rows[0]?.organization_id as string
+    expect(await withDb((db) => cancelPendingInvitation(db, orgId, invitationId))).toBe(false)
+    expect(await statusOf(invitationId)).toBe('accepted')
   })
 
   it('rejects an empty id or extra fields (400)', async () => {
