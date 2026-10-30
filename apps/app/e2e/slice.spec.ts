@@ -134,6 +134,10 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   await expect(carol.getByRole('button', { name: 'Save' })).toBeVisible()
   await expect(carol.getByRole('button', { name: 'Delete project' })).toHaveCount(0) // member role
   await expect(carol.getByRole('link', { name: 'Billing' })).toHaveCount(0) // member role
+  // Members see the member list, not the pending invitations (owner decision 2026-10-29).
+  await carol.getByRole('link', { name: 'Members' }).click()
+  await expect(carol.getByText(carolEmail)).toBeVisible()
+  await expect(carol.getByRole('heading', { name: 'Pending invitations' })).toHaveCount(0)
   // Opening the owner-only page anyway: the error page, with a way back (no framework default).
   await carol.goto(`/t/${orgA}/billing`)
   await expect(carol.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
@@ -167,6 +171,8 @@ test('sign-up, organization, projects, invitation and tenant isolation', async (
   expect((await bob.goto(`/t/${orgA}/invite`))?.status()).toBe(404)
   await notFound(bob)
   await expect(bob.getByLabel('Invitee email')).toHaveCount(0)
+  expect((await bob.goto(`/t/${orgA}/members`))?.status()).toBe(404)
+  await notFound(bob)
   await bob.goto(`/t/${orgA}/projects`)
   await notFound(bob)
   await bob.goto(`/t/${orgA}/projects/${alphaId}`)

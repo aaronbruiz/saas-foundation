@@ -3,7 +3,7 @@ import { getTenantContext } from '../src/server/context'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { capabilitiesOf, CAPABILITIES, type Capability } from '../src/server/permissions'
-import { getTenant, inviteMember } from '../src/modules/organizations/service'
+import { getTenant, inviteMember, listMembers } from '../src/modules/organizations/service'
 import {
   createProject,
   deleteProject,
@@ -30,7 +30,7 @@ type Role = 'owner' | 'admin' | 'member'
 const EXPECTED: Record<Role, Capability[]> = {
   owner: [...CAPABILITIES],
   admin: CAPABILITIES.filter((c) => c !== 'billing:manage'),
-  member: ['project:read', 'project:create', 'project:update'],
+  member: ['project:read', 'project:create', 'project:update', 'member:read'],
 }
 
 const fakeProvider: BillingProvider = {
@@ -74,6 +74,8 @@ async function attempt(user: TestUser, tenant: string, capability: Capability, i
       return updateProject(h, { tenant, id, project: { name: 'renamed' } })
     case 'project:delete':
       return deleteProject(h, { tenant, id })
+    case 'member:read':
+      return listMembers(h, { tenant })
     case 'member:invite':
       return inviteMember(h, { tenant, email: `i-${crypto.randomUUID()}@test.local` })
     case 'billing:read':

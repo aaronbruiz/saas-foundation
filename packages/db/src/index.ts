@@ -11,12 +11,17 @@ export {
 export { createDb, type Db } from './client.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
+  cancelPendingInvitation,
   countMembers,
   findMembership,
+  findPendingInvitation,
   findOrganizationById,
   findOrganizationBySlug,
+  listMembers,
   listOwners,
+  listPendingInvitations,
   projects,
+  type PendingInvitation,
   type ProjectFields,
   type TenantScope,
 } from './tenancy.ts'
