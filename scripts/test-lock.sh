@@ -26,6 +26,8 @@ common=$(git rev-parse --git-common-dir)
 mkdir -p "$locks" "$common/test-logs"
 # Agents' tools truncate long output, so each run keeps its full output, outside the worktree.
 log="$common/test-logs/$(basename "$top")-$kind-$(date +%Y%m%dT%H%M%S)-$$.log"
+# Printed first as well: a tool that truncates long output may lose the last line.
+echo "test-lock: full output in $log"
 status=0
 flock "$locks/$database.lock" pnpm "$script" "$@" 2>&1 | tee "$log" || status=$?
 echo "test-lock: exit $status, full output in $log"
