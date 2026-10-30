@@ -1,6 +1,6 @@
 # ADR-0041: Product-owned documentation and agent instructions
 
-Status: Proposed · Date: 2026-10-30
+Status: Accepted (owner 2026-10-30) · Date: 2026-10-30
 
 ## Context
 
