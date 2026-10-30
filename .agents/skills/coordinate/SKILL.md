@@ -17,8 +17,9 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
 6. **Review.** From a detached worktree in `../<repo>-review/`, launch `$review-pr` (ADR-0042 has the command) as a background command, with no polling. Pass the approved and current descriptions, which it compares, because Codex can't reach GitHub from its sandbox. Apply narrow fixes here or in a fresh worker, then one correction review. Don't resume a large worker for fixes.
 7. **Hand off.** Push once, by branch name, then open the PR. Commits always use `git commit -F <file>` and PRs `gh pr create --body-file <file>`, so message text never reaches the `deny` patterns or shell quoting. Report `CLAUDE.md`'s evidence line, with the governance files from `review-pr` and the description's edits after approval:
    ```
-   gh api graphql -f query='query{repository(owner:"<o>",name:"<r>"){pullRequest(number:<n>){userContentEdits(first:20){nodes{editedAt editor{login}}}}}}'
+   node scripts/merge-readiness.mjs <n> --review <result file> --approved-at <spec approval time>
    ```
+   Exit 1 means part of the evidence is stale or unknown: rerun it, or report it as not rerun.
    The owner merges. Rewrite the brief and add the PR's line to the handoff (`handoff-template.md`).
 8. **Base update, when only `main` moved, for the PR about to merge.** Merge `main` into the branch (ADR-0030) and push, so CI tests the new pair; `gh run rerun` reuses the original commit. Re-review if the merge had conflicts, or if `main`'s new commits touch the PR's files, contracts, migrations or shared fixtures. Otherwise record `base update, review carried over: <reason>` in the evidence line. Waiting PRs wait for their turn, so one merge doesn't spend CI minutes on every open PR.
 
