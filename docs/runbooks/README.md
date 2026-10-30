@@ -775,4 +775,4 @@ First deployed 2026-09-30 (milestone A, Worker version `25fc77e3-28a8-4eba-92b3-
 
 Rollback: `wrangler rollback` to the previous Worker version (code only). Migrations are forward-only (expand → migrate → contract). For data, use the Database section below.
 
-Planned: routine deploys, migrations after launch.
+Routine deploys and migrations after launch: see [Releases](#releases-adr-0029).

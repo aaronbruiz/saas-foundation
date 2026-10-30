@@ -20,7 +20,7 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0016](0016-transactional-email.md): Transactional email: Cloudflare Email Service behind an app mailer
 - [ADR-0017](0017-production-account-and-custom-domain.md): Production Cloudflare account and custom domain
 - [ADR-0018](0018-billing-platform.md): Billing platform: verified webhooks, organization-owned subscription state, default entitlements (its provider: superseded by ADR-0022)
-- [ADR-0019](0019-ci-credentials-and-preview-slots.md): CI credentials by resource, and pre-provisioned preview slots
+- [ADR-0019](0019-ci-credentials-and-preview-slots.md): CI credentials by resource, and pre-provisioned preview slots (preview slots and quarantine: superseded by ADR-0021)
 - [ADR-0020](0020-billing-product-policy.md): Billing product policy in one place, with reference defaults (tax, price lookup, portal, going live with Stripe: superseded by ADR-0022)
 - [ADR-0021](0021-per-pr-preview-data-behind-a-trusted-boundary.md): Per-PR preview data behind a trusted workflow boundary
 - [ADR-0022](0022-polar-merchant-of-record.md): Polar as billing provider and merchant of record; one Polar team customer per organization
@@ -41,4 +41,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0037](0037-backup-heartbeat-healthchecks.md): Backup heartbeat: a Healthchecks.io dead-man's switch pinged by the `dump` job, alerting by email
 - [ADR-0038](0038-least-privilege-database-runtime-role.md): Least-privilege database runtime role `app_runtime` for the app (explicit per-table grants; production switch gated on runbook verification)
 - [ADR-0039](0039-archive-and-audit-triggers.md): Owner-owned archive and audit triggers: deleted rows and access-granting auth writes, out of the runtime role's reach
-- [ADR-0040](0040-tenant-row-level-security.md): Tenant context per repository call (transaction-local, refusing to join another transaction) and staged row-level security on `project` and `billing_subscription`
+- [ADR-0040](0040-tenant-row-level-security.md): Tenant context per repository call (transaction-local, refusing to join another transaction) and staged row-level security on `project` and `billing_subscription` (partially accepted: decisions 1–4 and 7–8 are binding; row-level security policies, decisions 5–6, are proposed)
