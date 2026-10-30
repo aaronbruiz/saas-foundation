@@ -4,7 +4,9 @@ import {
   CreateOrganizationInput,
   InvitationRef,
   InviteMemberInput,
+  MemberRef,
   TenantInput,
+  UpdateMemberRoleInput,
 } from '@saas-foundation/contracts'
 import { requestHeaders, serve } from '../../server/boundary'
 import { validateWith } from '../../server/validate'
@@ -16,7 +18,9 @@ import {
   inviteMember,
   listInvitations,
   listMembers,
+  removeMember,
   revokeInvitation,
+  updateMemberRole,
 } from './service'
 
 export const getViewerFn = createServerFn({ method: 'GET' }).handler(() =>
@@ -43,3 +47,9 @@ export const listInvitationsFn = createServerFn({ method: 'GET' })
 export const revokeInvitationFn = createServerFn({ method: 'POST' })
   .validator(validateWith(InvitationRef))
   .handler(({ data }) => serve(() => revokeInvitation(requestHeaders(), data)))
+export const removeMemberFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(MemberRef))
+  .handler(({ data }) => serve(() => removeMember(requestHeaders(), data)))
+export const updateMemberRoleFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(UpdateMemberRoleInput))
+  .handler(({ data }) => serve(() => updateMemberRole(requestHeaders(), data)))

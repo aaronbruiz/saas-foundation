@@ -3,7 +3,12 @@ import { getTenantContext } from '../src/server/context'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { capabilitiesOf, CAPABILITIES, type Capability } from '../src/server/permissions'
-import { getTenant, inviteMember, listMembers } from '../src/modules/organizations/service'
+import {
+  getTenant,
+  inviteMember,
+  listMembers,
+  updateMemberRole,
+} from '../src/modules/organizations/service'
 import {
   createProject,
   deleteProject,
@@ -46,6 +51,7 @@ let outsider: TestUser
 let orgA: string
 let orgB: string
 let projectB: { id: string }
+let plainMemberId: string
 
 beforeAll(async () => {
   const owner = await signUp()
@@ -59,6 +65,8 @@ beforeAll(async () => {
   ])
   users = { owner, admin, member }
   projectB = await createProject(outsider.headers, { tenant: orgB, project: { name: 'B' } })
+  const rows = await listMembers(owner.headers, { tenant: orgA })
+  plainMemberId = rows.find((r) => r.email === member.email)!.id
 })
 
 /** One call per capability, run as `user` against `tenant` (`id` = a project in that tenant). */
@@ -78,6 +86,9 @@ async function attempt(user: TestUser, tenant: string, capability: Capability, i
       return listMembers(h, { tenant })
     case 'member:invite':
       return inviteMember(h, { tenant, email: `i-${crypto.randomUUID()}@test.local` })
+    case 'member:manage':
+      // Sets the role it already has, so the other tests keep their member.
+      return updateMemberRole(h, { tenant, memberId: plainMemberId, role: 'member' })
     case 'billing:read':
       return getBillingOverview(h, { tenant })
     case 'billing:manage':

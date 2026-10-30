@@ -4,13 +4,18 @@ import {
   CreateOrganizationInput,
   InvitationRef,
   InviteMemberInput,
+  MemberRef,
+  UpdateMemberRoleInput,
 } from '@saas-foundation/contracts'
 import {
   cancelPendingInvitation,
+  findMember,
   findOrganizationById,
   findPendingInvitation,
   listMembers as membersOf,
   listPendingInvitations,
+  removeNonOwnerMember,
+  updateNonOwnerMemberRole,
   type PendingInvitation,
 } from '@saas-foundation/db'
 import { TenantInput } from '@saas-foundation/contracts'
@@ -51,7 +56,7 @@ export async function inviteMember(
   })
 }
 
-export type Member = { name: string; email: string; role: string }
+export type Member = { id: string; name: string; email: string; role: string }
 
 /** The tenant's members for the members page; every role has `member:read`. */
 export async function listMembers(headers: Headers, input: unknown): Promise<Member[]> {
@@ -59,7 +64,12 @@ export async function listMembers(headers: Headers, input: unknown): Promise<Mem
   return withDb(async (db) => {
     const ctx = await getTenantContext(db, headers, tenant)
     authorize(ctx, 'member:read')
-    return (await membersOf(db, ctx.orgId)).map(({ name, email, role }) => ({ name, email, role }))
+    return (await membersOf(db, ctx.orgId)).map(({ id, name, email, role }) => ({
+      id,
+      name,
+      email,
+      role,
+    }))
   })
 }
 
@@ -90,6 +100,43 @@ export async function revokeInvitation(headers: Headers, input: unknown): Promis
     authorize(ctx, 'member:invite')
     if (!(await cancelPendingInvitation(db, ctx.orgId, invitationId))) throw notFound()
     return { id: invitationId }
+  })
+}
+
+const ownerRowRefused = () => new HttpError(403, "An owner can't be changed here")
+
+/**
+ * Removes a non-owner of this tenant (`member:manage`), the caller included. Another tenant's or an
+ * unknown member is a 404 before the role check. A conditional write in packages/db, not Better
+ * Auth's endpoint, which checks and then deletes: a promotion racing it would lose an owner.
+ */
+export async function removeMember(
+  headers: Headers,
+  input: unknown,
+): Promise<{ removedSelf: boolean }> {
+  const { tenant, memberId } = parseInput(MemberRef, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    const target = await findMember(db, ctx.orgId, memberId)
+    if (!target) throw notFound()
+    authorize(ctx, 'member:manage')
+    if (target.isOwner) throw ownerRowRefused()
+    if (!(await removeNonOwnerMember(db, ctx.orgId, memberId))) throw notFound()
+    return { removedSelf: target.userId === ctx.userId }
+  })
+}
+
+/** Switches a non-owner between member and admin; the same checks as `removeMember`. */
+export async function updateMemberRole(headers: Headers, input: unknown): Promise<{ id: string }> {
+  const { tenant, memberId, role } = parseInput(UpdateMemberRoleInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    const target = await findMember(db, ctx.orgId, memberId)
+    if (!target) throw notFound()
+    authorize(ctx, 'member:manage')
+    if (target.isOwner) throw ownerRowRefused()
+    if (!(await updateNonOwnerMemberRole(db, ctx.orgId, memberId, role))) throw notFound()
+    return { id: memberId }
   })
 }
 
