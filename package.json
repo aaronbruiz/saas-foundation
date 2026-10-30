@@ -17,7 +17,7 @@
     "db:generate": "pnpm --filter @saas-foundation/db db:generate",
     "db:migrate": "pnpm --filter @saas-foundation/db db:migrate",
     "db:check": "node scripts/check-migrations.mjs --default-base && SCHEMA_CHECK_PROBE= scripts/check-schema-sql.sh && node --test scripts/check-schema-sql.test.mjs packages/db/scripts/migrate-lock-timeout.test.mjs",
-    "lint": "eslint . && node --test scripts/lint-boundaries.test.mjs scripts/check-secrets.test.mjs scripts/check-migrations.test.mjs scripts/compare-catalogs.test.mjs scripts/check-agents-size.test.mjs scripts/agent-guards.test.mjs",
+    "lint": "eslint . && node --test scripts/lint-boundaries.test.mjs scripts/check-secrets.test.mjs scripts/check-migrations.test.mjs scripts/compare-catalogs.test.mjs scripts/check-agents-size.test.mjs scripts/agent-guards.test.mjs scripts/check-provenance.test.mjs",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "typecheck": "pnpm -r --parallel typecheck",

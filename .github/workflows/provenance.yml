@@ -1,0 +1,39 @@
+name: Provenance
+
+# Detects a push to main that isn't a squash merge of a PR whose CI was green on its final head
+# when it merged: a direct push, a force-push, or a merge before CI passed (scripts/check-provenance.mjs).
+# It's the detector for pushes the permission rules miss (docs/runbooks/start-new-product.md step
+# 9). It blocks nothing: a failed run is the alert, emailed only if GitHub's Actions notification
+# settings send failed runs to whoever triggered it. Its own workflow, with no concurrency group,
+# so a later push can't cancel the check of an earlier one (ci.yml cancels in progress on main).
+# A push whose message has `[skip ci]` (or `[skip actions]`, `skip-checks: true`) starts no run, so
+# each run checks every commit since the previous finished run's, and the daily run catches one even with
+# no later push. On a public repository GitHub pauses scheduled runs after 60 days without activity.
+# Read-only token; no install, no secrets.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions: {}
+
+jobs:
+  provenance:
+    name: Squash merge of a green PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # the checkout and the commit's parents
+      pull-requests: read # the PR that merged the commit
+      actions: read # CI runs on the PR's head
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/check-provenance.mjs
+          sparse-checkout-cone-mode: false
+      - name: Check provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-provenance.mjs
