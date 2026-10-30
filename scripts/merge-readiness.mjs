@@ -38,9 +38,13 @@ const glob = (pattern) =>
       .map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '[^/]*'))
       .join('.*')}$`,
   )
+/** A governance file or a modified, removed or renamed test, under its new or (renamed) old path. */
 const governed = (f) =>
-  GOVERNANCE.some((p) => glob(p).test(f.filename)) ||
-  (TEST.test(f.filename) && f.status !== 'added')
+  [f.filename, f.previous_filename].some(
+    (name) =>
+      name &&
+      (GOVERNANCE.some((p) => glob(p).test(name)) || (TEST.test(name) && f.status !== 'added')),
+  )
 
 const gh = (args) => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 << 20 })
 const api = (path) => JSON.parse(gh(['api', path]))
@@ -76,29 +80,46 @@ function reviewed(file) {
   return { base: m[1], head: m[2] }
 }
 
-/** The newest ci.yml run on this PR's head and the merge it tested (from its checkout log). */
+/** The merges a job log's actions/checkout steps report (other steps' output doesn't count). */
+function checkedOut(log) {
+  const merges = []
+  for (const step of log.split(/^\S+ ##\[group\]Run /m).slice(1)) {
+    if (!step.startsWith('actions/checkout@')) continue
+    for (const m of step.matchAll(
+      /^\S+ HEAD is now at ([0-9a-f]+) Merge ([0-9a-f]{40}) into ([0-9a-f]{40})$/gm,
+    ))
+      merges.push({ merge: m[1], parents: [m[2], m[3]] })
+  }
+  return merges
+}
+
+/**
+ * The newest ci.yml run for this PR's head (same repository and branch; when GitHub lists the
+ * run's PRs, this one among them) and the one merge its checkouts tested. An unreadable log, or
+ * jobs that tested different merges, make it unknown.
+ */
 function ci(pr) {
   const runs = all(
     `repos/{owner}/{repo}/actions/workflows/ci.yml/runs?head_sha=${pr.head.sha}&event=pull_request`,
     'workflow_runs',
-  ).filter((r) => r.path === '.github/workflows/ci.yml' && r.head_branch === pr.head.ref)
-  if (!runs.length) throw new Error(`no ci.yml run on ${short(pr.head.sha)}`)
+  ).filter(
+    (r) =>
+      r.path === '.github/workflows/ci.yml' &&
+      r.head_branch === pr.head.ref &&
+      r.head_repository?.full_name === pr.head.repo?.full_name &&
+      (!r.pull_requests?.length || r.pull_requests.some((p) => p.number === pr.number)),
+  )
+  if (!runs.length) throw new Error(`no ci.yml run for #${pr.number} on ${short(pr.head.sha)}`)
   const run = runs.reduce((a, b) => (Date.parse(b.created_at) > Date.parse(a.created_at) ? b : a))
-  const failed = []
+  const merges = new Map()
   for (const job of api(`repos/{owner}/{repo}/actions/runs/${run.id}/jobs`).jobs) {
     if (job.conclusion === 'skipped') continue
-    let log
-    try {
-      log = gh(['api', `repos/{owner}/{repo}/actions/jobs/${job.id}/logs`])
-    } catch {
-      failed.push(job.name)
-      continue
-    }
-    const m = log.match(/HEAD is now at ([0-9a-f]+) Merge ([0-9a-f]{40}) into ([0-9a-f]{40})/)
-    if (m) return { run, merge: m[1], parents: [m[2], m[3]] }
+    const log = gh(['api', `repos/{owner}/{repo}/actions/jobs/${job.id}/logs`])
+    for (const m of checkedOut(log)) merges.set(m.parents.join(), m)
   }
-  const unread = failed.length ? ` (unreadable logs: ${failed.join(', ')})` : ''
-  throw new Error(`CI ${run.id}'s logs show no tested merge commit${unread}`)
+  if (merges.size > 1) throw new Error(`CI ${run.id}'s jobs tested ${merges.size} different merges`)
+  if (!merges.size) throw new Error(`CI ${run.id}'s logs show no tested merge commit`)
+  return { run, ...[...merges.values()][0] }
 }
 
 function edits(n, approvedAt, problems) {
@@ -188,7 +209,10 @@ function report(n, { review, approvedAt }) {
       return (
         files
           .filter(governed)
-          .map((f) => `${f.filename}${f.status === 'added' ? '' : ` (${f.status})`}`)
+          .map(
+            (f) =>
+              `${f.previous_filename ? `${f.previous_filename} → ` : ''}${f.filename}${f.status === 'added' ? '' : ` (${f.status})`}`,
+          )
           .join(', ') || 'none'
       )
     })}`,
@@ -215,7 +239,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     allowPositionals: true,
     options: { review: { type: 'string' }, 'approved-at': { type: 'string' } },
   })
-  if (positionals.length !== 1 || !values.review) {
+  if (positionals.length !== 1 || !/^[1-9]\d*$/.test(positionals[0]) || !values.review) {
     console.error(
       'usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time>]',
     )

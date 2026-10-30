@@ -30,6 +30,11 @@ const R = 'repos/{owner}/{repo}'
 const HEAD = 'a'.repeat(40)
 const BASE = 'b'.repeat(40)
 const NEWER = 'c'.repeat(40)
+/** A job log whose actions/checkout step tested the merge of parents[0] into parents[1]. */
+const checkoutLog = (parents) =>
+  '2026-10-30T10:00:00Z ##[group]Run actions/checkout@3d3c42e5\n' +
+  `2026-10-30T10:00:01Z HEAD is now at e9e3dca Merge ${parents[0]} into ${parents[1]}\n` +
+  '2026-10-30T10:00:02Z ##[group]Run pnpm check\n'
 const CI_RUNS = `${R}/actions/workflows/ci.yml/runs?head_sha=${HEAD}&event=pull_request&per_page=100&page=1`
 
 /** GitHub's answers for open PR #5 (head HEAD on branch feat/x) into main at `main`. */
@@ -45,8 +50,9 @@ function github({
     [`${R}/pulls/5`]: {
       state: 'open',
       merged_at: null,
+      number: 5,
       base: { ref: 'main' },
-      head: { sha: HEAD, ref: 'feat/x' },
+      head: { sha: HEAD, ref: 'feat/x', repo: { full_name: 'o/r' } },
     },
     [`${R}/git/ref/heads/main`]: { object: { sha: main } },
     [`${R}/compare/${main}...${HEAD}`]: { merge_base_commit: { sha: BASE } },
@@ -56,6 +62,8 @@ function github({
           id: 41,
           path: '.github/workflows/ci.yml',
           head_branch: 'feat/x',
+          head_repository: { full_name: 'o/r' },
+          pull_requests: [{ number: 5 }],
           created_at: '2026-10-30T10:00:00Z',
           status: 'completed',
           conclusion,
@@ -69,8 +77,7 @@ function github({
       ],
     },
     [`${R}/actions/jobs/1/logs`]: 'no checkout here\n',
-    [`${R}/actions/jobs/2/logs`]:
-      log ?? `2026-10-30T10:00:01Z HEAD is now at e9e3dca Merge ${parents[0]} into ${parents[1]}\n`,
+    [`${R}/actions/jobs/2/logs`]: log ?? checkoutLog(parents),
     [`${R}/pulls/5/files?per_page=100&page=1`]: files ?? [
       { filename: 'apps/app/src/x.ts', status: 'modified' },
     ],
@@ -162,7 +169,7 @@ test('CI logs without a tested merge commit are unknown and fail', () => {
 test('no CI run on the head is unknown and fails', () => {
   const answers = github()
   answers[CI_RUNS] = { workflow_runs: [] }
-  notCovered(run(answers), /UNKNOWN: no ci\.yml run on aaaaaaa/)
+  notCovered(run(answers), /UNKNOWN: no ci\.yml run for #5 on aaaaaaa/)
 })
 
 test("a run of another workflow or branch on the same commit isn't taken as this PR's CI", () => {
@@ -204,6 +211,53 @@ test('a failed GitHub API call is unknown and fails', () => {
   const answers = github()
   delete answers[`${R}/pulls/5/files?per_page=100&page=1`]
   notCovered(run(answers), /governance: UNKNOWN \(.*HTTP 404/)
+})
+
+test("a fork's or another PR's green run on the same head and branch isn't taken as this PR's CI", () => {
+  for (const other of [
+    { head_repository: { full_name: 'fork/r' } },
+    { pull_requests: [{ number: 99 }] },
+  ]) {
+    const answers = github()
+    Object.assign(answers[CI_RUNS].workflow_runs[0], other)
+    notCovered(run(answers), /UNKNOWN: no ci\.yml run for #5/)
+  }
+})
+
+test("a merge line echoed by a step other than checkout isn't taken as the tested merge", () => {
+  const log =
+    `2026-10-30T10:00:00Z ##[group]Run echo "HEAD is now at e9e3dca Merge ${HEAD} into ${BASE}"\n` +
+    `2026-10-30T10:00:01Z HEAD is now at e9e3dca Merge ${HEAD} into ${BASE}\n`
+  notCovered(run(github({ log })), /UNKNOWN: CI 41's logs show no tested merge commit/)
+})
+
+test('an unreadable job log makes CI unknown, even when another job shows the merge', () => {
+  const answers = github()
+  delete answers[`${R}/actions/jobs/1/logs`]
+  notCovered(run(answers), /CI UNKNOWN \(.*HTTP 404/)
+})
+
+test('jobs that tested different merges make CI unknown', () => {
+  const answers = github()
+  answers[`${R}/actions/jobs/1/logs`] = checkoutLog([HEAD, NEWER])
+  notCovered(run(answers), /UNKNOWN: CI 41's jobs tested 2 different merges/)
+})
+
+test('a governance file or test renamed to an ordinary path is still named', () => {
+  const files = [
+    { filename: 'ordinary.txt', previous_filename: 'CLAUDE.md', status: 'renamed' },
+    { filename: 'notes/x.md', previous_filename: 'apps/app/test/roles.test.ts', status: 'renamed' },
+  ]
+  assert.match(
+    run(github({ files })).output,
+    /governance: CLAUDE\.md → ordinary\.txt \(renamed\), apps\/app\/test\/roles\.test\.ts → notes\/x\.md \(renamed\);/,
+  )
+})
+
+test("a PR argument that isn't a number is refused before any call", () => {
+  const r = run({}, ['5;x', '--review', REVIEW])
+  assert.equal(r.status, 2, r.output)
+  assert.match(r.output, /usage:/)
 })
 
 test("the governance list matches review-pr step 5's", () => {
