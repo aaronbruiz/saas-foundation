@@ -1,6 +1,6 @@
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt } from 'drizzle-orm'
 import { rawDb, type Db } from './client.ts'
-import { member, organization, user } from './schema/auth.ts'
+import { invitation, member, organization, user } from './schema/auth.ts'
 import { billingSubscription, type BillingSubscription } from './schema/billing.ts'
 import { project, type Project } from './schema/projects.ts'
 import { inTenant } from './tenant-transaction.ts'
@@ -60,6 +60,64 @@ export async function listOwners(
   return rows
     .filter((r) => r.role.split(',').some((x) => x.trim() === 'owner'))
     .map(({ userId, email }) => ({ userId, email }))
+}
+
+/** Members of an organization with their account name and email, oldest first. */
+export async function listMembers(
+  db: Db,
+  orgId: string,
+): Promise<{ userId: string; name: string; email: string; role: string; createdAt: Date }[]> {
+  return rawDb(db)
+    .select({
+      userId: member.userId,
+      name: user.name,
+      email: user.email,
+      role: member.role,
+      createdAt: member.createdAt,
+    })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(eq(member.organizationId, orgId))
+    .orderBy(asc(member.createdAt), asc(member.id))
+}
+
+export type PendingInvitation = { id: string; email: string; role: string | null; expiresAt: Date }
+
+const pendingIn = (orgId: string) =>
+  and(
+    eq(invitation.organizationId, orgId),
+    eq(invitation.status, 'pending'),
+    gt(invitation.expiresAt, new Date()),
+  )
+
+const invitationFields = {
+  id: invitation.id,
+  email: invitation.email,
+  role: invitation.role,
+  expiresAt: invitation.expiresAt,
+}
+
+/** Invitations of an organization still waiting to be accepted (pending and unexpired). */
+export async function listPendingInvitations(db: Db, orgId: string): Promise<PendingInvitation[]> {
+  return rawDb(db)
+    .select(invitationFields)
+    .from(invitation)
+    .where(pendingIn(orgId))
+    .orderBy(asc(invitation.createdAt), asc(invitation.id))
+}
+
+/** A pending, unexpired invitation of this organization, or null (foreign, unknown or used). */
+export async function findPendingInvitation(
+  db: Db,
+  orgId: string,
+  id: string,
+): Promise<PendingInvitation | null> {
+  const [row] = await rawDb(db)
+    .select(invitationFields)
+    .from(invitation)
+    .where(and(eq(invitation.id, id), pendingIn(orgId)))
+    .limit(1)
+  return row ?? null
 }
 
 export type ProjectFields = { name: string; description?: string | null }

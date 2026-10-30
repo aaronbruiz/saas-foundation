@@ -32,6 +32,9 @@ function TenantLayout() {
           <Link to="/t/$tenant/projects" params={{ tenant: tenant.slug }} className="underline">
             Projects
           </Link>
+          <Link to="/t/$tenant/members" params={{ tenant: tenant.slug }} className="underline">
+            Members
+          </Link>
           {canInvite && (
             <Link to="/t/$tenant/invite" params={{ tenant: tenant.slug }} className="underline">
               Invite

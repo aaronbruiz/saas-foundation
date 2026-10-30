@@ -2,14 +2,21 @@ import { APIError } from 'better-auth/api'
 import {
   AcceptInvitationInput,
   CreateOrganizationInput,
+  InvitationRef,
   InviteMemberInput,
 } from '@saas-foundation/contracts'
-import { findOrganizationById } from '@saas-foundation/db'
+import {
+  findOrganizationById,
+  findPendingInvitation,
+  listMembers as membersOf,
+  listPendingInvitations,
+  type PendingInvitation,
+} from '@saas-foundation/db'
 import { TenantInput } from '@saas-foundation/contracts'
 import { authFor, invitationLink } from '../../server/auth'
 import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
-import { HttpError, parseInput } from '../../server/errors'
+import { HttpError, notFound, parseInput } from '../../server/errors'
 import { authorize, capabilitiesOf, type Capability } from '../../server/permissions'
 
 export async function createOrganization(
@@ -40,6 +47,47 @@ export async function inviteMember(
       headers,
     })
     return { invitationId: invitation.id, link: invitationLink(invitation.id) }
+  })
+}
+
+export type Member = { name: string; email: string; role: string }
+
+/** The tenant's members for the members page; every role has `member:read`. */
+export async function listMembers(headers: Headers, input: unknown): Promise<Member[]> {
+  const { tenant } = parseInput(TenantInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    authorize(ctx, 'member:read')
+    return (await membersOf(db, ctx.orgId)).map(({ name, email, role }) => ({ name, email, role }))
+  })
+}
+
+/** Pending, unexpired invitations; they go with `member:invite` (owner/admin). */
+export async function listInvitations(
+  headers: Headers,
+  input: unknown,
+): Promise<PendingInvitation[]> {
+  const { tenant } = parseInput(TenantInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    authorize(ctx, 'member:invite')
+    return listPendingInvitations(db, ctx.orgId)
+  })
+}
+
+/**
+ * Cancels a pending invitation of this tenant (`member:invite`). Another tenant's, unknown or no
+ * longer pending invitation is a 404 before the role check; Better Auth's cancel doesn't check the
+ * status, so this does.
+ */
+export async function revokeInvitation(headers: Headers, input: unknown): Promise<{ id: string }> {
+  const { tenant, invitationId } = parseInput(InvitationRef, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    if (!(await findPendingInvitation(db, ctx.orgId, invitationId))) throw notFound()
+    authorize(ctx, 'member:invite')
+    await authFor(db).api.cancelInvitation({ body: { invitationId }, headers })
+    return { id: invitationId }
   })
 }
 

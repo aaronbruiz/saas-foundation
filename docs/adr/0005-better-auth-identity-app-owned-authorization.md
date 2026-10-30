@@ -21,13 +21,15 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
   | `project:read` / `create` / `update`                    |  yes  |  yes  |  yes   |
   | `project:delete` (hard delete, no audit trail yet)      |  yes  |  yes  |   no   |
   | `member:invite` (as `member` or `admin`)                |  yes  |  yes  |   no   |
+  | `member:invite`: list pending invitations, revoke one   |  yes  |  yes  |   no   |
+  | `member:read`: the member list (names, emails, roles)   |  yes  |  yes  |  yes   |
   | _Better Auth HTTP endpoints (its default roles):_       |       |       |        |
   | organization update (name, slug)                        |  yes  |  yes  |   no   |
   | invite, change role, remove: non-owner members          |  yes  |  yes  |   no   |
   | invite as owner, grant owner, change or remove an owner |  yes  |  no   |   no   |
   | organization delete                                     |  yes  |  no   |   no   |
 
-  Better Auth's `/api/auth/organization/*` endpoints are reachable over HTTP and enforce its default roles on their own (1.7.6: non-owners can't invite or grant `owner` or touch an owner). The rows above are those defaults, accepted as ours; `test/roles.test.ts` checks them over HTTP. Changing them means Better Auth `ac`/`roles` config, this table and the tests together. `getTenant` needs membership only (it returns what every member may see). The UI gets the capabilities from `getTenant` to hide actions; it never decides.
+  Better Auth's `/api/auth/organization/*` endpoints are reachable over HTTP and enforce its default roles on their own (1.7.6: non-owners can't invite or grant `owner` or touch an owner). The rows above are those defaults, accepted as ours; `test/roles.test.ts` checks them over HTTP. Changing them means Better Auth `ac`/`roles` config, this table and the tests together. `getTenant` needs membership only (it returns what every member may see). Pending invitations are shown only with `member:invite` (owner decision 2026-10-29), but Better Auth's own `list-invitations` endpoint lets any member read them over HTTP (1.7.12 default; accepted for now, closing it needs an auth middleware change). The UI gets the capabilities from `getTenant` to hide actions; it never decides.
 
 - Login rate limiting: Better Auth `rateLimit.storage: "database"` plus a WAF rule. The in-memory limiter doesn't work across Worker isolates, and the Workers Rate Limiting binding is per location and approximate. Details below.
 
