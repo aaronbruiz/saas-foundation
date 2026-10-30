@@ -66,7 +66,11 @@ const stubPnpm = (body) => {
   const bin = mkdtempSync(join(dir, 'bin-'))
   writeFileSync(join(bin, 'pnpm'), `#!/bin/sh\n${body}\n`)
   chmodSync(join(bin, 'pnpm'), 0o755)
-  return { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: mkdtempSync(join(dir, 'home-')) }
+  return {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    HOME: mkdtempSync(join(dir, 'home-')),
+  }
 }
 
 test('the test lock keeps the exit code of a failing run and its full output', () => {
