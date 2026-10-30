@@ -15,7 +15,7 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
 4. **Dispatch.** Start `worker` subagents in the background from the feature branch, whose HEAD must be the brief's base SHA, passing the brief's content, because ignored files don't reach worktrees. Use a stronger model for tenant, auth, billing or migration tasks.
 5. **Integrate.** Merge the workers' commits into the feature branch in dependency order, one branch per PR, stacks at most 3 (ADR-0030). Then run `pnpm check`, `scripts/test-lock.sh test` and `scripts/test-lock.sh e2e` on the integrated commit: a worker's results don't cover it.
 6. **Review.** From a detached worktree in `../<repo>-review/`, launch `$review-pr` (ADR-0042 has the command) as a background command, with no polling. Pass the approved and current descriptions, which it compares, because Codex can't reach GitHub from its sandbox. Apply narrow fixes here or in a fresh worker, then one correction review. Don't resume a large worker for fixes.
-7. **Hand off.** Push once, by branch name, then open the PR. Report `CLAUDE.md`'s evidence line, with the governance files from `review-pr` and the description's edits after approval:
+7. **Hand off.** Push once, by branch name, then open the PR. Commits always use `git commit -F <file>` and PRs `gh pr create --body-file <file>`, so message text never reaches the `deny` patterns or shell quoting. Report `CLAUDE.md`'s evidence line, with the governance files from `review-pr` and the description's edits after approval:
    ```
    gh api graphql -f query='query{repository(owner:"<o>",name:"<r>"){pullRequest(number:<n>){userContentEdits(first:20){nodes{editedAt editor{login}}}}}}'
    ```
@@ -36,5 +36,6 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
 
 - a worker reports an unexpected change outside its files;
 - a check passes only after a test was weakened;
+- a worker's check command differs from the brief's, because an appended `; echo` makes a failure look like a pass;
 - a credential or production resource appears in a task's path;
 - the same shared-resource failure happens twice.
