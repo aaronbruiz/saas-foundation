@@ -97,6 +97,10 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
   3. A real product PR reaches the owner from a fresh clone, with parallel workers, and needs no personal memory or local file. Anything that did is fixed here.
 - **Deferred:** credential isolation (M3), rulesets (excluded by the owner).
 - **Between items 2 and 3, in order:** a trim of `AGENTS.md`, moving recipes or detail into skills or docs (ADR-0008); a non-blocking post-merge provenance check on `main`, the detector for a push the permission rules miss; a merge-readiness script. The first two land before a product repository is created.
+- **Before item 3, foundation features (owner-approved 2026-10-30), in order:** the product repository waits until they're done or the owner drops them.
+  - An organization switcher and an account page: name and password change while signed in.
+  - Organization settings: rename, delete, leave and ownership transfer.
+  - Account deletion, after the owner's decisions on sole owners, live subscriptions and retention.
 
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
