@@ -13,6 +13,7 @@ export const CAPABILITIES = [
   'project:delete',
   'member:read',
   'member:invite',
+  'member:manage',
   'billing:read',
   'billing:manage',
 ] as const
@@ -20,7 +21,9 @@ export type Capability = (typeof CAPABILITIES)[number]
 
 // Members read, create and update projects; deleting (hard, no audit trail) and inviting are
 // owner/admin only (owner decision 2026-09-28). Every member sees the member list; pending
-// invitations and revoking one go with `member:invite` (owner decision 2026-10-29). Billing (ADR-0020): owner and admin see the plan
+// invitations and revoking one go with `member:invite` (owner decision 2026-10-29). Removing a
+// non-owner or switching them between member and admin goes with `member:manage`; an admin may do
+// it to themselves, and no one to an owner (owner decisions 2026-10-30). Billing (ADR-0020): owner and admin see the plan
 // and usage; only the owner, who also alone can delete the organization, starts or changes a paid
 // subscription.
 const MATRIX = {

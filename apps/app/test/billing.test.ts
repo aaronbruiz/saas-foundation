@@ -28,7 +28,12 @@ import {
   openBillingPortal,
   startCheckout,
 } from '../src/modules/billing/service'
-import { acceptInvitation, inviteMember } from '../src/modules/organizations/service'
+import {
+  acceptInvitation,
+  inviteMember,
+  listMembers,
+  removeMember,
+} from '../src/modules/organizations/service'
 import { createProject, listProjects } from '../src/modules/projects/service'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
@@ -615,6 +620,21 @@ describe('plan limits are enforced where the resource is created', () => {
 
     await upgrade(await orgIdOf(slug))
     await joinAs(owner, slug, 'member')
+  })
+
+  it('removing a member frees a seat for a new invitation', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'free')
+    const seats = PLANS[DEFAULT_PLAN].limits.members!
+    let last = owner
+    for (let i = 1; i < seats; i++) last = await joinAs(owner, slug, 'member')
+    const email = `x-${crypto.randomUUID()}@test.local`
+    await expect(inviteMember(owner.headers, { tenant: slug, email })).rejects.toThrow()
+
+    const rows = await listMembers(owner.headers, { tenant: slug })
+    const memberId = rows.find((r) => r.email === last.email)!.id
+    await removeMember(owner.headers, { tenant: slug, memberId })
+    await expect(inviteMember(owner.headers, { tenant: slug, email })).resolves.toBeDefined()
   })
 
   it('refuses accepting an invitation once the seats are gone (e.g. after a downgrade)', async () => {

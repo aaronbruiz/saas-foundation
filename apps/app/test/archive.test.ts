@@ -2,6 +2,7 @@ import { createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
+import { listMembers, removeMember, updateMemberRole } from '../src/modules/organizations/service'
 import { createProject } from '../src/modules/projects/service'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
@@ -173,6 +174,29 @@ describe('deleted rows are archived', () => {
       [orgId],
     )
     expect(restored).toEqual(before)
+  })
+
+  it('the members page writes are recorded: a role change audited, a removal archived', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'aud')
+    const orgId = (await withDb((db) => findOrganizationBySlug(db, slug)))!.id
+    const target = await joinAs(owner, slug, 'member')
+    const rows = await listMembers(owner.headers, { tenant: slug })
+    const memberId = rows.find((r) => r.email === target.email)!.id
+
+    await updateMemberRole(owner.headers, { tenant: slug, memberId, role: 'admin' })
+    expect((await eventsOf(target.userId)).at(-1)).toMatchObject({
+      event: 'member.update',
+      db_user: 'app_runtime',
+      organization_id: orgId,
+      detail: { member_id: memberId, role: 'admin', previous_role: 'member' },
+    })
+
+    await removeMember(owner.headers, { tenant: slug, memberId })
+    const archivedRows = (await archived(orgId)).filter((r) => r.table_name === 'member')
+    expect(archivedRows).toMatchObject([
+      { db_user: 'app_runtime', row_data: { id: memberId, role: 'admin' } },
+    ])
   })
 
   it('a rolled-back delete leaves nothing in the archive', async () => {

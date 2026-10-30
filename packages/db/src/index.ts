@@ -12,6 +12,9 @@ export { createDb, type Db } from './client.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
   cancelPendingInvitation,
+  findMember,
+  removeNonOwnerMember,
+  updateNonOwnerMemberRole,
   countMembers,
   findMembership,
   findPendingInvitation,

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, sql } from 'drizzle-orm'
 import { rawDb, type Db } from './client.ts'
 import { invitation, member, organization, user } from './schema/auth.ts'
 import { billingSubscription, type BillingSubscription } from './schema/billing.ts'
@@ -44,6 +44,8 @@ export async function findMembership(db: Db, orgId: string, userId: string) {
   return m ?? null
 }
 
+const holdsOwnerRole = (role: string) => role.split(',').some((x) => x.trim() === 'owner')
+
 /**
  * Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). A
  * role may list several comma-separated roles (Better Auth), read like the capability matrix does.
@@ -57,18 +59,19 @@ export async function listOwners(
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.organizationId, orgId))
-  return rows
-    .filter((r) => r.role.split(',').some((x) => x.trim() === 'owner'))
-    .map(({ userId, email }) => ({ userId, email }))
+  return rows.filter((r) => holdsOwnerRole(r.role)).map(({ userId, email }) => ({ userId, email }))
 }
 
 /** Members of an organization with their account name and email, oldest first. */
 export async function listMembers(
   db: Db,
   orgId: string,
-): Promise<{ userId: string; name: string; email: string; role: string; createdAt: Date }[]> {
+): Promise<
+  { id: string; userId: string; name: string; email: string; role: string; createdAt: Date }[]
+> {
   return rawDb(db)
     .select({
+      id: member.id,
       userId: member.userId,
       name: user.name,
       email: user.email,
@@ -79,6 +82,56 @@ export async function listMembers(
     .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.organizationId, orgId))
     .orderBy(asc(member.createdAt), asc(member.id))
+}
+
+/** A member of this organization, or null (foreign or unknown). */
+export async function findMember(
+  db: Db,
+  orgId: string,
+  id: string,
+): Promise<{ userId: string; isOwner: boolean } | null> {
+  const [row] = await rawDb(db)
+    .select({ userId: member.userId, role: member.role })
+    .from(member)
+    .where(and(eq(member.id, id), eq(member.organizationId, orgId)))
+    .limit(1)
+  return row ? { userId: row.userId, isOwner: holdsOwnerRole(row.role) } : null
+}
+
+/** This organization's member, unless their role lists `owner`, as `holdsOwnerRole` reads it. */
+const nonOwnerIn = (orgId: string, id: string) =>
+  and(
+    eq(member.id, id),
+    eq(member.organizationId, orgId),
+    sql`${member.role} !~ '(^|,)\\s*owner\\s*(,|$)'`,
+  )
+
+/**
+ * Removes a member who isn't an owner, in one conditional write, so a promotion racing it can't be
+ * overwritten (Better Auth's endpoint checks, then deletes). It never changes an owner, so ADR-0022's
+ * billing hooks have nothing to do. False when no such member is left.
+ */
+export async function removeNonOwnerMember(db: Db, orgId: string, id: string): Promise<boolean> {
+  const rows = await rawDb(db)
+    .delete(member)
+    .where(nonOwnerIn(orgId, id))
+    .returning({ id: member.id })
+  return rows.length > 0
+}
+
+/** Sets the role of a member who isn't an owner; see `removeNonOwnerMember`. */
+export async function updateNonOwnerMemberRole(
+  db: Db,
+  orgId: string,
+  id: string,
+  role: 'member' | 'admin',
+): Promise<boolean> {
+  const rows = await rawDb(db)
+    .update(member)
+    .set({ role })
+    .where(nonOwnerIn(orgId, id))
+    .returning({ id: member.id })
+  return rows.length > 0
 }
 
 export type PendingInvitation = { id: string; email: string; role: string | null; expiresAt: Date }
