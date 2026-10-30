@@ -109,7 +109,7 @@ kill -9 $(lsof -t -i:3000)
 
 ## Done means
 
-`pnpm check`, `pnpm test` and `pnpm test:e2e` pass, a cross-tenant test exists for any new tenant data, the ADR and this file are updated in the same PR if the architecture changed, a Codex review is clean after any corrections, and a human approves the merge.
+`pnpm check`, `pnpm test` and `pnpm test:e2e` pass, a cross-tenant test exists for any new tenant data, the ADR and this file are updated in the same PR if the architecture changed, a Codex review (`$review-pr`, ADR-0042) is clean after any corrections, and a human approves the merge.
 
 ## Code Review Rules
 
@@ -136,6 +136,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - A server function that changes tenant data without `authorize(ctx, …)`, role checks written inline instead of through the capability matrix, or a matrix change without per-role tests.
 - Sign-in/sign-up done through `auth.api.*` server calls instead of the `/api/auth/*` HTTP handler (bypasses login rate limiting, ADR-0005), or changes to `rateLimit` / `advanced.ipAddress` without updating ADR-0005.
 - A way to skip Turnstile (ADR-0025): an unauthenticated endpoint that signs in, creates an account or sends email missing from `BOT_PROTECTED_PATHS`, a test key accepted outside localhost/workers.dev, a missing key that skips the check instead of refusing, or a captcha token sent anywhere but the `x-captcha-response` header.
+- A renamed or removed section of this file still cited by a skill in `.agents/skills/` (ADR-0042), or a skill stating a rule of its own.
 - A PR that breaks ADR-0030's reviewed rules: non-trivial work without a spec (Goal, Behaviour, Out of scope, Checks) in its description, a branch not named `<type>/<scope>-<description>`, a stack deeper than 3, or tests named after the implementation instead of the behaviour.
 
 Safe to ignore: generated files (`schema/auth.ts`, `routeTree.gen.ts`, `worker-configuration.d.ts`).

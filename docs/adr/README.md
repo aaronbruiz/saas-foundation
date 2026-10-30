@@ -43,3 +43,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0039](0039-archive-and-audit-triggers.md): Owner-owned archive and audit triggers: deleted rows and access-granting auth writes, out of the runtime role's reach
 - [ADR-0040](0040-tenant-row-level-security.md): Tenant context per repository call (transaction-local, refusing to join another transaction) and staged row-level security on `project` and `billing_subscription` (partially accepted: decisions 1–4 and 7–8 are binding; row-level security policies, decisions 5–6, are proposed)
 - [ADR-0041](0041-product-owned-documentation-and-agent-instructions.md): Product-owned documentation in `docs/product/` and product agent instructions loaded from the root AGENTS.md
+- [ADR-0042](0042-tracked-agent-workflows.md): Tracked agent workflows as skills (`.agents/skills/` with `.claude/skills/` links), starting with the Codex review `review-pr`

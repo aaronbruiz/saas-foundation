@@ -24,12 +24,18 @@ test-results
 .local/
 
 # Agent config: .claude/settings.json, hooks/ and CLAUDE.md are shared (committed);
-# these are machine-local (skills are per-machine symlinks).
+# these are machine-local. Skills: only the repository's own workflows are tracked
+# (ADR-0042), each in .agents/skills/<name>/ with a .claude/skills/<name> link;
+# per-machine skills beside them stay ignored.
 .claude/settings.local.json
 .claude/worktrees/
 .claude/scheduled_tasks.lock
-.claude/skills/
-.agents/
+.claude/skills/*
+!.claude/skills/review-pr
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/review-pr/
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/
