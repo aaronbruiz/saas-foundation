@@ -327,7 +327,7 @@ export function createAuth({
             ),
           ]),
       ...(accountDeletion
-        ? [deleteAccountPlugin(db, accountDeletion, (h, id) => leave(h, id))]
+        ? [deleteAccountPlugin(db, accountDeletion, log, (h, id) => leave(h, id))]
         : []),
       organization({
         // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
@@ -412,6 +412,7 @@ export function createAuth({
 const deleteAccountPlugin = (
   db: Db,
   options: NonNullable<AuthOptions['accountDeletion']>,
+  log: AuthOptions['log'],
   leave: (headers: Headers, organizationId: string) => Promise<unknown>,
 ): BetterAuthPlugin => ({
   id: 'delete-account',
@@ -484,7 +485,10 @@ const deleteAccountPlugin = (
           if (outcome !== 'deactivated') await reopenBillingAccess(db, userId, token)
         }
         deleteSessionCookie(ctx)
-        await options.onDeactivated(userId)
+        // It's done: failing to report it can't change the answer.
+        await options.onDeactivated(userId).catch(() => {
+          log?.('warn', 'auth.account_deleted_report_failed')
+        })
         return ctx.json({ status: true })
       },
     ),

@@ -516,7 +516,7 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 - To revoke the runtime credential as well: `echo 'alter role app_runtime nologin' | psqlo`.
 - The role and its grants can stay; removing them is a contract migration.
 
-**After a restore or a promote:** first run "Account deletion" → "After a restore", then, before pointing Hyperdrive at the database, compare its migration journal (`select count(*) from drizzle.__drizzle_migrations`, as the owner) with the entries in `packages/db/drizzle/meta/_journal.json` of the code version that will run on it, then follow one of the two procedures below. A journal with more rows than that file means the database is newer than the code: deploy the matching version instead. A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. A snapshot or promoted branch keeps its grants and role, but can be older than the code too.
+**After a restore or a promote:** first gather deleted accounts ("Account deletion" → "After a restore", step 1), then, before pointing Hyperdrive at the database, compare its migration journal (`select count(*) from drizzle.__drizzle_migrations`, as the owner) with the entries in `packages/db/drizzle/meta/_journal.json` of the code version that will run on it, then follow one of the two procedures below. A journal with more rows than that file means the database is newer than the code: deploy the matching version instead. A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. A snapshot or promoted branch keeps its grants and role, but can be older than the code too.
 
 **(a) Same version** (equal counts: a snapshot, promote or dump of the running version):
 
@@ -525,7 +525,7 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
   2. `psqlo < packages/db/drizzle/0006_archive_audit.sql`: brings back the archive's `REVOKE`s.
   3. `psqlo < packages/db/drizzle/0007_hashed_verification.sql`
   4. `psqlo < packages/db/drizzle/0008_billing_conflict_definer.sql`: brings back the webhook definer's `REVOKE` and its single grant (ADR-0040).
-  5. Any later grant migration, in order.
+  5. Any later grant migration, in order, including `0013_account_deletion_guards.sql` (ADR-0044).
 
   Order matters: 0005 grants `DELETE` on `account` and 0006 installs the older `verification` audit; 0007 revokes and replaces them.
 
@@ -670,15 +670,15 @@ Every step here needs production access, and the owner's authorization for that 
 2. For each account purged, check its organizations' Polar members and remove any with its id. Find the organizations before step 1, from `archive.deleted_row` rows with `table_name = 'member'` and `row_data->>'user_id' = '<id>'`. Late writes can leave one (ADR-0044, "Not ordered by the gate").
 3. List the production branches. Delete any `pre-migrate-*`, `backup-*` or `main-before-*` older than 30 days. A branch that can't be deleted (a `main-before-restore-*` can be an ancestor of production) is an **open retention exception**: record it here, and don't remove ledger rows younger than it.
 4. Run the ownerless query ("Before releasing ADR-0043"). A row with no members from an in-flight organization creation can be deleted through its owner-run `delete from public.organization where id = '<id>';` after checking it has no projects or billing.
-5. Remove ledger rows no recoverable copy needs, only after step 3 and confirming no dump older than `purged_at` remains:
-   `delete from public.user_deletion where purged_at < now() - interval '35 days';`
+5. Remove ledger rows no recoverable copy needs. A copy made after the purge doesn't hold that identity, so only rows purged before the oldest surviving copy can go. `<oldest>` is the creation time of the oldest branch left after step 3, exceptions included:
+   `delete from public.user_deletion where purged_at < least(now() - interval '35 days', '<oldest>'::timestamptz);`
 
 **Written erasure request:** identity confirmed, then for a deactivated account `select public.purge_deleted_account('<id>');`, and delete its dumps early (ADR-0023). For a live account the user deletes it first, or the owner decides. It doesn't wait for the 90 days.
 
 **A stuck gate** ("Your billing access is being updated, or a deletion is already running", or checkout and portal refused): `billing_access_gate.writes_in_flight` above zero, or `closed_by` set by an attempt that crashed. Clearing either is a **risk override, not recovery**: it needs the owner's explicit authorization for that account, each time, recorded with who authorized it. A request that never answered could still land and leave a Polar member. Check the logs for a request still running and the user's Polar members, then:
 `update public.billing_access_gate set writes_in_flight = 0, closed_by = null where user_id = '<id>' and deactivated_at is null;`
 
-**After a restore,** before reopening where the procedure allows it. There's no maintenance mode: an in-place point-in-time restore is live at once, so a deleted account can sign in until the replay finishes. Do this first in that case.
+**After a restore.** There's no maintenance mode. A promote or a dump restore can do this before Hyperdrive points at it, after step 1 here and the migration journal's procedure ("After a restore or a promote"), which a backup from before migration 0011 needs for these functions to exist. An in-place point-in-time restore is live at once, so a deleted account can sign in until the replay finishes: do it immediately after.
 
 1. Gather deleted ids, and record which sources were reachable and the window each covers:
    - `select user_id, deleted_at from public.user_deletion` on the newest surviving copy: the pre-restore branch, then a newer snapshot or dump.

@@ -171,7 +171,9 @@ test('deleting the account: a part-way refusal says what already happened', asyn
   )
 })
 
-test('deleting the account: on success you land signed out on the home page', async ({ page }) => {
+// The success path is stubbed, so this proves the page's navigation; the session ending is proved
+// in test/account-deletion.test.ts (ADR-0005: a run has no real sign-in to spare).
+test('deleting the account: on success the page leaves for the home page', async ({ page }) => {
   await page.route('**/api/auth/delete-account', (route) =>
     route.fulfill({
       status: 200,
@@ -182,7 +184,22 @@ test('deleting the account: on success you land signed out on the home page', as
   await page.goto('/account')
   await page.getByLabel('Password to delete your account').fill(PASSWORD)
   await page.getByRole('button', { name: 'Delete account' }).click()
+  // The stubbed session is still signed in, so `/` sends it on: it has left this page.
   await expect(page).not.toHaveURL(/\/account$/)
+})
+
+test("deleting the account: an answer that proves nothing doesn't claim it failed", async ({
+  page,
+}) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    "We couldn't confirm your account was deleted. Try signing in again to check.",
+  )
 })
 
 test('signed out, the account page sends you to sign in and back', async ({ browser }) => {

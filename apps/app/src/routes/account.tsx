@@ -101,10 +101,21 @@ function NameForm({ name }: { name: string }) {
   )
 }
 
-type DeleteRefusal = { message?: string; left?: string[] }
+type DeleteRefusal = { code?: string; message?: string; left?: string[] }
+/** The answers that establish the account wasn't deleted; anything else (a 500) doesn't. */
+const NOT_DELETED = [
+  'INVALID_PASSWORD',
+  'SOLE_OWNER',
+  'BILLING_ACCESS_BUSY',
+  'NOW_SOLE_OWNER',
+  'BILLING_UNAVAILABLE',
+  'TRY_AGAIN',
+]
 
 /** What a refused deletion tells the user, including what already happened (ADR-0044). */
-function deleteRefusalText({ message, left = [] }: DeleteRefusal) {
+function deleteRefusalText({ code, message, left = [] }: DeleteRefusal) {
+  if (!code || !NOT_DELETED.includes(code))
+    return "We couldn't confirm your account was deleted. Try signing in again to check."
   const done = left.length > 0 ? ` You left ${left.join(', ')}.` : ''
   return `Your account wasn't deleted.${done} ${message ?? 'Please try again.'}`
 }

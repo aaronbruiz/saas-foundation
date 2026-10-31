@@ -16,19 +16,19 @@ BEGIN
   RETURN NEW;
 END $$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.refuse_deleted_user() FROM PUBLIC;--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public."user"
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public."user"
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('id');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.session
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.session
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('user_id');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.account
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.account
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('user_id');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.member
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.member
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('user_id');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE OF inviter_id ON public.invitation
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE OF inviter_id ON public.invitation
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('inviter_id');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT ON public.project
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT ON public.project
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('created_by');--> statement-breakpoint
-CREATE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.verification
+CREATE OR REPLACE TRIGGER refuse_deleted_user BEFORE INSERT OR UPDATE ON public.verification
   FOR EACH ROW EXECUTE FUNCTION public.refuse_deleted_user('value');--> statement-breakpoint
 CREATE OR REPLACE FUNCTION public.purge_deleted_account(target text) RETURNS void
 LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
@@ -63,16 +63,15 @@ BEGIN
   IF EXISTS (SELECT FROM public.user_deletion d WHERE d.user_id = target) THEN
     RETURN;
   END IF;
-  IF EXISTS (
-    SELECT FROM public.billing_access_gate g
-     WHERE g.user_id = target AND (g.closed_by IS NOT NULL OR g.writes_in_flight > 0)
-  ) THEN
-    RAISE EXCEPTION 'billing access gate is held: resolve it first';
-  END IF;
-  IF EXISTS (SELECT FROM public."user" u WHERE u.id = target) THEN
-    INSERT INTO public.billing_access_gate (user_id, closed_by, deactivated_at)
+  PERFORM 1 FROM public."user" u WHERE u.id = target FOR UPDATE;
+  IF FOUND THEN
+    INSERT INTO public.billing_access_gate AS g (user_id, closed_by, deactivated_at)
     VALUES (target, 'replay', deleted)
-    ON CONFLICT (user_id) DO UPDATE SET closed_by = 'replay', deactivated_at = deleted;
+    ON CONFLICT (user_id) DO UPDATE SET closed_by = 'replay', deactivated_at = deleted
+      WHERE g.writes_in_flight = 0 AND g.closed_by IS NULL;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'billing access gate is held: resolve it first';
+    END IF;
     DELETE FROM public.member m WHERE m.user_id = target;
     UPDATE public."user" u SET email = target || '@deleted.invalid' WHERE u.id = target;
     UPDATE public.account a

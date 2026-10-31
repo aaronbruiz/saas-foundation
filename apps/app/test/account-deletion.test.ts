@@ -10,6 +10,7 @@ import {
   type Db,
 } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
+import guardsMigration from '../../../packages/db/drizzle/0013_account_deletion_guards.sql?raw'
 import { env } from 'cloudflare:workers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openBillingPortal, startCheckout } from '../src/modules/billing/service'
@@ -131,13 +132,14 @@ function fakePolar() {
   }
 }
 
-const emails: { kind: string; to: string }[] = []
+const emails: { kind: string; to: string; url?: string }[] = []
 afterEach(() => {
   emails.length = 0
 })
 
 /** The app's wiring with a fake Polar in the gate's place. */
-const authWith = (db: Db, polar = fakePolar()) =>
+const emailGate: { before?: () => Promise<void> } = {}
+const authWith = (db: Db, polar = fakePolar(), onDeactivated = reportAccountDeleted) =>
   createAuth({
     db,
     secret: env.BETTER_AUTH_SECRET,
@@ -146,9 +148,10 @@ const authWith = (db: Db, polar = fakePolar()) =>
     requireEmailVerification: true,
     botProtection: testBotProtection,
     sendEmail: async (email) => {
-      emails.push({ kind: email.kind, to: email.to })
+      await emailGate.before?.()
+      emails.push({ kind: email.kind, to: email.to, url: 'url' in email ? email.url : undefined })
     },
-    accountDeletion: { input: DeleteAccountInput, onDeactivated: reportAccountDeleted },
+    accountDeletion: { input: DeleteAccountInput, onDeactivated },
     billing: {
       memberLimit: async () => null,
       blocksDeletion: async () => false,
@@ -367,6 +370,26 @@ describe('deleting an account', { timeout: 60_000 }, () => {
   })
 })
 
+it("a failure reporting the deletion can't change the answer: it's done", async () => {
+  const user = await signUp()
+  const res = await withDb((db) =>
+    authWith(db, fakePolar(), () => Promise.reject(new Error('log down'))).handler(
+      new Request(`${env.BETTER_AUTH_URL}/api/auth/delete-account`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: env.BETTER_AUTH_URL,
+          'cf-connecting-ip': randomIp(),
+          cookie: user.headers.get('cookie')!,
+        },
+        body: JSON.stringify({ password: PASSWORD }),
+      }),
+    ),
+  )
+  expect(res.status).toBe(200)
+  expect(await isDeactivated(user.userId)).toBe(true)
+})
+
 describe('coming back', { timeout: 60_000 }, () => {
   it('the same email signs up as a new, empty account', async () => {
     const user = await signUp()
@@ -448,6 +471,8 @@ describe('a concurrent ownership change', { timeout: 60_000 }, () => {
     expect(await isDeactivated(user.userId)).toBe(false)
     expect(await count('member', 'user_id', user.userId)).toBe(1)
     expect((await gateOf(user.userId))!.closed_by).toBeNull()
+    // The refused leave's revoke already ran; the next checkout or portal call repairs it.
+    expect(polar.calls.revoke.map((c) => c.userId)).toContain(user.userId)
     expect((await post('/update-user', { name: 'still works' }, user, polar)).status).toBe(200)
     order = []
     polar.before.revoke = undefined
@@ -786,9 +811,12 @@ describe("Polar access can't land after deletion", { timeout: 60_000 }, () => {
       () => startCheckout(user.headers, { tenant: slug, price: 'pro_monthly' }, provider),
       409,
     )
+    await onPaidPlan(slug)
+    await expectStatus(() => openBillingPortal(user.headers, { tenant: slug }, provider), 409)
+    expect(provider.portal).not.toHaveBeenCalled()
     const refused = await deleteAccount(user)
     expect(await bodyOf(refused)).toMatchObject({ code: 'BILLING_ACCESS_BUSY' })
-    // Runbook "Stuck account deletion".
+    // Runbook "A stuck gate".
     await asOwner((q) =>
       q.query('UPDATE billing_access_gate SET closed_by = NULL WHERE user_id = $1', [user.userId]),
     )
@@ -813,6 +841,8 @@ describe(
       const q = clientOf(conn.db)
       try {
         await q.query('BEGIN')
+        // A write already holding its own row deadlocks with this (ADR-0044): it's the one aborted.
+        await q.query(`SET LOCAL deadlock_timeout = '60s'`)
         await q.query('SELECT 1 FROM "user" WHERE id = $1 FOR UPDATE', [userId])
         const settled = action().then(
           (value) => ({ value }),
@@ -869,6 +899,51 @@ describe(
       )
       expect(await count('verification', 'value', user.userId)).toBe(0)
       expect(emails.filter((e) => e.kind === 'password-reset')).toEqual([])
+    })
+
+    it('requesting a reset whose write committed first: its email may still go, and its link fails', async () => {
+      const user = await signUp()
+      const send = paused()
+      const started = paused()
+      emailGate.before = async () => {
+        started.resume()
+        await send.promise
+      }
+      const request = post('/request-password-reset', { email: user.email }, null)
+      await started.promise
+      emailGate.before = undefined
+      expect((await deleteAccount(user)).status).toBe(200)
+      send.resume()
+      await request
+      const url = emails.find((e) => e.kind === 'password-reset')!.url!
+      const token = new URL(url).searchParams.get('token')!
+      const reset = await post('/reset-password', { token, newPassword: `n-${PASSWORD}` }, null)
+      expect(reset.status).toBeGreaterThanOrEqual(400)
+      const { rows } = await sql('SELECT password FROM account WHERE user_id = $1', [user.userId])
+      expect(rows[0]!.password).toBeNull()
+    })
+
+    it("a session refresh holding its row: it's the one aborted, and the session goes", async () => {
+      const user = await signUp()
+      await sql(
+        `UPDATE session SET expires_at = now() + interval '1 hour', updated_at = now() - interval '2 days'
+          WHERE user_id = $1`,
+        [user.userId],
+      )
+      await deactivateBehind(user.userId, 'update "session"', () =>
+        withDb((db) =>
+          authWith(db).handler(
+            new Request(`${env.BETTER_AUTH_URL}/api/auth/get-session`, {
+              headers: {
+                origin: env.BETTER_AUTH_URL,
+                'cf-connecting-ip': randomIp(),
+                cookie: user.headers.get('cookie')!,
+              },
+            }),
+          ),
+        ),
+      )
+      expect(await count('session', 'user_id', user.userId)).toBe(0)
     })
 
     it('a reset link from before: no password comes back', async () => {
@@ -1009,10 +1084,22 @@ describe(
         email: `c-${crypto.randomUUID()}@test.local`,
         role: 'member',
       })
+      const rejecter = await signUp()
+      const third = await inviteMember(inviter.headers, {
+        tenant: slug,
+        email: rejecter.email,
+        role: 'member',
+      })
       expect((await deleteAccount(inviter)).status).toBe(200)
       await acceptInvitation(invitee.headers, { invitationId })
       expect(await count('member', 'user_id', invitee.userId)).toBe(1)
       await revokeInvitation(owner.headers, { tenant: slug, invitationId: other.invitationId })
+      const rejected = await post(
+        '/organization/reject-invitation',
+        { invitationId: third.invitationId },
+        rejecter,
+      )
+      expect(rejected.status).toBe(200)
     })
   },
 )
@@ -1190,6 +1277,103 @@ describe('a restore', { timeout: 60_000 }, () => {
       asOwner((q) => q.query('SELECT replay_account_deletion($1, now())', [user.userId])),
     ).rejects.toThrow(/gate is held/)
     expect(await count('user_deletion', 'user_id', user.userId)).toBe(0)
+  })
+
+  it("a purged identity can't be copied back while its ledger row exists", async () => {
+    const user = await signUp()
+    await deleteAccount(user)
+    await asOwner((q) => q.query('SELECT purge_deleted_account($1)', [user.userId]))
+    await expect(
+      asOwner((q) =>
+        q.query(
+          `INSERT INTO public."user" (id, name, email, email_verified, created_at, updated_at)
+           VALUES ($1, 'x', $2, true, now(), now())`,
+          [user.userId, user.email],
+        ),
+      ),
+    ).rejects.toThrow(/account is deactivated/)
+  })
+
+  it('staged recovery restores the rest of an organization without the deleted identity', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'stage')
+    const orgId = await orgIdOf(slug)
+    const user = await joinAs(owner, slug, 'admin')
+    await deleteAccount(user)
+    const insert = (createdBy: string | null) =>
+      asOwner((q) =>
+        q.query(
+          `INSERT INTO project (id, organization_id, name, created_by) VALUES ($1, $2, 'p', $3)`,
+          [crypto.randomUUID(), orgId, createdBy],
+        ),
+      )
+    await expect(insert(user.userId)).rejects.toThrow(/account is deactivated/)
+    await insert(null)
+    await insert(owner.userId)
+    expect(await count('project', 'organization_id', orgId)).toBe(2)
+  })
+
+  it('migration 0013 can be re-applied after a restore, as the runbook requires', async () => {
+    await asOwner(async (q) => {
+      await q.query('BEGIN')
+      try {
+        for (const statement of guardsMigration.split('--> statement-breakpoint'))
+          await q.query(statement)
+      } finally {
+        await q.query('ROLLBACK')
+      }
+    })
+  })
+
+  it('replay waits for a write taking the gate, and then refuses it', async () => {
+    const user = await signUp()
+    await withDb((db) => closeBillingAccess(db, user.userId, 'x'))
+    await asOwner((q) =>
+      q.query('UPDATE billing_access_gate SET closed_by = NULL WHERE user_id = $1', [user.userId]),
+    )
+    const conn = await createDb(OWNER_URL)
+    const q = clientOf(conn.db)
+    try {
+      await q.query('BEGIN')
+      await q.query('UPDATE billing_access_gate SET writes_in_flight = 1 WHERE user_id = $1', [
+        user.userId,
+      ])
+      const replay = asOwner((other) =>
+        other.query('SELECT replay_account_deletion($1, now())', [user.userId]),
+      ).catch((e: unknown) => e as Error)
+      await lockWaiter('replay_account_deletion')
+      await q.query('COMMIT')
+      expect(String(await replay)).toMatch(/gate is held/)
+      expect(await count('user_deletion', 'user_id', user.userId)).toBe(0)
+    } finally {
+      await conn.close()
+    }
+  })
+
+  it('replay holds the user first, so a membership landing meanwhile is removed too', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'race')
+    const orgId = await orgIdOf(slug)
+    const user = await signUp()
+    const conn = await createDb(OWNER_URL)
+    const q = clientOf(conn.db)
+    try {
+      await q.query('BEGIN')
+      await q.query(
+        `INSERT INTO member (id, organization_id, user_id, role, created_at)
+         VALUES ($1, $2, $3, 'member', now())`,
+        [crypto.randomUUID(), orgId, user.userId],
+      )
+      const replay = asOwner((other) =>
+        other.query('SELECT replay_account_deletion($1, now())', [user.userId]),
+      )
+      await lockWaiter('replay_account_deletion')
+      await q.query('COMMIT')
+      await replay
+      expect(await count('member', 'user_id', user.userId)).toBe(0)
+    } finally {
+      await conn.close()
+    }
   })
 
   it('replay stops at a sole owner: the guard refuses, and nothing commits', async () => {
