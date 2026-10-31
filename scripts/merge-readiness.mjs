@@ -250,7 +250,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     positionals.length !== 1 ||
     !/^[1-9]\d*$/.test(positionals[0]) ||
     !values.review ||
-    (values['approved-at'] && values['no-approval'])
+    (values['approved-at'] !== undefined && values['no-approval'])
   ) {
     console.error(
       'usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time> | --no-approval]',

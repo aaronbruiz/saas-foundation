@@ -14,4 +14,4 @@ Trial skill (ADR-0042 Notes). The output is PR description text (ADR-0030); writ
 
 **Amending:** when scope changes mid-work, update Behaviour and Out of scope first, list the tests and code the change affects, and stop only the work that depends on an unsettled change. After the owner approves Behaviour, amendments follow AGENTS.md "Working rules".
 
-Output: the PR description draft, plus "Blocked on owner".
+Output: the PR description draft, plus "Blocked on owner" when a decision is open or AGENTS.md "Working rules" requires approval.

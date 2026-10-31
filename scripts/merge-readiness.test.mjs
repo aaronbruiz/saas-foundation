@@ -201,6 +201,9 @@ test('--no-approval with --approved-at is refused as a usage error', () => {
   ])
   assert.equal(r.status, 2, r.output)
   assert.match(r.output, /usage:/)
+  const empty = run(github(), ['5', '--review', REVIEW, '--no-approval', '--approved-at='])
+  assert.equal(empty.status, 2, empty.output)
+  assert.match(empty.output, /usage:/)
 })
 
 test('description edits after the approval time are counted', () => {
