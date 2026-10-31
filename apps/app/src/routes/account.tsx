@@ -45,6 +45,10 @@ function Account() {
           </li>
         </ul>
       </section>
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">Danger zone</h2>
+        <DeleteAccountForm />
+      </section>
     </main>
   )
 }
@@ -92,6 +96,80 @@ function NameForm({ name }: { name: string }) {
       )}
       <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
         Save name
+      </button>
+    </form>
+  )
+}
+
+type DeleteRefusal = { code?: string; message?: string; left?: string[] }
+/** The answers that establish the account wasn't deleted; anything else (a 500) doesn't. */
+const NOT_DELETED = [
+  'INVALID_PASSWORD',
+  'SOLE_OWNER',
+  'BILLING_ACCESS_BUSY',
+  'NOW_SOLE_OWNER',
+  'BILLING_UNAVAILABLE',
+  'TRY_AGAIN',
+]
+
+/** What a refused deletion tells the user, including what already happened (ADR-0044). */
+function deleteRefusalText({ code, message, left = [] }: DeleteRefusal) {
+  if (!code || !NOT_DELETED.includes(code))
+    return "We couldn't confirm your account was deleted. Try signing in again to check."
+  const done = left.length > 0 ? ` You left ${left.join(', ')}.` : ''
+  return `Your account wasn't deleted.${done} ${message ?? 'Please try again.'}`
+}
+
+function DeleteAccountForm() {
+  const hydrated = useHydrated()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (pending.current) return
+    setError(null)
+    pending.current = true
+    setBusy(true)
+    try {
+      const password = String(new FormData(e.currentTarget).get('password'))
+      const { error } = await authClient.$fetch('/delete-account', {
+        method: 'POST',
+        body: { password },
+      })
+      if (error) return setError(deleteRefusalText(error as DeleteRefusal))
+      window.location.assign('/')
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form method="post" onSubmit={onSubmit} className="space-y-4">
+      <p className="text-sm text-gray-600">
+        Your account stops working at once, and you leave your organizations. If you solely own one,
+        transfer or delete it first. Your data is removed later, as the{' '}
+        <Link to="/privacy" className="underline">
+          Privacy Policy
+        </Link>{' '}
+        describes. You can sign up again with the same email, as a new, empty account.
+      </p>
+      <Field label="Password to delete your account">
+        <input
+          name="password"
+          type="password"
+          required
+          autoComplete="current-password"
+          className={inputClass}
+        />
+      </Field>
+      <ErrorText error={error} />
+      <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
+        Delete account
       </button>
     </form>
   )

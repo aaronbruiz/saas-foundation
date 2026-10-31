@@ -1,13 +1,16 @@
 import { env } from 'cloudflare:workers'
-import { billing, countMembers, projects } from '@saas-foundation/db'
+import { billing, countMembers, gatedMemberWrite, projects } from '@saas-foundation/db'
 import { StartCheckoutInput, TenantInput } from '@saas-foundation/contracts'
 import { getTenantContext } from '../../server/context'
 import { withDb } from '../../server/db'
 import { HttpError, parseInput } from '../../server/errors'
 import { authorize, can } from '../../server/permissions'
 import { PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
-import { configuredProvider } from './config'
+import { configuredProvider, isMemberWriteUnknown } from './config'
 import { CheckoutNotCreated, PriceNotFound, type BillingProvider } from './provider'
+
+const BILLING_ACCESS_CLOSED =
+  'Billing is closed for your account: it may be being deleted. If this persists, contact support.'
 
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
 // ./policy (product) or the capability matrix (roles); this file only wires them (ADR-0020).
@@ -61,21 +64,33 @@ export async function startCheckout(
       throw new HttpError(409, 'This organization is being deleted.')
     const back = `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
     try {
-      const url = await provider.checkout({
-        organizationId: ctx.orgId,
-        organizationName: ctx.name,
-        customerId: sub?.providerCustomerId ?? null,
-        userId: ctx.userId,
-        customerEmail: ctx.email,
-        // Set by Cloudflare's edge, which overwrites any client value (like auth's rate limit).
-        customerIp: headers.get('cf-connecting-ip'),
-        priceKey: price,
-        trialDays: trialDaysFor(sub),
-        successUrl: `${back}?checkout=success`,
-        cancelUrl: back,
-      })
+      // ADR-0044: a checkout can put the caller into the provider, so it goes through their gate.
+      const written = await gatedMemberWrite(
+        db,
+        ctx.orgId,
+        ctx.userId,
+        () =>
+          provider.checkout({
+            organizationId: ctx.orgId,
+            organizationName: ctx.name,
+            customerId: sub?.providerCustomerId ?? null,
+            userId: ctx.userId,
+            customerEmail: ctx.email,
+            // Set by Cloudflare's edge, which overwrites any client value (like auth's rate limit).
+            customerIp: headers.get('cf-connecting-ip'),
+            priceKey: price,
+            trialDays: trialDaysFor(sub),
+            successUrl: `${back}?checkout=success`,
+            cancelUrl: back,
+          }),
+        isMemberWriteUnknown,
+      )
+      if (!written.sent) {
+        await repo.finishCheckoutAttempt()
+        throw new HttpError(409, BILLING_ACCESS_CLOSED)
+      }
       await repo.finishCheckoutAttempt()
-      return { url }
+      return { url: written.value }
     } catch (e) {
       // Anything else may have reached the provider: it stays counted, and blocks deletion, until
       // someone checks (runbook "Stuck checkout attempts"). No timeout can prove it never landed.
@@ -98,13 +113,21 @@ export async function openBillingPortal(
     const sub = await billing(db, ctx).subscription()
     if (!sub) throw new HttpError(409, 'This organization has no billing account yet')
     if (!provider) throw new HttpError(503, 'Billing is not configured')
-    const url = await provider.portal({
-      organizationId: ctx.orgId,
-      customerId: sub.providerCustomerId,
-      userId: ctx.userId,
-      customerEmail: ctx.email,
-      returnUrl: `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
-    })
-    return { url }
+    const written = await gatedMemberWrite(
+      db,
+      ctx.orgId,
+      ctx.userId,
+      () =>
+        provider.portal({
+          organizationId: ctx.orgId,
+          customerId: sub.providerCustomerId,
+          userId: ctx.userId,
+          customerEmail: ctx.email,
+          returnUrl: `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
+        }),
+      isMemberWriteUnknown,
+    )
+    if (!written.sent) throw new HttpError(409, BILLING_ACCESS_CLOSED)
+    return { url: written.value }
   })
 }

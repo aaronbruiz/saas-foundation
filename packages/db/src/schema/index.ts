@@ -3,3 +3,4 @@
 export * from './auth.ts'
 export * from './projects.ts'
 export * from './billing.ts'
+export * from './account.ts'

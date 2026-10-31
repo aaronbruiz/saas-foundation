@@ -75,6 +75,13 @@ export class InvalidPayload extends Error {
 export class CheckoutNotCreated extends Error {
   name = 'CheckoutNotCreated'
 }
+/**
+ * A write of a user into the provider may have landed: a network error or a 5xx. It stays counted on
+ * their billing access gate (ADR-0044). No checkout was sent, so it's also `CheckoutNotCreated`.
+ */
+export class MemberWriteUnknown extends CheckoutNotCreated {
+  name = 'MemberWriteUnknown'
+}
 export class PriceNotFound extends CheckoutNotCreated {
   name = 'PriceNotFound'
 }

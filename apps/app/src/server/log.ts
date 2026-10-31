@@ -51,6 +51,10 @@ export function logError(event: string, err: unknown, fields: Fields = {}) {
   console.error(JSON.stringify({ level: 'error', event, ...fields, error: describe(err) }))
 }
 
+export function logInfo(event: string, fields: Fields = {}) {
+  console.log(JSON.stringify({ level: 'info', event, ...fields }))
+}
+
 export function logWarn(event: string, fields: Fields = {}) {
   console.warn(JSON.stringify({ level: 'warn', event, ...fields }))
 }

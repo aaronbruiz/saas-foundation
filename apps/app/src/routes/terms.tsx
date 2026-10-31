@@ -60,8 +60,8 @@ function Terms() {
       </Section>
       <Section title="Termination">
         <p>
-          You can stop using the service at any time and ask us to delete your account at{' '}
-          {contactEmail}. We may suspend or end your access if you break these terms. When an
+          You can stop using the service at any time and delete your account on its page, or ask us
+          to at {contactEmail}. We may suspend or end your access if you break these terms. When an
           account or organization is deleted, its data is removed from the service, and from backups
           as the Privacy Policy describes.
         </p>

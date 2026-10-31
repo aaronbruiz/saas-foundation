@@ -129,6 +129,7 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
   - M1 and M2 done.
   - The pilot's use case and success criteria written down before anyone is admitted.
   - Agent credentials: an accepted credential exposure is recorded in the owner's notes; isolation is required before real customer data enters.
+  - Account deletion (ADR-0044, owner 2026-10-31): before real customers, resolve deletion-history durability, restore exposure and retention exceptions, alongside legal review of the deletion wording.
   - ADR-0032 step 1's Polar date checks, both ticked in the runbook ("Before production go-live"). Cancellation at period end was ticked on 2026-10-14, by moving the period end forward rather than waiting for the 2026-10-30 date that ADR-0032 still names. Failed renewal was ticked on 2026-10-29 (the subscription canceled on 2026-10-21; runbook). That completes step 1 but doesn't make the pilot ready on its own.
 - **Done when:**
   - ADR-0032 rollout steps 2–7 are recorded.
@@ -166,7 +167,7 @@ These items wait here until a milestone needs them. Each one is pulled in by a r
 
 ## Engineering rules while this roadmap holds
 
-- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope. Exception (owner, 2026-10-31): ADR-0043, for the proven race that left organizations with no owner, and its deletion gate on that ADR's conditions.
+- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope. Exception (owner, 2026-10-31): ADR-0043, for the proven race that left organizations with no owner, and its deletion gate on that ADR's conditions; ADR-0044, for account deletion, for the smoke-test-only environment.
 - **No rework during stabilization:** `GuardedClient` and the other merged controls stay as they are during M1–M2. Fix only proven defects.
 - **When a review is done:**
   - By default, one review, then one review of the corrections.

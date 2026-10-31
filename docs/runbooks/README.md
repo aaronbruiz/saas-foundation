@@ -516,7 +516,7 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
 - To revoke the runtime credential as well: `echo 'alter role app_runtime nologin' | psqlo`.
 - The role and its grants can stay; removing them is a contract migration.
 
-**After a restore or a promote:** before pointing Hyperdrive at the database, compare its migration journal (`select count(*) from drizzle.__drizzle_migrations`, as the owner) with the entries in `packages/db/drizzle/meta/_journal.json` of the code version that will run on it, then follow one of the two procedures below. A journal with more rows than that file means the database is newer than the code: deploy the matching version instead. A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. A snapshot or promoted branch keeps its grants and role, but can be older than the code too.
+**After a restore or a promote:** first gather deleted accounts ("Account deletion" → "After a restore", step 1), then, before pointing Hyperdrive at the database, compare its migration journal (`select count(*) from drizzle.__drizzle_migrations`, as the owner) with the entries in `packages/db/drizzle/meta/_journal.json` of the code version that will run on it, then follow one of the two procedures below. A journal with more rows than that file means the database is newer than the code: deploy the matching version instead. A dump restored with `--no-acl` has no grants, and its functions fall back to PostgreSQL's default, which lets PUBLIC execute them. A snapshot or promoted branch keeps its grants and role, but can be older than the code too.
 
 **(a) Same version** (equal counts: a snapshot, promote or dump of the running version):
 
@@ -525,7 +525,7 @@ export RUNTIME_PW="$(printf 'Authorization: Bearer %s\n' "$NEON_API_KEY" |
   2. `psqlo < packages/db/drizzle/0006_archive_audit.sql`: brings back the archive's `REVOKE`s.
   3. `psqlo < packages/db/drizzle/0007_hashed_verification.sql`
   4. `psqlo < packages/db/drizzle/0008_billing_conflict_definer.sql`: brings back the webhook definer's `REVOKE` and its single grant (ADR-0040).
-  5. Any later grant migration, in order.
+  5. Any later grant migration, in order, including `0013_account_deletion_guards.sql` (ADR-0044).
 
   Order matters: 0005 grants `DELETE` on `account` and 0006 installs the older `verification` audit; 0007 revokes and replaces them.
 
@@ -653,8 +653,42 @@ Each is a gate: record it here before the release, or the release waits. If one 
 
 - [ ] **Through Hyperdrive.** The gate in ADR-0043, on a preview.
 - [ ] **Real Polar, in the sandbox.** The gate in ADR-0043.
+- [ ] **ADR-0044, through Hyperdrive.** Account deletion on a preview: the trigger's refusals and the deletion's locking.
+- [ ] **ADR-0044, real Polar.** A member is listed as soon as its create answers; the revoke removes it.
+- [ ] **ADR-0044, as a non-superuser `app_owner`.** `purge_deleted_account` and `replay_account_deletion` run against a non-production copy as the real owner role: archive erasure, `SET NULL`, the guard, and the triggers. Local tests use the `app` superuser.
+- [ ] **ADR-0044, logs.** Delete a preview account and find `account.deleted` with its `subject_sha256` in Workers Logs. Confirm the retention on production's plan in the dashboard: the docs say 7 days on Workers Paid; it hasn't been read from the account.
 
 **Live billing (`POLAR_SERVER=production`) stays blocked** until unknown checkout outcomes, sessions that never finish and operator recovery have a reviewed policy, including whether to compensate (ADR-0043, conditions of acceptance).
+
+### Account deletion (ADR-0044)
+
+Every step here needs production access, and the owner's authorization for that run. The figures and their limits are in ADR-0044 "Retention".
+
+**Monthly purge,** in the Neon SQL Editor as `app_owner`, before the archive's general purge ("Archive and audit"), which would otherwise remove the old email first. Note the date and counts here.
+
+1. List who's due, then purge each, in one statement per account:
+   `select public.purge_deleted_account(user_id) from public.user_deletion where purged_at is null and deleted_at <= now() - interval '90 days';`
+2. For each account purged, check its organizations' Polar members and remove any with its id. Find the organizations before step 1, from `archive.deleted_row` rows with `table_name = 'member'` and `row_data->>'user_id' = '<id>'`. Late writes can leave one (ADR-0044, "Not ordered by the gate").
+3. List the production branches. Delete any `pre-migrate-*`, `backup-*` or `main-before-*` older than 30 days. A branch that can't be deleted (a `main-before-restore-*` can be an ancestor of production) is an **open retention exception**: record it here, and don't remove ledger rows younger than it.
+4. Run the ownerless query ("Before releasing ADR-0043"). A row with no members from an in-flight organization creation can be deleted through its owner-run `delete from public.organization where id = '<id>';` after checking it has no projects or billing.
+5. Remove ledger rows no recoverable copy needs. A copy made after the purge doesn't hold that identity, so only rows purged before the oldest surviving copy can go. List the R2 bucket's dumps too: lifecycle deletion isn't guaranteed to the day. `<oldest>` is the creation time of the oldest branch or dump left, exceptions included:
+   `delete from public.user_deletion where purged_at < least(now() - interval '35 days', '<oldest>'::timestamptz);`
+
+**Written erasure request:** identity confirmed, then for a deactivated account `select public.purge_deleted_account('<id>');`, and delete its dumps early (ADR-0023). For a live account the user deletes it first, or the owner decides. It doesn't wait for the 90 days.
+
+**A stuck gate** ("Your billing access is being updated, or a deletion is already running", or checkout and portal refused): `billing_access_gate.writes_in_flight` above zero, or `closed_by` set by an attempt that crashed. Clearing either is a **risk override, not recovery**: it needs the owner's explicit authorization for that account, each time, recorded with who authorized it. A request that never answered could still land and leave a Polar member. Check the logs for a request still running and the user's Polar members, then:
+`update public.billing_access_gate set writes_in_flight = 0, closed_by = null where user_id = '<id>' and deactivated_at is null;`
+
+**After a restore.** There's no maintenance mode. A promote or a dump restore can do this before Hyperdrive points at it, after step 1 here and the migration journal's procedure ("After a restore or a promote"), which a backup from before migration 0011 needs for these functions to exist. An in-place point-in-time restore is live at once, so a deleted account can sign in until the replay finishes: do it immediately after.
+
+1. Gather deleted ids, and record which sources were reachable and the window each covers:
+   - `select user_id, deleted_at from public.user_deletion` on the newest surviving copy: the pre-restore branch, then a newer snapshot or dump.
+   - Workers Logs, `event = account.deleted`, for the time after that copy (dashboard; 7 days on Workers Paid). Best-effort: a Worker dying right after the commit writes nothing. Match with `select id from public."user" where encode(sha256(convert_to(id, 'UTF8')), 'hex') = '<subject_sha256>';`, and use the log's time.
+2. For each id the restored database lacks: `select public.replay_account_deletion('<id>', '<deleted time>');`. It refuses a restored in-flight count or close (resolve it as a stuck gate, authorized), and the owner guard refuses a restored sole owner: stop for that account, and the owner decides. Then run the purge when it's due.
+3. Check each affected organization's Polar members and remove this user's. The subscription re-sync doesn't cover members.
+4. Record the **gap**: between the restored copy and the oldest log still available. A deletion in it has no surviving history: nothing identifies those users, and those accounts work again. The only way to reach them is a message to every account in the restored database, the owner's call. Nothing promises it.
+
+**Selective recovery** (the archive's statements, `--data-only` copies): the trigger refuses rows of an id in `user_deletion`, and one aborts the whole statement. Stage first: omit deleted identities and their memberships, clear deleted project creators, drop invitations they sent. Don't disable the trigger.
 
 ### Stuck checkout attempts
 
