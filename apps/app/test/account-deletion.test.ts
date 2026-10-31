@@ -663,6 +663,14 @@ describe("Polar access can't land after deletion", { timeout: 60_000 }, () => {
     expect(polar.calls.grant).toEqual([])
     expect((await gateOf(user.userId))!.writes_in_flight).toBe(0)
     expect(b.userId).toBeTruthy()
+    // The same for a checkout, portal or successor write, which has no read of its own.
+    const write = vi.fn(async () => {})
+    const written = await withDb((db) =>
+      gatedMemberWrite(db, orgId, user.userId, write, () => false),
+    )
+    expect(written).toEqual({ sent: false })
+    expect(write).not.toHaveBeenCalled()
+    expect((await gateOf(user.userId))!.writes_in_flight).toBe(0)
 
     expect((await deleteAccount(user, polar)).status).toBe(200)
     expect(polar.has(orgId, user.userId)).toBe(false)
