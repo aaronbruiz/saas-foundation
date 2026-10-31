@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { createOrganizationFn, getViewerFn } from '../modules/organizations/functions'
@@ -6,12 +6,15 @@ import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } fro
 
 export const Route = createFileRoute('/orgs/new')({
   loader: async () => {
-    if (!(await getViewerFn())) throw redirect({ to: '/login', search: { redirect: '/orgs/new' } })
+    const viewer = await getViewerFn()
+    if (!viewer) throw redirect({ to: '/login', search: { redirect: '/orgs/new' } })
+    return { hasOrganizations: viewer.organizations.length > 0 }
   },
   component: NewOrganization,
 })
 
 function NewOrganization() {
+  const { hasOrganizations } = Route.useLoaderData()
   const hydrated = useHydrated()
   const router = useRouter()
   const create = useServerFn(createOrganizationFn)
@@ -54,6 +57,11 @@ function NewOrganization() {
           Create organization
         </button>
       </form>
+      {hasOrganizations && (
+        <Link to="/" className="mt-4 inline-block text-sm underline">
+          Cancel
+        </Link>
+      )}
     </main>
   )
 }

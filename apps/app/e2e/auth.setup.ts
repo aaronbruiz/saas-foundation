@@ -12,6 +12,8 @@ setup('a shared user signs up and keeps the session', async ({ page }) => {
   await createAccount(page, 'Sam', email)
   await verifyAndSignIn(page, email)
   await expect(page).toHaveURL(/\/orgs\/new$/)
+  // With no organization yet there's nowhere to go back to.
+  await expect(page.getByRole('link', { name: 'Cancel' })).toHaveCount(0)
   expect(visited.filter((u) => u.includes(PASSWORD))).toEqual([])
   await page.context().storageState({ path: sessionFile })
 })
