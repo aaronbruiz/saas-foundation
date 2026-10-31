@@ -2,7 +2,7 @@
 
 Status: Accepted for the smoke-test-only environment (owner 2026-10-31) · Date: 2026-10-31
 
-Owner 2026-10-31: approves this design for the current smoke-test-only environment, including its documented restore and operator-recovery limits. Before admitting real customers: resolve deletion-history durability, restore exposure and retention exceptions, alongside legal review. Hyperdrive and Polar sandbox checks remain release gates. It's a new security ADR during the roadmap's freeze, as an owner-approved exception.
+Owner 2026-10-31: approves this design for the current smoke-test-only environment, including its documented restore and operator-recovery limits. Before admitting real customers: resolve deletion-history durability, restore exposure and retention exceptions, alongside legal review. Hyperdrive and Polar sandbox checks, purge and replay as a non-superuser `app_owner`, log retention and the ownerless check remain release gates. It's a new security ADR during the roadmap's freeze, as an owner-approved exception.
 
 ## Context
 

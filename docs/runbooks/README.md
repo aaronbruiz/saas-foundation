@@ -655,6 +655,7 @@ Each is a gate: record it here before the release, or the release waits. If one 
 - [ ] **Real Polar, in the sandbox.** The gate in ADR-0043.
 - [ ] **ADR-0044, through Hyperdrive.** Account deletion on a preview: the trigger's refusals and the deletion's locking.
 - [ ] **ADR-0044, real Polar.** A member is listed as soon as its create answers; the revoke removes it.
+- [ ] **ADR-0044, as a non-superuser `app_owner`.** `purge_deleted_account` and `replay_account_deletion` run against a non-production copy as the real owner role: archive erasure, `SET NULL`, the guard, and the triggers. Local tests use the `app` superuser.
 - [ ] **ADR-0044, logs.** Delete a preview account and find `account.deleted` with its `subject_sha256` in Workers Logs. Confirm the retention on production's plan in the dashboard: the docs say 7 days on Workers Paid; it hasn't been read from the account.
 
 **Live billing (`POLAR_SERVER=production`) stays blocked** until unknown checkout outcomes, sessions that never finish and operator recovery have a reviewed policy, including whether to compensate (ADR-0043, conditions of acceptance).
