@@ -37,7 +37,7 @@ test('a signed-in user changes their name on the account page', async ({ page })
   const slug = await createOrg(page, 'acc')
   await page.getByRole('link', { name: 'Account' }).click()
   await expect(page).toHaveURL(/\/account$/)
-  await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible()
 
   await page.getByLabel('Name').fill('   ')
   await page.getByRole('button', { name: 'Save name' }).click()

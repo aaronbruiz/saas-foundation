@@ -46,7 +46,7 @@ function Account() {
         </ul>
       </section>
       <section>
-        <h2 className="mb-4 text-lg font-semibold">Delete account</h2>
+        <h2 className="mb-4 text-lg font-semibold">Danger zone</h2>
         <DeleteAccountForm />
       </section>
     </main>
