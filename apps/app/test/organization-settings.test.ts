@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { createAuth } from '@saas-foundation/auth'
+import { APIError } from 'better-auth/api'
+import { env } from 'cloudflare:workers'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { startCheckout } from '../src/modules/billing/service'
@@ -9,6 +12,7 @@ import {
   getTenant,
   getViewer,
   leaveOrganization,
+  refusal,
   renameOrganization,
   transferOwnership,
 } from '../src/modules/organizations/service'
@@ -24,6 +28,7 @@ import {
   signUp,
   type TestUser,
 } from './helpers'
+import { testBotProtection } from './turnstile-fake'
 
 // Organization settings (owner decisions 2026-10-31) and ADR-0043's two safeguards: an owner's row
 // can't be changed so that an organization has no owner, and a deletion can't race a subscription.
@@ -53,7 +58,7 @@ const ownerCount = async (orgId: string) =>
   (
     await sql(
       `SELECT count(*)::int AS n FROM member WHERE organization_id = $1
-        AND 'owner' = ANY (string_to_array(replace(role, ' ', ''), ','))`,
+        AND role ~ '(^|,)\\s*owner\\s*(,|$)'`,
       [orgId],
     )
   ).rows[0]!.n as number
@@ -128,6 +133,15 @@ describe('renaming an organization', () => {
     )
   })
 
+  it('takes 120 characters and refuses 121', async () => {
+    const { owner, slug } = await team()
+    await renameOrganization(owner.headers, { tenant: slug, name: 'x'.repeat(120) })
+    await expectStatus(
+      () => renameOrganization(owner.headers, { tenant: slug, name: 'x'.repeat(121) }),
+      400,
+    )
+  })
+
   it('refuses a slug or organizationId in the input', async () => {
     const { owner, slug } = await team()
     for (const extra of [{ slug: 'other' }, { organizationId: 'x' }])
@@ -138,17 +152,21 @@ describe('renaming an organization', () => {
     await expectStatus(() => renameOrganization(owner.headers, { tenant: slug, name: '  ' }), 400)
   })
 
-  it('leaves the existing direct HTTP slug update as it was', async () => {
-    const { owner, orgId, slug } = await team()
-    const next = `${slug}-moved`
-    const res = await authPost(
-      '/organization/update',
-      { organizationId: orgId, data: { slug: next } },
-      randomIp(),
-      owner,
-    )
-    expect(res.ok).toBe(true)
-    await expect(getTenant(owner.headers, { tenant: next })).resolves.toMatchObject({ slug: next })
+  it('leaves the existing direct HTTP slug update as it was, for an owner and an admin', async () => {
+    const { owner, admin, orgId, slug } = await team()
+    for (const [user, next] of [
+      [owner, `${slug}-o`],
+      [admin, `${slug}-a`],
+    ] as const) {
+      const res = await authPost(
+        '/organization/update',
+        { organizationId: orgId, data: { slug: next } },
+        randomIp(),
+        user,
+      )
+      expect(res.ok).toBe(true)
+      await expect(getTenant(user.headers, { tenant: next })).resolves.toMatchObject({ slug: next })
+    }
   })
 })
 
@@ -204,6 +222,90 @@ describe('transferring ownership', () => {
     await transferOwnership(a.headers, { tenant: slug, memberId: memberB })
     expect(await roleOf(orgId, a)).toBe('admin')
     expect(await roleOf(orgId, b)).toBe('owner')
+  })
+})
+
+describe('a transfer that fails part-way', { timeout: 60_000 }, () => {
+  // Refuses an update of the marked member rows as the guard does, so the app's mapping runs.
+  beforeAll(() =>
+    asOwner((q) =>
+      q(`CREATE SCHEMA IF NOT EXISTS test_transfer_fault;
+         CREATE TABLE IF NOT EXISTS test_transfer_fault.failing (member_id text PRIMARY KEY);
+         CREATE OR REPLACE FUNCTION test_transfer_fault.fail() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+         BEGIN
+           IF EXISTS (SELECT FROM test_transfer_fault.failing f WHERE f.member_id = OLD.id) THEN
+             RAISE EXCEPTION 'injected' USING ERRCODE = '23514', CONSTRAINT = 'member_keeps_owner';
+           END IF;
+           RETURN NEW;
+         END $$;
+         DROP TRIGGER IF EXISTS test_transfer_fault ON public.member;
+         CREATE TRIGGER test_transfer_fault BEFORE UPDATE ON public.member
+           FOR EACH ROW EXECUTE FUNCTION test_transfer_fault.fail();`),
+    ),
+  )
+  afterAll(() =>
+    asOwner((q) =>
+      q(`DROP TRIGGER IF EXISTS test_transfer_fault ON public.member;
+         DROP SCHEMA IF EXISTS test_transfer_fault CASCADE;`),
+    ),
+  )
+  const failOn = (memberId: string) =>
+    asOwner((q) => q('INSERT INTO test_transfer_fault.failing VALUES ($1)', [memberId]))
+  const clear = (memberId: string) =>
+    asOwner((q) => q('DELETE FROM test_transfer_fault.failing WHERE member_id = $1', [memberId]))
+
+  it('a failed promotion changes nothing', async () => {
+    const { owner, member, orgId, slug } = await team()
+    const memberId = await memberIdOf(orgId, member)
+    await failOn(memberId)
+    await expect(
+      transferOwnership(owner.headers, { tenant: slug, memberId }),
+    ).rejects.toMatchObject({ status: 409 })
+    await clear(memberId)
+    expect(await roleOf(orgId, owner)).toBe('owner')
+    expect(await roleOf(orgId, member)).toBe('member')
+  })
+
+  it('a failed demotion leaves two owners and says so, and a retry finishes', async () => {
+    const { owner, member, orgId, slug } = await team()
+    const memberId = await memberIdOf(orgId, member)
+    const ownerRow = await memberIdOf(orgId, owner)
+    await failOn(ownerRow)
+    const input = { tenant: slug, memberId }
+    const failed = await transferOwnership(owner.headers, input).catch((e: unknown) => e)
+    await clear(ownerRow)
+    expect(failed).toMatchObject({ status: 409 })
+    expect((failed as Error).message).toMatch(/still an owner/)
+    expect(await roleOf(orgId, member)).toBe('owner')
+    expect(await roleOf(orgId, owner)).toBe('owner')
+    await transferOwnership(owner.headers, input)
+    expect(await roleOf(orgId, owner)).toBe('admin')
+    expect(await roleOf(orgId, member)).toBe('owner')
+  })
+})
+
+describe('what a refused change tells the caller', () => {
+  const apiError = (status: 'BAD_REQUEST' | 'FORBIDDEN' | 'UNAUTHORIZED', code: string) =>
+    new APIError(status, { code, message: code })
+
+  it('maps each known refusal by name', () => {
+    for (const [e, status] of [
+      [apiError('UNAUTHORIZED', 'UNAUTHORIZED'), 401],
+      [apiError('BAD_REQUEST', 'MEMBER_NOT_FOUND'), 404],
+      [apiError('BAD_REQUEST', 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION'), 404],
+      [apiError('FORBIDDEN', 'YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER'), 403],
+      [apiError('BAD_REQUEST', 'YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER'), 409],
+      [new APIError('CONFLICT', { message: 'billing' }), 409],
+      [new APIError('SERVICE_UNAVAILABLE', { message: 'billing' }), 503],
+    ] as const)
+      expect(refusal(e)).toMatchObject({ status })
+  })
+
+  it('never turns an unexpected error into a conflict', () => {
+    const unknown = apiError('BAD_REQUEST', 'SOMETHING_NEW')
+    expect(() => refusal(unknown)).toThrow(unknown)
+    const outage = new Error('connection lost')
+    expect(() => refusal(outage)).toThrow(outage)
   })
 })
 
@@ -354,6 +456,12 @@ describe('an organization keeps an owner (ADR-0043)', { timeout: 60_000 }, () =>
         const [x, y] = await Promise.all(go(o))
         expect([x!.ok, y!.ok].filter(Boolean).length).toBe(1)
         expect(await ownerCount(o.orgId)).toBe(1)
+        // The loser: the guard's 500, or Better Auth's own answer if it already saw the first.
+        const loser = x!.ok ? y! : x!
+        expect([400, 403, 500]).toContain(loser.status)
+        const body = await loser.text()
+        for (const leak of ['no owner', 'member_keeps_owner', 'update "member"', 'delete from'])
+          expect(body).not.toContain(leak)
       }
     })
 
@@ -460,6 +568,36 @@ describe('an organization keeps an owner (ADR-0043)', { timeout: 60_000 }, () =>
     expect(await roleOf(orgId, owner)).toBe('owner')
   })
 
+  it('applies when an owner row moves to another organization', async () => {
+    const { owner, orgId, outsider, otherSlug } = await team()
+    const ownerRow = await memberIdOf(orgId, owner)
+    expect(outsider.userId).toBeDefined()
+    await expect(
+      asOwner((q) =>
+        orgIdOf(otherSlug).then((other) =>
+          q('UPDATE member SET organization_id = $1 WHERE id = $2', [other, ownerRow]),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: '23514' })
+    expect(await roleOf(orgId, owner)).toBe('owner')
+  })
+
+  it('reads a role as the capability matrix does', async () => {
+    const { owner, member, orgId } = await team()
+    const ownerRow = await memberIdOf(orgId, owner)
+    const memberRow = await memberIdOf(orgId, member)
+    const setRole = (id: string, role: string) =>
+      asOwner((q) => q('UPDATE member SET role = $1 WHERE id = $2', [role, id]))
+    // Not an owner to the app, so it can't be the owner that remains.
+    await setRole(memberRow, 'ow ner')
+    await expect(setRole(ownerRow, 'admin')).rejects.toMatchObject({ code: '23514' })
+    // An owner to the app, however it's padded, so the guard sees it go.
+    await setRole(memberRow, 'member')
+    await setRole(ownerRow, 'admin,\towner ')
+    await expect(setRole(ownerRow, 'admin')).rejects.toMatchObject({ code: '23514' })
+    expect(await ownerCount(orgId)).toBe(1)
+  })
+
   it('lets the organization go in the same transaction as its owners', async () => {
     const { owner, orgId } = await team()
     await asOwner(async (q) => {
@@ -562,12 +700,11 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     }
   })
 
-  it('an open checkout session blocks the deletion, and checkouts stay available', async () => {
-    const { owner, slug, orgId } = await team()
-    expect(
-      await begin(orgId, providerWith({ subscriptions: [], hasPendingCheckout: true })),
-    ).toMatch(/still open/)
-    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
+  it('an open checkout session blocks the deletion', async () => {
+    const { orgId } = await team()
+    const pending = { subscriptions: [], hasPendingCheckout: true }
+    expect(await begin(orgId, providerWith(pending))).toMatch(/still open/)
+    expect(await begin(orgId, providerWith())).toBeNull()
   })
 
   it('a subscription the provider knows but no webhook delivered blocks the deletion', async () => {
@@ -578,9 +715,11 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     expect(await begin(orgId, providerWith(ended))).toBeNull()
   })
 
-  it('an unreadable provider refuses the deletion and releases the claim', async () => {
+  it('an unreadable provider refuses the deletion; its claim stays until it expires', async () => {
     const { owner, slug, orgId } = await team()
     await expect(begin(orgId, providerWith(new Error('down')))).rejects.toThrow('down')
+    await expectStatus(() => buy(owner, slug, providerWith()), 409)
+    await age(orgId, 'deletion_started_at')
     await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
   })
 
@@ -598,11 +737,79 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     expect(await begin(orgId, providerWith())).toBeNull()
   })
 
-  it("a second deleter's refusal leaves the first's claim in place", async () => {
+  it('a deletion that fails leaves the claim another deletion is relying on', async () => {
     const { owner, slug, orgId } = await team()
+    // A is waiting on the provider while B reads an empty account and goes on to delete.
+    let failA: (e: Error) => void = () => {}
+    const providerA = providerWith()
+    providerA.accountState.mockImplementation(() => new Promise((_, reject) => (failA = reject)))
+    const a = begin(orgId, providerA)
+    await vi.waitFor(() => expect(providerA.accountState).toHaveBeenCalled())
     expect(await begin(orgId, providerWith())).toBeNull()
-    await expect(begin(orgId, providerWith(new Error('down')))).rejects.toThrow('down')
-    await expectStatus(() => buy(owner, slug, providerWith()), 409)
+    failA(new Error('down'))
+    await expect(a).rejects.toThrow('down')
+    const provider = providerWith()
+    await expectStatus(() => buy(owner, slug, provider), 409)
+    expect(provider.checkout).not.toHaveBeenCalled()
+  })
+
+  describe('through Better Auth, on every path', () => {
+    const deleteVia = (as: TestUser, orgId: string, beginDeletion: () => Promise<string | null>) =>
+      withDb((db) =>
+        createAuth({
+          db,
+          secret: env.BETTER_AUTH_SECRET,
+          baseURL: env.BETTER_AUTH_URL,
+          allowSignUp: () => true,
+          requireEmailVerification: true,
+          botProtection: testBotProtection,
+          sendEmail: async () => {},
+          billing: {
+            memberLimit: async () => null,
+            blocksDeletion: async () => false,
+            beginDeletion,
+          },
+        }).handler(
+          new Request(`${env.BETTER_AUTH_URL}/api/auth/organization/delete`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              origin: env.BETTER_AUTH_URL,
+              'cf-connecting-ip': randomIp(),
+              cookie: as.headers.get('cookie')!,
+            },
+            body: JSON.stringify({ organizationId: orgId }),
+          }),
+        ),
+      )
+    const exists = async (orgId: string) =>
+      (await sql('SELECT 1 FROM organization WHERE id = $1', [orgId])).rows.length === 1
+
+    it('a refusal answers 409 with its message and deletes nothing', async () => {
+      const { owner, orgId } = await team()
+      const res = await deleteVia(owner, orgId, async () => 'A checkout is still open.')
+      expect(res.status).toBe(409)
+      expect(await res.text()).toContain('A checkout is still open.')
+      expect(await exists(orgId)).toBe(true)
+    })
+
+    it('an unreadable provider answers 503 and deletes nothing', async () => {
+      const { owner, orgId } = await team()
+      const res = await deleteVia(owner, orgId, async () => {
+        throw new Error('provider down: secret detail')
+      })
+      expect(res.status).toBe(503)
+      expect(await res.text()).not.toContain('secret detail')
+      expect(await exists(orgId)).toBe(true)
+    })
+
+    it('runs only after the permission check: an admin never reaches it', async () => {
+      const { admin, orgId } = await team()
+      const beginDeletion = vi.fn(async () => null)
+      expect((await deleteVia(admin, orgId, beginDeletion)).ok).toBe(false)
+      expect(beginDeletion).not.toHaveBeenCalled()
+      expect(await exists(orgId)).toBe(true)
+    })
   })
 
   it("one organization's claim doesn't touch another's", async () => {

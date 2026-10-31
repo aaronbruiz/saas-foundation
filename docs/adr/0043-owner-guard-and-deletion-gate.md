@@ -16,7 +16,7 @@ The organization settings feature (roadmap, "Parallel track: Starting kit") adds
 
 ### 1. The owner guard
 
-`member_keeps_owner`: a deferred constraint trigger on `member`, firing on `UPDATE` or `DELETE` of a row whose old role includes `owner`. It locks the organization row (`FOR NO KEY UPDATE`, the mode `applyBillingEvent` and `createWithinLimit` use), then counts owners, and fails the commit with SQLSTATE `23514` if the organization still exists and has none.
+`member_keeps_owner`: a deferred constraint trigger on `member`, firing on `UPDATE` or `DELETE` of a row whose old role includes `owner`. It locks the organization row (`FOR NO KEY UPDATE`, the mode `applyBillingEvent` and `createWithinLimit` use), then counts owners, reading `role` as the capability matrix does (`(^|,)\s*owner\s*(,|$)`), and fails the commit with SQLSTATE `23514` if the organization still exists and has none.
 
 **It guarantees:** a transaction that demotes, removes or moves an owner's row can't commit at READ COMMITTED leaving an existing organization with no owner, whichever path made it: a server function, a Better Auth endpoint, or SQL by a role that can't disable triggers.
 
@@ -45,21 +45,24 @@ ADR-0022's hooks still run, and their order can't change: the revoke runs before
 - **Deletion,** in Better Auth's `beforeDeleteOrganization`, after its permission check, so every path is covered:
   1. One conditional upsert sets `deletion_started_at`, unless a checkout claim is unexpired. Refused: 409.
   2. Read the provider: every subscription for the customer, and its checkout sessions. Polar's `open` unexpired, `confirmed`, and `succeeded` in the last 10 minutes count as pending.
-  3. Live by `isLive`, on our row or the provider's, or a pending checkout: release the claim and answer 409. Provider unreadable: release and answer 503.
+  3. Live by `isLive`, on our row or the provider's, or a pending checkout: 409. Provider unreadable: 503.
   4. Remove the provider's customer (ADR-0022), then Better Auth deletes the organization.
 
 Each upsert is the condition held in the write: the row lock makes the second claimant re-read the first's claim, so of a checkout and a deletion, one is refused.
 
-| Case                                                         | What happens                                                                        |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| New checkout during a deletion                               | Refused by the claim                                                                |
-| Checkout on its way to the provider, session not visible yet | Its claim refuses the deletion for 5 minutes                                        |
-| Session already issued, unpaid                               | Pending: deletion refused until it expires or completes; it can't be cancelled      |
-| Paid, webhook not delivered                                  | The provider's subscription is read directly: refused                               |
-| Webhook delivered late, after a legitimate deletion          | `unlinked`, acknowledged and logged; only ended subscriptions can get here          |
-| Request crashes after claiming                               | The claim expires; checkouts wait at most 5 minutes                                 |
-| Delete fails after the claim, or a second owner deletes      | The unexpired claim is kept, and a retry proceeds; only whoever took it releases it |
-| Polar unreachable                                            | 503 and nothing changes                                                             |
+A claim is never released, only renewed or expired. Several deletions can share it (a second owner, a retry after a failed delete), and one that gives up can't know whether another still relies on it. An earlier design released on refusal, and review showed a failed attempt reopening checkouts behind a deletion still in progress. The cost: a refused or failed deletion blocks that organization's new checkouts for up to 5 minutes.
+
+| Case                                                         | What happens                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| New checkout during a deletion                               | Refused by the claim                                                           |
+| Checkout on its way to the provider, session not visible yet | Its claim refuses the deletion for 5 minutes                                   |
+| Session already issued, unpaid                               | Pending: deletion refused until it expires or completes; it can't be cancelled |
+| Paid, webhook not delivered                                  | The provider's subscription is read directly: refused                          |
+| Webhook delivered late, after a legitimate deletion          | `unlinked`, acknowledged and logged; only ended subscriptions can get here     |
+| Request crashes after claiming                               | The claim expires; checkouts wait at most 5 minutes                            |
+| Delete fails after the claim, or a second owner deletes      | The claim is shared and renewed, and a retry proceeds                          |
+| Deletion refused, or the provider is unreadable              | The claim stays, and new checkouts wait for it to expire                       |
+| Polar unreachable                                            | 503 and nothing changes                                                        |
 
 **Limits, not closed here:**
 

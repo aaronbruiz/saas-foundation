@@ -57,7 +57,10 @@ export async function startCheckout(
     if (!provider) throw new HttpError(503, 'Billing is not configured')
     // ADR-0043: before the session exists, so a deletion that reads the provider next can't miss it.
     if (!(await billing(db, ctx).claimCheckout(BILLING_CLAIM_SECONDS)))
-      throw new HttpError(409, 'This organization is being deleted.')
+      throw new HttpError(
+        409,
+        'A deletion of this organization was just started. Try again in a few minutes.',
+      )
     const back = `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
     try {
       const url = await provider.checkout({

@@ -3,6 +3,7 @@ import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import {
   deleteOrganizationFn,
+  getViewerFn,
   leaveOrganizationFn,
   listMembersFn,
   renameOrganizationFn,
@@ -22,15 +23,20 @@ export const Route = createFileRoute('/t/$tenant/settings')({
       canRename: capabilities.includes('organization:rename'),
       canTransfer,
       canDelete: capabilities.includes('organization:delete'),
-      candidates: canTransfer
-        ? (await listMembersFn({ data: { tenant: params.tenant } })).filter(
-            (m) => !m.role.split(',').some((r) => r.trim() === 'owner'),
-          )
-        : [],
+      candidates: canTransfer ? await transferCandidates(params.tenant) : [],
     }
   },
   component: Settings,
 })
+
+/**
+ * Everyone but the caller. Another owner stays listed: choosing one finishes a transfer whose
+ * demotion failed, which would otherwise have no way back after a reload.
+ */
+async function transferCandidates(tenant: string) {
+  const [members, viewer] = await Promise.all([listMembersFn({ data: { tenant } }), getViewerFn()])
+  return members.filter((m) => m.email !== viewer?.email)
+}
 
 function Settings() {
   const { name, canRename, canTransfer, canDelete, candidates } = Route.useLoaderData()
@@ -106,7 +112,11 @@ function RenameForm({ name }: { name: string }) {
   )
 }
 
-function TransferForm({ candidates }: { candidates: { id: string; email: string }[] }) {
+function TransferForm({
+  candidates,
+}: {
+  candidates: { id: string; email: string; role: string }[]
+}) {
   const { tenant } = Route.useParams()
   const router = useRouter()
   const transfer = useServerFn(transferOwnershipFn)
@@ -135,7 +145,7 @@ function TransferForm({ candidates }: { candidates: { id: string; email: string 
             <select name="memberId" required className={inputClass}>
               {candidates.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.email}
+                  {m.email} ({m.role})
                 </option>
               ))}
             </select>

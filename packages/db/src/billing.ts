@@ -170,34 +170,23 @@ export function billing(db: Db, scope: TenantScope) {
         return rows.length > 0
       }),
     /**
-     * Before reading the provider for a deletion: 'refused' while a checkout holds its claim.
-     * 'taken' claims it now; 'held' finds an unexpired deletion claim, kept as it is (another owner
-     * deleting, or a retry after a failed delete). Only whoever took it may release it. `now()` is
-     * this transaction's start, so it equals the column only if this statement set it.
+     * Before reading the provider for a deletion: refused (false) while a checkout holds its claim.
+     * Otherwise it renews the claim, shared by anyone deleting (another owner, or a retry after a
+     * failed delete). Nothing ever releases it: a request that gives up can't tell whether another
+     * is still relying on it, so it just expires.
      */
-    claimDeletion: (seconds: number): Promise<'taken' | 'held' | 'refused'> =>
+    claimDeletion: (seconds: number): Promise<boolean> =>
       inTenant(db, scope, async (tx) => {
-        const started = billingCheckoutGate.deletionStartedAt
-        const [row] = await tx
+        const rows = await tx
           .insert(billingCheckoutGate)
           .values({ organizationId: scope.orgId, deletionStartedAt: sql`now()` })
           .onConflictDoUpdate({
             target: billingCheckoutGate.organizationId,
-            set: {
-              deletionStartedAt: sql`CASE WHEN ${claimExpired(started, seconds)} THEN now() ELSE ${started} END`,
-            },
+            set: { deletionStartedAt: sql`now()` },
             where: claimExpired(billingCheckoutGate.checkoutStartedAt, seconds),
           })
-          .returning({ taken: sql<boolean>`${started} = now()` })
-        return !row ? 'refused' : row.taken ? 'taken' : 'held'
-      }),
-    /** The deletion was refused: checkouts may start again without waiting out the claim. */
-    releaseDeletion: (): Promise<void> =>
-      inTenant(db, scope, async (tx) => {
-        await tx
-          .update(billingCheckoutGate)
-          .set({ deletionStartedAt: null })
-          .where(eq(billingCheckoutGate.organizationId, scope.orgId))
+          .returning({ organizationId: billingCheckoutGate.organizationId })
+        return rows.length > 0
       }),
     subscription: (): Promise<BillingSubscription | null> =>
       inTenant(

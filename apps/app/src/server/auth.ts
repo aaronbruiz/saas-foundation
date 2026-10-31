@@ -99,25 +99,14 @@ export async function beginOrganizationDeletion(
   provider: ReturnType<typeof configuredProvider>,
 ): Promise<string | null> {
   const gate = billing(db, { orgId })
-  const claim = await gate.claimDeletion(BILLING_CLAIM_SECONDS)
-  if (claim === 'refused')
+  if (!(await gate.claimDeletion(BILLING_CLAIM_SECONDS)))
     return 'A checkout for this organization was just started. Try again in a few minutes.'
-  // A claim someone else took stays: they may be past this point, deleting.
-  const release = () => (claim === 'taken' ? gate.releaseDeletion() : undefined)
-  try {
-    const state = provider && (await provider.accountState(orgId))
-    const live = isLive(await gate.subscription()) || !!state?.subscriptions.some(isLive)
-    const refusal = live
-      ? 'This organization has an active subscription. Cancel it in Billing first.'
-      : state?.hasPendingCheckout
-        ? 'A checkout for this organization is still open. Try again once it completes or expires.'
-        : null
-    if (refusal) await release()
-    return refusal
-  } catch (e) {
-    await release()
-    throw e
-  }
+  const state = provider && (await provider.accountState(orgId))
+  if (isLive(await gate.subscription()) || state?.subscriptions.some(isLive))
+    return 'This organization has an active subscription. Cancel it in Billing first.'
+  if (state?.hasPendingCheckout)
+    return 'A checkout for this organization is still open. Try again once it completes or expires.'
+  return null
 }
 
 export function authFor(db: Db) {

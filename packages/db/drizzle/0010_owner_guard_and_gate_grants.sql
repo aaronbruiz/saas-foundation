@@ -10,7 +10,7 @@ BEGIN
   IF FOUND AND NOT EXISTS (
     SELECT FROM public.member m
      WHERE m.organization_id = OLD.organization_id
-       AND 'owner' = ANY (pg_catalog.string_to_array(pg_catalog.replace(m.role, ' ', ''), ','))
+       AND m.role ~ '(^|,)\s*owner\s*(,|$)'
   ) THEN
     RAISE EXCEPTION 'organization would have no owner'
       USING ERRCODE = '23514', CONSTRAINT = 'member_keeps_owner';
@@ -20,5 +20,5 @@ END $$;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.member_keeps_owner() FROM PUBLIC;--> statement-breakpoint
 CREATE CONSTRAINT TRIGGER member_keeps_owner AFTER UPDATE OR DELETE ON public.member
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
-  WHEN ('owner' = ANY (pg_catalog.string_to_array(pg_catalog.replace(OLD.role, ' ', ''), ',')))
+  WHEN (OLD.role ~ '(^|,)\s*owner\s*(,|$)')
   EXECUTE FUNCTION public.member_keeps_owner();

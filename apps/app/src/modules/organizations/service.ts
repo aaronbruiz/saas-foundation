@@ -146,21 +146,36 @@ export async function updateMemberRole(headers: Headers, input: unknown): Promis
   })
 }
 
+const LOST_MEMBERSHIP = ['MEMBER_NOT_FOUND', 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION']
+const NOT_ALLOWED = [
+  'YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER',
+  'YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION',
+  'YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER',
+]
+const LAST_OWNER = [
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER',
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER',
+]
+
 /**
- * What a refused owner change tells the caller. Better Auth's and the billing hooks' own refusals
- * keep their message; anything else (an outage) propagates. The trigger's refusal arrives as a
- * database error, because it fails the commit, not a check (ADR-0043).
+ * What a refused owner change or deletion tells the caller, each case by name: the state changed
+ * after `getTenantContext`, a billing hook refused, or the trigger failed the commit (a database
+ * error, ADR-0043). Anything else is unexpected and propagates, never a conflict to retry.
  */
-function refusal(e: unknown): HttpError {
+export function refusal(e: unknown): HttpError {
   if (isOwnerGuardViolation(e))
     return new HttpError(
       409,
       'Another owner changed at the same time. Check the members and retry.',
     )
   if (!(e instanceof APIError)) throw e
-  if (e.body?.code === 'MEMBER_NOT_FOUND') return notFound()
-  if (e.statusCode === 403 || e.statusCode === 503) return new HttpError(e.statusCode, e.message)
-  if (e.statusCode >= 400 && e.statusCode < 500) return new HttpError(409, e.message)
+  const code = String(e.body?.code)
+  if (e.statusCode === 401) return new HttpError(401, 'unauthorized')
+  if (LOST_MEMBERSHIP.includes(code)) return notFound()
+  if (NOT_ALLOWED.includes(code)) return new HttpError(403, e.message)
+  if (LAST_OWNER.includes(code)) return new HttpError(409, e.message)
+  // The billing hooks' own refusals (packages/auth), each with its message.
+  if (e.statusCode === 409 || e.statusCode === 503) return new HttpError(e.statusCode, e.message)
   throw e
 }
 
