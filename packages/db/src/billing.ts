@@ -1,7 +1,8 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { rawDb, type Db } from './client.ts'
 import { organization } from './schema/auth.ts'
 import {
+  billingCheckoutGate,
   billingSubscription,
   billingWebhookEvent,
   type BillingSubscription,
@@ -143,8 +144,91 @@ function supersedes(
 }
 
 /** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2, ADR-0040). */
+/** The gate's row can't be written once its organization is gone: a refusal, not a fault (ADR-0043). */
+async function falseIfOrganizationGone(write: Promise<boolean>): Promise<boolean> {
+  try {
+    return await write
+  } catch (error) {
+    for (let e = error; e instanceof Object; e = (e as { cause?: unknown }).cause) {
+      const { code, constraint } = e as { code?: unknown; constraint?: unknown }
+      if (
+        code === '23503' &&
+        constraint === 'billing_checkout_gate_organization_id_organization_id_fk'
+      )
+        return false
+    }
+    throw error
+  }
+}
+
 export function billing(db: Db, scope: TenantScope) {
   return {
+    /**
+     * Before anything reaches the provider: counts the attempt, unless a deletion has committed
+     * (false). ADR-0043: one conditional upsert, so the condition holds in the write.
+     */
+    startCheckoutAttempt: (): Promise<boolean> =>
+      falseIfOrganizationGone(
+        inTenant(db, scope, async (tx) => {
+          const gate = billingCheckoutGate
+          const rows = await tx
+            .insert(gate)
+            .values({ organizationId: scope.orgId, checkoutGeneration: 1, checkoutsInFlight: 1 })
+            .onConflictDoUpdate({
+              target: gate.organizationId,
+              set: {
+                checkoutGeneration: sql`${gate.checkoutGeneration} + 1`,
+                checkoutsInFlight: sql`${gate.checkoutsInFlight} + 1`,
+              },
+              where: isNull(gate.removalStartedAt),
+            })
+            .returning({ organizationId: gate.organizationId })
+          return rows.length > 0
+        }),
+      ),
+    /** The attempt's outcome is known: its session exists, or it can never exist. */
+    finishCheckoutAttempt: (): Promise<void> =>
+      inTenant(db, scope, async (tx) => {
+        const gate = billingCheckoutGate
+        await tx
+          .update(gate)
+          .set({ checkoutsInFlight: sql`${gate.checkoutsInFlight} - 1` })
+          .where(and(eq(gate.organizationId, scope.orgId), gt(gate.checkoutsInFlight, 0)))
+      }),
+    /** Read before the provider: `commitRemoval` then proves nothing started since. */
+    deletionGate: () =>
+      inTenant(db, scope, async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(billingCheckoutGate)
+          .where(eq(billingCheckoutGate.organizationId, scope.orgId))
+        return {
+          generation: row?.checkoutGeneration ?? 0,
+          checkoutsInFlight: row?.checkoutsInFlight ?? 0,
+          removalStarted: !!row?.removalStartedAt,
+        }
+      }),
+    /**
+     * Closes checkouts for good, if none started since `generation` was read, none is in flight and
+     * the organization still exists (false otherwise). A stalled request can't get past this however
+     * long it took to arrive.
+     */
+    commitRemoval: (generation: number): Promise<boolean> =>
+      falseIfOrganizationGone(
+        inTenant(db, scope, async (tx) => {
+          const gate = billingCheckoutGate
+          const rows = await tx
+            .insert(gate)
+            .values({ organizationId: scope.orgId, removalStartedAt: sql`now()` })
+            .onConflictDoUpdate({
+              target: gate.organizationId,
+              set: { removalStartedAt: sql`now()` },
+              where: and(eq(gate.checkoutGeneration, generation), eq(gate.checkoutsInFlight, 0)),
+            })
+            .returning({ organizationId: gate.organizationId })
+          return rows.length > 0
+        }),
+      ),
     subscription: (): Promise<BillingSubscription | null> =>
       inTenant(
         db,

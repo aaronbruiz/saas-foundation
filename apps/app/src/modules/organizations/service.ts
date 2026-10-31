@@ -2,17 +2,23 @@ import { APIError } from 'better-auth/api'
 import {
   AcceptInvitationInput,
   CreateOrganizationInput,
+  DeleteOrganizationInput,
   InvitationRef,
   InviteMemberInput,
   MemberRef,
+  RenameOrganizationInput,
+  TransferOwnershipInput,
   UpdateMemberRoleInput,
 } from '@saas-foundation/contracts'
 import {
   cancelPendingInvitation,
   findMember,
+  findMembership,
   findOrganizationById,
   findPendingInvitation,
+  isOwnerGuardViolation,
   listMembers as membersOf,
+  listOwners,
   listPendingInvitations,
   removeNonOwnerMember,
   updateNonOwnerMemberRole,
@@ -137,6 +143,144 @@ export async function updateMemberRole(headers: Headers, input: unknown): Promis
     if (target.isOwner) throw ownerRowRefused()
     if (!(await updateNonOwnerMemberRole(db, ctx.orgId, memberId, role))) throw notFound()
     return { id: memberId }
+  })
+}
+
+const LOST_MEMBERSHIP = ['MEMBER_NOT_FOUND', 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION']
+const NOT_ALLOWED = [
+  'YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER',
+  'YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION',
+  'YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER',
+]
+const LAST_OWNER = [
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER',
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER',
+]
+
+/**
+ * What a refused owner change or deletion tells the caller, each case by name: the state changed
+ * after `getTenantContext`, a billing hook refused, or the trigger failed the commit (a database
+ * error, ADR-0043). Anything else is unexpected and propagates, never a conflict to retry.
+ */
+export function refusal(e: unknown): HttpError {
+  if (isOwnerGuardViolation(e))
+    return new HttpError(
+      409,
+      'Another owner changed at the same time. Check the members and retry.',
+    )
+  if (!(e instanceof APIError)) throw e
+  const code = String(e.body?.code)
+  if (e.statusCode === 401) return new HttpError(401, 'unauthorized')
+  if (LOST_MEMBERSHIP.includes(code)) return notFound()
+  if (NOT_ALLOWED.includes(code)) return new HttpError(403, e.message)
+  if (LAST_OWNER.includes(code)) return new HttpError(409, e.message)
+  // The billing hooks' own refusals (packages/auth), each with its message.
+  if (e.statusCode === 409 || e.statusCode === 503) return new HttpError(e.statusCode, e.message)
+  throw e
+}
+
+/** Only the display name (owner, admin). Better Auth's own endpoint can also change the slug. */
+export async function renameOrganization(
+  headers: Headers,
+  input: unknown,
+): Promise<{ name: string }> {
+  const { tenant, name } = parseInput(RenameOrganizationInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    authorize(ctx, 'organization:rename')
+    await authFor(db).api.updateOrganization({
+      body: { organizationId: ctx.orgId, data: { name } },
+      headers,
+    })
+    return { name }
+  })
+}
+
+/**
+ * Makes an existing member an owner, then the caller an admin (owner decision 2026-10-31). Two
+ * Better Auth updates, so ADR-0022's hooks run on each: grant after, revoke before. Not atomic: the
+ * promotion comes first, so a failure in between leaves two owners, never none, and a retry finds
+ * the target already an owner and finishes.
+ */
+export async function transferOwnership(headers: Headers, input: unknown): Promise<{ id: string }> {
+  const { tenant, memberId } = parseInput(TransferOwnershipInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    const target = await findMember(db, ctx.orgId, memberId)
+    if (!target) throw notFound()
+    authorize(ctx, 'organization:transfer')
+    if (target.userId === ctx.userId) throw new HttpError(400, 'Choose another member')
+    const auth = authFor(db)
+    const setRole = (id: string, role: 'owner' | 'admin') =>
+      auth.api.updateMemberRole({
+        body: { memberId: id, role, organizationId: ctx.orgId },
+        headers,
+      })
+    if (!target.isOwner)
+      await setRole(memberId, 'owner').catch((e: unknown) => {
+        throw refusal(e)
+      })
+    const self = await findMembership(db, ctx.orgId, ctx.userId)
+    if (!self) throw notFound()
+    await setRole(self.id, 'admin').catch((e: unknown) => {
+      const { status, message } = refusal(e)
+      throw new HttpError(
+        status,
+        `The new owner is in place, but you're still an owner. ${message}`,
+      )
+    })
+    return { id: memberId }
+  })
+}
+
+const onlyOwner = () =>
+  new HttpError(409, "You're the only owner. Transfer ownership or delete the organization first.")
+
+/**
+ * Any member. A sole owner is refused here, before the auth middleware's billing revoke, which
+ * would answer 503 or cost them their billing access for a change that can't happen.
+ */
+export async function leaveOrganization(headers: Headers, input: unknown): Promise<{ left: true }> {
+  const { tenant } = parseInput(TenantInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    const owners = await listOwners(db, ctx.orgId)
+    if (owners.length === 1 && owners[0]!.userId === ctx.userId) throw onlyOwner()
+    await authFor(db)
+      .api.leaveOrganization({ body: { organizationId: ctx.orgId }, headers })
+      .catch((e: unknown) => {
+        if (
+          e instanceof APIError &&
+          e.body?.code === 'YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER'
+        )
+          throw onlyOwner()
+        throw refusal(e)
+      })
+    return { left: true }
+  })
+}
+
+/**
+ * Owner only, with the organization's exact name typed in the app; direct HTTP keeps Better Auth's
+ * owner-session requirement without it. The billing protections are Better Auth's hooks, so they
+ * cover both paths (packages/auth, ADR-0043).
+ */
+export async function deleteOrganization(
+  headers: Headers,
+  input: unknown,
+): Promise<{ deleted: true }> {
+  const { tenant, confirmName } = parseInput(DeleteOrganizationInput, input)
+  return withDb(async (db) => {
+    const ctx = await getTenantContext(db, headers, tenant)
+    authorize(ctx, 'organization:delete')
+    if (confirmName !== ctx.name)
+      throw new HttpError(400, "That doesn't match the organization's name")
+    await authFor(db)
+      .api.deleteOrganization({ body: { organizationId: ctx.orgId }, headers })
+      .catch((e: unknown) => {
+        throw refusal(e)
+      })
+    return { deleted: true }
   })
 }
 

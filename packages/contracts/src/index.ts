@@ -17,6 +17,7 @@ export const ProjectFields = z.strictObject({
 })
 
 export const TenantInput = z.strictObject({ tenant: TenantSlug })
+export const DeleteAccountInput = z.strictObject({ password: z.string().min(1).max(1024) })
 export const ProjectRef = z.strictObject({ tenant: TenantSlug, id: ProjectId })
 export const CreateProjectInput = z.strictObject({ tenant: TenantSlug, project: ProjectFields })
 export const UpdateProjectInput = z.strictObject({
@@ -41,6 +42,16 @@ export const UpdateMemberRoleInput = z.strictObject({
   tenant: TenantSlug,
   memberId: z.string().min(1),
   role: z.enum(['member', 'admin']),
+})
+
+export const RenameOrganizationInput = z.strictObject({
+  tenant: TenantSlug,
+  name: CreateOrganizationInput.shape.name,
+})
+export const TransferOwnershipInput = MemberRef
+export const DeleteOrganizationInput = z.strictObject({
+  tenant: TenantSlug,
+  confirmName: z.string().min(1).max(200),
 })
 
 // Billing (ADR-0020). The price is a key from the product policy, checked by the server.

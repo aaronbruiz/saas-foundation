@@ -24,6 +24,8 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
   | `member:invite`: list pending invitations, revoke one    |  yes  |  yes  |   no   |
   | `member:read`: the member list (names, emails, roles)    |  yes  |  yes  |  yes   |
   | `member:manage`: remove a non-owner, set member or admin |  yes  |  yes  |   no   |
+  | `organization:rename`: the display name only             |  yes  |  yes  |   no   |
+  | `organization:transfer`, `organization:delete`           |  yes  |  no   |   no   |
   | _Better Auth HTTP endpoints (its default roles):_        |       |       |        |
   | organization update (name, slug)                         |  yes  |  yes  |   no   |
   | invite, change role, remove: non-owner members           |  yes  |  yes  |   no   |
@@ -39,7 +41,7 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
 **App layer (in code, `packages/auth/src/auth.ts`):**
 
 - `rateLimit: { enabled: true, storage: "database" }`. Counters live in the Better Auth `rate_limit` table (generated schema). Better Auth's check-and-increment is a conditional update, so concurrent requests can't all pass. `enabled: true` is explicit: Better Auth's default is production only, and we want dev, tests and previews to behave like prod.
-- Limits, per client IP and path: `POST /api/auth/sign-in/email` and `/sign-up/email` allow **5 per 60 s**. Other methods on those paths aren't counted (they reach no handler). Other auth endpoints allow 100 per 60 s, except Better Auth's built-in stricter rules: other `/sign-in*`, `/sign-up*`, `/change-password*` and `/change-email*` paths 3 per 10 s; password reset and verification email 3 per 60 s. Over the limit: **429** with `X-Retry-After`.
+- Limits, per client IP and path: `POST /api/auth/sign-in/email`, `/sign-up/email` and `/delete-account` (ADR-0044) allow **5 per 60 s**. Other methods on those paths aren't counted (they reach no handler). Other auth endpoints allow 100 per 60 s, except Better Auth's built-in stricter rules: other `/sign-in*`, `/sign-up*`, `/change-password*` and `/change-email*` paths 3 per 10 s; password reset and verification email 3 per 60 s. Over the limit: **429** with `X-Retry-After`.
 - Client IP = `cf-connecting-ip` (`advanced.ipAddress.ipAddressHeaders`). Cloudflare's edge sets it and overwrites any value the client sends. Better Auth's default (`x-forwarded-for`) is absent on Workers. Without a trusted IP, Better Auth falls back to one shared bucket for all clients, which would let 5 bad logins lock everyone out.
 - Only HTTP requests through `/api/auth/*` are limited. Direct `auth.api.*` server calls are not, so login and sign-up must stay on the HTTP client (`authClient`).
 - Tests (`apps/web/test/rate-limit.test.ts`): sign-in and sign-up return 429 after 5 requests, a correct password is also refused while limited, other IPs are unaffected, and the counter row is in Postgres.

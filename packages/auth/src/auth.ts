@@ -1,8 +1,24 @@
-import { betterAuth, type BetterAuthPlugin } from 'better-auth'
-import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
+import { betterAuth, type BetterAuthPlugin, type StandardSchemaV1 } from 'better-auth'
+import {
+  APIError,
+  createAuthEndpoint,
+  createAuthMiddleware,
+  getSessionFromCtx,
+  sensitiveSessionMiddleware,
+} from 'better-auth/api'
+import { deleteSessionCookie } from 'better-auth/cookies'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { captcha, organization } from 'better-auth/plugins'
-import { countMembers, findMembership, type Db } from '@saas-foundation/db'
+import {
+  closeBillingAccess,
+  countMembers,
+  deactivateAccount,
+  findMembership,
+  isOwnerGuardViolation,
+  membershipsOfUser,
+  reopenBillingAccess,
+  type Db,
+} from '@saas-foundation/db'
 import { rawDb, schema } from '@saas-foundation/db/internal'
 
 /**
@@ -94,11 +110,25 @@ export type AuthOptions = {
    * The app's billing policy, asked by Better Auth's own endpoints so no path bypasses it
    * (ADR-0020). Without it: Better Auth's default member limit, and deletion is never refused.
    */
+  /**
+   * Self-service account deletion (ADR-0044). `input` validates the request (AGENTS.md invariant 9);
+   * `onDeactivated` runs after the deactivation commits. Without it, the endpoint doesn't exist.
+   */
+  accountDeletion?: {
+    input: StandardSchemaV1<unknown, { password: string }>
+    onDeactivated: (userId: string) => Promise<void>
+  }
   billing?: {
     /** Seats the organization's plan allows (null = unlimited). */
     memberLimit: (organizationId: string) => Promise<number | null>
     /** True while the organization must not be deleted (e.g. a live subscription). */
     blocksDeletion: (organizationId: string) => Promise<boolean>
+    /**
+     * ADR-0043: claims the deletion against new checkouts and asks the provider's current state,
+     * after Better Auth's permission check. A string refuses, and is the message. Throwing refuses
+     * as unavailable, failing closed. Without it, only `blocksDeletion` guards a deletion.
+     */
+    beginDeletion?: (organizationId: string) => Promise<string | null>
     /**
      * The billing provider's own logins, kept in step with the owner role (ADR-0022: revoke before,
      * grant after). `revoke` throws when access can't be removed, and the change is refused.
@@ -121,6 +151,15 @@ const isOwner = (role: string | string[] | undefined | null) =>
     .map((r) => r.trim())
     .includes('owner')
 
+/** The tombstone email's domain (ADR-0044): nobody can sign up as one. */
+const DELETED_EMAIL_DOMAIN = '@deleted.invalid'
+
+const LAST_OWNER_CODES = [
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER',
+  'YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER',
+]
+const GONE_CODES = ['MEMBER_NOT_FOUND', 'USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION']
+
 const loginRule = (request: Request) => request.method === 'POST' && { window: 60, max: 5 }
 
 /**
@@ -138,6 +177,7 @@ export function createAuth({
   sendEmail,
   runInBackground,
   billing: billingPolicy,
+  accountDeletion,
 }: AuthOptions) {
   const blocksDeletion = (orgId: string) => billingPolicy?.blocksDeletion(orgId) ?? false
   const members = billingPolicy?.members
@@ -159,7 +199,9 @@ export function createAuth({
       log?.('warn', 'billing.members.grant_failed')
     }
   }
-  return betterAuth({
+  let leave: (headers: Headers, organizationId: string) => Promise<unknown> = () =>
+    Promise.reject(new Error('not ready'))
+  const auth = betterAuth({
     secret,
     baseURL,
     // `transaction: true`: Better Auth's multi-write operations (sign-up, accepting an invitation,
@@ -221,7 +263,7 @@ export function createAuth({
       user: {
         create: {
           async before(user) {
-            if (!allowSignUp(user.email)) {
+            if (!allowSignUp(user.email) || user.email.endsWith(DELETED_EMAIL_DOMAIN)) {
               throw new APIError('FORBIDDEN', { message: 'Sign-up is closed' })
             }
           },
@@ -252,6 +294,7 @@ export function createAuth({
       customRules: {
         '/sign-in/email': loginRule,
         '/sign-up/email': loginRule,
+        '/delete-account': loginRule,
       },
     },
     plugins: [
@@ -283,6 +326,9 @@ export function createAuth({
               }),
             ),
           ]),
+      ...(accountDeletion
+        ? [deleteAccountPlugin(db, accountDeletion, log, (h, id) => leave(h, id))]
+        : []),
       organization({
         // ADR-0016: accepting (or rejecting) an invitation needs a verified address, which also
         // covers sessions created before verification was enforced.
@@ -291,6 +337,14 @@ export function createAuth({
           // Backstop for deletions that don't come through the HTTP middleware above.
           async beforeDeleteOrganization({ organization }) {
             if (await blocksDeletion(organization.id)) throw billingStateConflict()
+            let refusal: string | null | undefined
+            try {
+              refusal = await billingPolicy?.beginDeletion?.(organization.id)
+            } catch {
+              log?.('warn', 'billing.deletion.begin_failed')
+              throw billingAccessUnavailable()
+            }
+            if (refusal) throw new APIError('CONFLICT', { message: refusal })
             // ADR-0022: only here, after Better Auth's own permission check (the middleware above
             // runs before it). The billing account goes first; if it can't, nothing is deleted.
             if (!members) return
@@ -344,7 +398,102 @@ export function createAuth({
       }),
     ],
   })
+  leave = (headers, organizationId) =>
+    auth.api.leaveOrganization({ headers, body: { organizationId } })
+  return auth
 }
+
+/**
+ * `POST /delete-account` (ADR-0044): checks the password and that the caller is nobody's sole owner,
+ * closes their billing access, leaves each organization through Better Auth so ADR-0022's hooks
+ * run, then deactivates the account in one transaction. Not atomic: a refusal part-way answers what
+ * was left, the account keeps working, and a retry finishes.
+ */
+const deleteAccountPlugin = (
+  db: Db,
+  options: NonNullable<AuthOptions['accountDeletion']>,
+  log: AuthOptions['log'],
+  leave: (headers: Headers, organizationId: string) => Promise<unknown>,
+): BetterAuthPlugin => ({
+  id: 'delete-account',
+  endpoints: {
+    deleteAccount: createAuthEndpoint(
+      '/delete-account',
+      { method: 'POST', body: options.input, use: [sensitiveSessionMiddleware] },
+      async (ctx) => {
+        const userId = ctx.context.session.user.id
+        const accounts = await ctx.context.internalAdapter.findAccounts(userId)
+        const hash = accounts.find((a) => a.providerId === 'credential')?.password
+        if (!hash || !(await ctx.context.password.verify({ hash, password: ctx.body.password })))
+          throw new APIError('UNAUTHORIZED', {
+            code: 'INVALID_PASSWORD',
+            message: 'Incorrect password.',
+          })
+        const soleOwnerOf = (await membershipsOfUser(db, userId))
+          .filter((m) => m.isSoleOwner)
+          .map((m) => m.name)
+        if (soleOwnerOf.length > 0)
+          throw new APIError('CONFLICT', {
+            code: 'SOLE_OWNER',
+            message: 'Transfer or delete the organizations you solely own first.',
+            soleOwnerOf,
+            left: [],
+          })
+        const token = crypto.randomUUID()
+        if (!(await closeBillingAccess(db, userId, token)))
+          throw new APIError('CONFLICT', {
+            code: 'BILLING_ACCESS_BUSY',
+            message: 'Your billing access is being updated, or a deletion is already running.',
+            left: [],
+          })
+        const left: string[] = []
+        const stopped = (
+          status: 'CONFLICT' | 'SERVICE_UNAVAILABLE',
+          body: Record<string, unknown>,
+        ) => new APIError(status, { ...body, left })
+        let outcome = 'none'
+        try {
+          for (const m of await membershipsOfUser(db, userId)) {
+            try {
+              await leave(ctx.headers!, m.organizationId)
+              left.push(m.name)
+            } catch (e) {
+              const code = e instanceof APIError ? String(e.body?.code) : ''
+              if (GONE_CODES.includes(code)) continue
+              if (isOwnerGuardViolation(e) || LAST_OWNER_CODES.includes(code))
+                throw stopped('CONFLICT', {
+                  code: 'NOW_SOLE_OWNER',
+                  message: `You're now the only owner of ${m.name}: transfer or delete it, then try again.`,
+                  stillOwner: m.name,
+                })
+              if (e instanceof APIError && e.statusCode === 503)
+                throw stopped('SERVICE_UNAVAILABLE', {
+                  code: 'BILLING_UNAVAILABLE',
+                  message: e.message,
+                  stillOwner: m.name,
+                })
+              throw e
+            }
+          }
+          outcome = await deactivateAccount(db, userId, token)
+          if (outcome !== 'deactivated')
+            throw stopped('CONFLICT', {
+              code: 'TRY_AGAIN',
+              message: 'Something changed while your account was being deleted. Try again.',
+            })
+        } finally {
+          if (outcome !== 'deactivated') await reopenBillingAccess(db, userId, token)
+        }
+        deleteSessionCookie(ctx)
+        // It's done: failing to report it can't change the answer.
+        await options.onDeactivated(userId).catch(() => {
+          log?.('warn', 'auth.account_deleted_report_failed')
+        })
+        return ctx.json({ status: true })
+      },
+    ),
+  },
+})
 
 /**
  * The captcha plugin's own failure (siteverify unreachable, erroring or timing out; it answers 500):

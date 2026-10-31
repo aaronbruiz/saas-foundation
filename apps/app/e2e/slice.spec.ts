@@ -95,7 +95,7 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   browser,
 }) => {
   // Alice: account → org A → project Alpha.
-  const { page: alice } = await signUp(browser, 'Alice')
+  const { page: alice, email: aliceEmail } = await signUp(browser, 'Alice')
   const orgA = await createOrg(alice, 'a')
   await alice.getByLabel('Project name').fill('Alpha')
   await alice.getByRole('button', { name: 'Create project' }).click()
@@ -175,6 +175,29 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   await carol.reload()
   await carol.getByRole('button', { name: `Make ${carolEmail} member` }).click()
   await expect(carol.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+
+  // Ownership moves to Carol in settings and back: each time the giver becomes an admin. Here,
+  // since it needs two real users and the login limit leaves no sign-in for a test of its own.
+  await alice.getByRole('link', { name: 'Settings' }).click()
+  await alice.getByLabel('New owner').selectOption({ label: `${carolEmail} (member)` })
+  await alice.getByRole('button', { name: 'Transfer ownership' }).click()
+  await expect(alice.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
+  await carol.goto(`/t/${orgA}/settings`)
+  await expect(carol.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
+  await expect(carol.getByLabel('New owner').getByRole('option')).toHaveText([
+    `${aliceEmail} (admin)`,
+  ])
+  await carol.getByRole('button', { name: 'Transfer ownership' }).click()
+  await expect(carol.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
+  await alice.getByRole('link', { name: 'Members' }).click()
+  await alice.getByRole('button', { name: `Make ${carolEmail} member` }).click()
+  await expect(alice.getByRole('button', { name: `Make ${carolEmail} admin` })).toBeVisible()
+  // A member gets only the Leave section.
+  await carol.goto(`/t/${orgA}/settings`)
+  await expect(carol.getByRole('button', { name: 'Leave organization' })).toBeVisible()
+  await expect(carol.getByRole('heading', { name: 'Name' })).toHaveCount(0)
+  await expect(carol.getByRole('heading', { name: 'Delete organization' })).toHaveCount(0)
+  await carol.goto(`/t/${orgA}/members`)
 
   // Promoted again, Carol removes herself and leaves the tenant.
   await alice.reload()

@@ -18,7 +18,10 @@ const GRANTS: Record<string, string[]> = {
   rate_limit: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   project: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   billing_subscription: ['INSERT', 'SELECT', 'UPDATE'],
+  billing_checkout_gate: ['INSERT', 'SELECT', 'UPDATE'],
   billing_webhook_event: ['INSERT', 'SELECT'],
+  billing_access_gate: ['INSERT', 'SELECT', 'UPDATE'],
+  user_deletion: ['INSERT', 'SELECT'],
 }
 // The only functions of ours it may call (ADR-0040's webhook bypass), owner-owned definers.
 const FUNCTIONS = ['billing_subscription_held_elsewhere(text,text)']

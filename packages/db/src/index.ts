@@ -8,7 +8,17 @@ export {
   type BillingEventOutcome,
   type SubscriptionSnapshot,
 } from './billing.ts'
+export {
+  closeBillingAccess,
+  deactivateAccount,
+  gatedMemberWrite,
+  isDeletedAccountViolation,
+  membershipsOfUser,
+  reopenBillingAccess,
+  type DeactivationOutcome,
+} from './account-deletion.ts'
 export { createDb, type Db } from './client.ts'
+export { isOwnerGuardViolation } from './owner-guard.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
   cancelPendingInvitation,

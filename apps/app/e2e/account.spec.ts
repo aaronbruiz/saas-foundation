@@ -140,6 +140,68 @@ test('the name form sends one request while one is pending', async ({ page }) =>
   expect(requests).toBe(1)
 })
 
+test('deleting the account: a wrong password is refused, and fields stay out of the URL', async ({
+  page,
+}) => {
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill('wrong-password-123')
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toContainText('Incorrect password.')
+  expect(page.url()).not.toContain('password')
+})
+
+test('deleting the account: a part-way refusal says what already happened', async ({ page }) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'NOW_SOLE_OWNER',
+        message: "You're now the only owner of Beta: transfer or delete it, then try again.",
+        left: ['Acme'],
+        stillOwner: 'Beta',
+      }),
+    }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    "Your account wasn't deleted. You left Acme. You're now the only owner of Beta: transfer or delete it, then try again.",
+  )
+})
+
+// The success path is stubbed, so this proves the page's navigation; the session ending is proved
+// in test/account-deletion.test.ts (ADR-0005: a run has no real sign-in to spare).
+test('deleting the account: on success the page leaves for the home page', async ({ page }) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: true }),
+    }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  // The stubbed session is still signed in, so `/` sends it on: it has left this page.
+  await expect(page).not.toHaveURL(/\/account$/)
+})
+
+test("deleting the account: an answer that proves nothing doesn't claim it failed", async ({
+  page,
+}) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    "We couldn't confirm your account was deleted. Try signing in again to check.",
+  )
+})
+
 test('signed out, the account page sends you to sign in and back', async ({ browser }) => {
   // Explicitly empty: browser.newContext() would inherit this file's shared session.
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })

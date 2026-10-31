@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import {
+  MemberWriteUnknown,
   ProviderUnavailable,
   type BillingMembers,
   type BillingProvider,
@@ -11,6 +12,9 @@ import {
   polarWebhookParser,
   type PolarConfig,
 } from './providers/polar'
+
+/** For the billing access gate (ADR-0044): this write's outcome at the provider isn't known. */
+export const isMemberWriteUnknown = (e: unknown) => e instanceof MemberWriteUnknown
 
 // Which provider is configured, from Worker secrets and vars. Kept apart from service.ts so
 // server/auth.ts can wire the member sync without importing the service (which imports the tenant

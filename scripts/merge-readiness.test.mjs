@@ -184,6 +184,28 @@ test('without --approved-at, description edits are not assessed and the report s
   assert.doesNotMatch(r.output, /edits after approval: 0/)
 })
 
+test('with --no-approval, a PR that needs no approval passes and the line says so', () => {
+  const r = run(github(), ['5', '--review', REVIEW, '--no-approval'])
+  assert.equal(r.status, 0, r.output)
+  assert.match(r.output, /description edits after approval: n\/a \(approval not required\)$/m)
+})
+
+test('--no-approval with --approved-at is refused as a usage error', () => {
+  const r = run(github(), [
+    '5',
+    '--review',
+    REVIEW,
+    '--no-approval',
+    '--approved-at',
+    '2026-10-30T09:00:00Z',
+  ])
+  assert.equal(r.status, 2, r.output)
+  assert.match(r.output, /usage:/)
+  const empty = run(github(), ['5', '--review', REVIEW, '--no-approval', '--approved-at='])
+  assert.equal(empty.status, 2, empty.output)
+  assert.match(empty.output, /usage:/)
+})
+
 test('description edits after the approval time are counted', () => {
   const edits = {
     totalCount: 2,

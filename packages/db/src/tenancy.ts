@@ -37,14 +37,14 @@ export async function countMembers(db: Db, orgId: string): Promise<number> {
 
 export async function findMembership(db: Db, orgId: string, userId: string) {
   const [m] = await rawDb(db)
-    .select({ role: member.role })
+    .select({ id: member.id, role: member.role })
     .from(member)
     .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
     .limit(1)
   return m ?? null
 }
 
-const holdsOwnerRole = (role: string) => role.split(',').some((x) => x.trim() === 'owner')
+export const holdsOwnerRole = (role: string) => role.split(',').some((x) => x.trim() === 'owner')
 
 /**
  * Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). A

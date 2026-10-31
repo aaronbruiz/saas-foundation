@@ -82,8 +82,11 @@ function Privacy() {
       <Section title="Retention">
         <ul className="list-disc space-y-1 pl-6">
           <li>
-            Account, organization and project data: while the account or organization exists. To
-            delete your account or an organization, write to {contactEmail}.
+            Account, organization and project data: while the account or organization exists. You
+            can delete your account on its page, and an organization on its settings page. A deleted
+            account stops working at once. Its data is removed later: we expect within about five
+            months, as our monthly removal and the backups below run. That&apos;s an expectation,
+            not a guarantee. For immediate erasure, write to {contactEmail}.
           </li>
           <li>
             Sessions expire after 7 days without use; verification, password-reset and invitation
@@ -94,7 +97,8 @@ function Privacy() {
             Backups: daily copies of the database kept for up to 30 days, and a few recent database
             snapshots that are replaced as new ones are taken. Deleted data leaves these copies as
             they expire or are replaced. If we ever restore the database, we keep a copy of it from
-            before the restore until we delete it; deleted data stays in that copy until then.
+            before the restore until we delete it; deleted data stays in that copy until then. A
+            restore can undo a recent account deletion, which you may then need to repeat.
           </li>
         </ul>
       </Section>

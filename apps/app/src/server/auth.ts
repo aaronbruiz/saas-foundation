@@ -1,10 +1,16 @@
 import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth, type BotProtection } from '@saas-foundation/auth'
-import { billing, listOwners, type Db } from '@saas-foundation/db'
-import { configuredMembers } from '../modules/billing/config'
+import { DeleteAccountInput } from '@saas-foundation/contracts'
+import { billing, gatedMemberWrite, listOwners, type Db } from '@saas-foundation/db'
+import {
+  configuredMembers,
+  configuredProvider,
+  isMemberWriteUnknown,
+} from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
+import type { BillingMembers } from '../modules/billing/provider'
 import { mailerFor, render } from './email'
-import { logBetterAuth, logWarn } from './log'
+import { logBetterAuth, logInfo, logWarn } from './log'
 
 /**
  * ADR-0014 sign-up gate. `SIGNUP_MODE=open` (dev, tests, previews, or production once public sign-up
@@ -83,6 +89,82 @@ export const turnstileSiteKey = () =>
     ? null
     : vars.TURNSTILE_SITE_KEY!
 
+/**
+ * ADR-0043: goes ahead only with proof that no session can still complete, with no clock involved.
+ * Every attempt counts as in flight until its outcome is known. With none in flight when this
+ * looks, every session already exists, so the provider's state is complete; the commit then fails
+ * if an attempt started in between, and closes checkouts for good if not. Returns the refusal's
+ * message, or null to go ahead. Which subscriptions block stays in the billing policy.
+ */
+export async function beginOrganizationDeletion(
+  db: Db,
+  orgId: string,
+  provider: ReturnType<typeof configuredProvider>,
+): Promise<string | null> {
+  const repo = billing(db, { orgId })
+  const gate = await repo.deletionGate()
+  // A retry: the checks passed and nothing can have started since.
+  if (gate.removalStarted) return null
+  if (gate.checkoutsInFlight > 0)
+    return "A checkout for this organization hasn't finished, or its outcome is unknown. Try again shortly; if this persists, contact support."
+  const state = provider && (await provider.accountState(orgId))
+  if (isLive(await repo.subscription()) || state?.subscriptions.some(isLive))
+    return 'This organization has an active subscription. Cancel it in Billing first.'
+  if (state?.hasPendingCheckout)
+    return 'A checkout for this organization is still open. Try again once it completes or expires.'
+  if (!(await repo.commitRemoval(gate.generation)))
+    return 'This organization changed while it was being deleted. Try again shortly.'
+  return null
+}
+
+/**
+ * ADR-0044, ADR-0015's one exception: only a hash of the id, as best-effort recovery evidence for a
+ * restore. Never a complete ledger: a Worker dying before this line writes nothing.
+ */
+export async function reportAccountDeleted(userId: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(userId))
+  const subject = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join(
+    '',
+  )
+  logInfo('account.deleted', { subject_sha256: subject })
+}
+
+/** The provider's billing logins, every write of a user through their gate (ADR-0022, ADR-0044). */
+export function gatedBillingMembers(db: Db, members: BillingMembers) {
+  return {
+    revoke: async (orgId: string, userId: string) => {
+      // Revoking the provider's owner can create or promote a successor, which is a write of them.
+      // A successor whose gate is closed is passed over.
+      const others = (await listOwners(db, orgId)).filter((o) => o.userId !== userId)
+      for (const next of others) {
+        const written = await gatedMemberWrite(
+          db,
+          orgId,
+          next.userId,
+          () => members.revoke(orgId, userId, [next]),
+          isMemberWriteUnknown,
+        )
+        if (written.sent) return
+      }
+      await members.revoke(orgId, userId, [])
+    },
+    grant: async (orgId: string, userId: string) => {
+      const written = await gatedMemberWrite(
+        db,
+        orgId,
+        userId,
+        async () => {
+          const owner = (await listOwners(db, orgId)).find((o) => o.userId === userId)
+          if (owner) await members.grant(orgId, owner)
+        },
+        isMemberWriteUnknown,
+      )
+      if (!written.sent) logWarn('billing.members.grant_skipped')
+    },
+    removeAccount: (orgId: string) => members.removeAccount(orgId),
+  }
+}
+
 export function authFor(db: Db) {
   const mailer = mailerFor(env)
   const members = configuredMembers()
@@ -101,6 +183,7 @@ export function authFor(db: Db) {
       env.BETTER_AUTH_URL,
     ),
     log: logBetterAuth,
+    accountDeletion: { input: DeleteAccountInput, onDeactivated: reportAccountDeleted },
     // ADR-0016. Invitations also return their link to the inviter (inviteMember).
     sendEmail: (email) => mailer(render(email, invitationLink)),
     // Failures are already logged by the mailer; don't let them surface as unhandled rejections.
@@ -110,22 +193,9 @@ export function authFor(db: Db) {
       memberLimit: async (orgId) =>
         entitlementsFor(await billing(db, { orgId }).subscription()).limits.members,
       blocksDeletion: async (orgId) => isLive(await billing(db, { orgId }).subscription()),
+      beginDeletion: (orgId) => beginOrganizationDeletion(db, orgId, configuredProvider()),
       // ADR-0022: the provider's billing logins follow the owner role.
-      ...(members && {
-        members: {
-          revoke: async (orgId, userId) =>
-            members.revoke(
-              orgId,
-              userId,
-              (await listOwners(db, orgId)).filter((o) => o.userId !== userId),
-            ),
-          grant: async (orgId, userId) => {
-            const owner = (await listOwners(db, orgId)).find((o) => o.userId === userId)
-            if (owner) await members.grant(orgId, owner)
-          },
-          removeAccount: (orgId) => members.removeAccount(orgId),
-        },
-      }),
+      ...(members && { members: gatedBillingMembers(db, members) }),
     },
   })
 }

@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   title:
     name: Conventional PR title
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions:
       contents: read # the contract-migration step's checkout

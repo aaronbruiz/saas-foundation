@@ -28,6 +28,7 @@ import { Route as TTenantIndexRouteImport } from './routes/t.$tenant.index'
 import { Route as TTenantBillingRouteImport } from './routes/t.$tenant.billing'
 import { Route as TTenantInviteRouteImport } from './routes/t.$tenant.invite'
 import { Route as TTenantMembersRouteImport } from './routes/t.$tenant.members'
+import { Route as TTenantSettingsRouteImport } from './routes/t.$tenant.settings'
 import { Route as ApiBillingWebhooksPolarRouteImport } from './routes/api/billing/webhooks/polar'
 import { Route as TTenantProjectsIndexRouteImport } from './routes/t.$tenant.projects.index'
 import { Route as TTenantProjectsIdRouteImport } from './routes/t.$tenant.projects.$id'
@@ -127,6 +128,11 @@ const TTenantMembersRoute = TTenantMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => TTenantRoute,
 } as any)
+const TTenantSettingsRoute = TTenantSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => TTenantRoute,
+} as any)
 const ApiBillingWebhooksPolarRoute = ApiBillingWebhooksPolarRouteImport.update({
   id: '/api/billing/webhooks/polar',
   path: '/api/billing/webhooks/polar',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/members': typeof TTenantMembersRoute
+  '/t/$tenant/settings': typeof TTenantSettingsRoute
   '/t/$tenant/': typeof TTenantIndexRoute
   '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
@@ -185,6 +192,7 @@ export interface FileRoutesByTo {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/members': typeof TTenantMembersRoute
+  '/t/$tenant/settings': typeof TTenantSettingsRoute
   '/t/$tenant': typeof TTenantIndexRoute
   '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/t/$tenant/billing': typeof TTenantBillingRoute
   '/t/$tenant/invite': typeof TTenantInviteRoute
   '/t/$tenant/members': typeof TTenantMembersRoute
+  '/t/$tenant/settings': typeof TTenantSettingsRoute
   '/t/$tenant/': typeof TTenantIndexRoute
   '/api/billing/webhooks/polar': typeof ApiBillingWebhooksPolarRoute
   '/t/$tenant/projects/$id': typeof TTenantProjectsIdRoute
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/members'
+    | '/t/$tenant/settings'
     | '/t/$tenant/'
     | '/api/billing/webhooks/polar'
     | '/t/$tenant/projects/$id'
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/members'
+    | '/t/$tenant/settings'
     | '/t/$tenant'
     | '/api/billing/webhooks/polar'
     | '/t/$tenant/projects/$id'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/t/$tenant/billing'
     | '/t/$tenant/invite'
     | '/t/$tenant/members'
+    | '/t/$tenant/settings'
     | '/t/$tenant/'
     | '/api/billing/webhooks/polar'
     | '/t/$tenant/projects/$id'
@@ -443,6 +455,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTenantMembersRouteImport
       parentRoute: typeof TTenantRoute
     }
+    '/t/$tenant/settings': {
+      id: '/t/$tenant/settings'
+      path: '/settings'
+      fullPath: '/t/$tenant/settings'
+      preLoaderRoute: typeof TTenantSettingsRouteImport
+      parentRoute: typeof TTenantRoute
+    }
     '/api/billing/webhooks/polar': {
       id: '/api/billing/webhooks/polar'
       path: '/api/billing/webhooks/polar'
@@ -471,6 +490,7 @@ interface TTenantRouteChildren {
   TTenantBillingRoute: typeof TTenantBillingRoute
   TTenantInviteRoute: typeof TTenantInviteRoute
   TTenantMembersRoute: typeof TTenantMembersRoute
+  TTenantSettingsRoute: typeof TTenantSettingsRoute
   TTenantIndexRoute: typeof TTenantIndexRoute
   TTenantProjectsIdRoute: typeof TTenantProjectsIdRoute
   TTenantProjectsIndexRoute: typeof TTenantProjectsIndexRoute
@@ -480,6 +500,7 @@ const TTenantRouteChildren: TTenantRouteChildren = {
   TTenantBillingRoute: TTenantBillingRoute,
   TTenantInviteRoute: TTenantInviteRoute,
   TTenantMembersRoute: TTenantMembersRoute,
+  TTenantSettingsRoute: TTenantSettingsRoute,
   TTenantIndexRoute: TTenantIndexRoute,
   TTenantProjectsIdRoute: TTenantProjectsIdRoute,
   TTenantProjectsIndexRoute: TTenantProjectsIndexRoute,

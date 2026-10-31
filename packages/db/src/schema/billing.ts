@@ -1,4 +1,4 @@
-import { boolean, pgTable, primaryKey, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { boolean, integer, pgTable, primaryKey, text, timestamp, unique } from 'drizzle-orm/pg-core'
 import { organization } from './auth.ts'
 
 // ADR-0018. Billing state is owned by the organization (one subscription per organization) and
@@ -38,6 +38,20 @@ export const billingSubscription = pgTable(
     ),
   ],
 )
+
+// ADR-0043: orders checkouts against a deletion, with no clock: what a request can't know for sure
+// about the provider stays counted until someone resolves it. Created on first use.
+export const billingCheckoutGate = pgTable('billing_checkout_gate', {
+  organizationId: text('organization_id')
+    .primaryKey()
+    .references(() => organization.id, { onDelete: 'cascade' }),
+  // Goes up with every checkout attempt, so a deletion can tell if one started since it looked.
+  checkoutGeneration: integer('checkout_generation').notNull().default(0),
+  // Attempts whose outcome at the provider isn't known yet.
+  checkoutsInFlight: integer('checkouts_in_flight').notNull().default(0),
+  // Set once before the provider's customer is removed; no checkout starts after it.
+  removalStartedAt: timestamp('removal_started_at', { withTimezone: true }),
+})
 
 // Dedupe log for webhook deliveries (AGENTS.md invariant 11). Not tenant data.
 export const billingWebhookEvent = pgTable(

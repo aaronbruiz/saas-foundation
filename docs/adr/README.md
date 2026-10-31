@@ -44,3 +44,5 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0040](0040-tenant-row-level-security.md): Tenant context per repository call (transaction-local, refusing to join another transaction) and staged row-level security on `project` and `billing_subscription` (partially accepted: decisions 1–4 and 7–8 are binding; row-level security policies, decisions 5–6, are proposed)
 - [ADR-0041](0041-product-owned-documentation-and-agent-instructions.md): Product-owned documentation in `docs/product/` and product agent instructions loaded from the root AGENTS.md
 - [ADR-0042](0042-tracked-agent-workflows.md): Tracked agent workflows as skills (`.agents/skills/` with `.claude/skills/` links), starting with the Codex review `review-pr`
+- [ADR-0043](0043-owner-guard-and-deletion-gate.md): A database guard keeps an organization's owner; a claim plus the provider's state guards deletion against a subscription. Accepted for the smoke-test-only environment, with conditions.
+- [ADR-0044](0044-account-deletion.md): Self-service account deactivation, purge after 90 days, and a billing access gate. Accepted for the smoke-test-only environment.

@@ -64,6 +64,41 @@
       "when": 1792460056024,
       "tag": "0008_billing_conflict_definer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793412820171,
+      "tag": "0009_billing_checkout_gate",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793412821069,
+      "tag": "0010_owner_guard_and_gate_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793422905374,
+      "tag": "0011_account_deletion_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793422907101,
+      "tag": "0012_project_creator_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793422908438,
+      "tag": "0013_account_deletion_guards",
+      "breakpoints": true
     }
   ]
 }
