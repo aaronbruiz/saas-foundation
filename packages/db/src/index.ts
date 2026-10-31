@@ -18,6 +18,8 @@ export {
   type DeactivationOutcome,
 } from './account-deletion.ts'
 export { createDb, type Db } from './client.ts'
+// THROWAWAY probe (never merged)
+export { deletionProbe, type ProbeResult } from './probe.ts'
 export { isOwnerGuardViolation } from './owner-guard.ts'
 export { currentDatabase, ping } from './health.ts'
 export {

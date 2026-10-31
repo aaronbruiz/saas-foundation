@@ -20,6 +20,7 @@ import { Route as SubprocessorsRouteImport } from './routes/subprocessors'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiPingRouteImport } from './routes/api/ping'
+import { Route as ApiProbeRouteImport } from './routes/api/probe'
 import { Route as InviteIdRouteImport } from './routes/invite.$id'
 import { Route as OrgsNewRouteImport } from './routes/orgs.new'
 import { Route as TTenantRouteImport } from './routes/t.$tenant'
@@ -86,6 +87,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 const ApiPingRoute = ApiPingRouteImport.update({
   id: '/api/ping',
   path: '/api/ping',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProbeRoute = ApiProbeRouteImport.update({
+  id: '/api/probe',
+  path: '/api/probe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InviteIdRoute = InviteIdRouteImport.update({
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ping': typeof ApiPingRoute
+  '/api/probe': typeof ApiProbeRoute
   '/invite/$id': typeof InviteIdRoute
   '/orgs/new': typeof OrgsNewRoute
   '/t/$tenant': typeof TTenantRouteWithChildren
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ping': typeof ApiPingRoute
+  '/api/probe': typeof ApiProbeRoute
   '/invite/$id': typeof InviteIdRoute
   '/orgs/new': typeof OrgsNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ping': typeof ApiPingRoute
+  '/api/probe': typeof ApiProbeRoute
   '/invite/$id': typeof InviteIdRoute
   '/orgs/new': typeof OrgsNewRoute
   '/t/$tenant': typeof TTenantRouteWithChildren
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/health'
     | '/api/ping'
+    | '/api/probe'
     | '/invite/$id'
     | '/orgs/new'
     | '/t/$tenant'
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/health'
     | '/api/ping'
+    | '/api/probe'
     | '/invite/$id'
     | '/orgs/new'
     | '/api/auth/$'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/health'
     | '/api/ping'
+    | '/api/probe'
     | '/invite/$id'
     | '/orgs/new'
     | '/t/$tenant'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiPingRoute: typeof ApiPingRoute
+  ApiProbeRoute: typeof ApiProbeRoute
   InviteIdRoute: typeof InviteIdRoute
   OrgsNewRoute: typeof OrgsNewRoute
   TTenantRoute: typeof TTenantRouteWithChildren
@@ -397,6 +410,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ping'
       fullPath: '/api/ping'
       preLoaderRoute: typeof ApiPingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/probe': {
+      id: '/api/probe'
+      path: '/api/probe'
+      fullPath: '/api/probe'
+      preLoaderRoute: typeof ApiProbeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite/$id': {
@@ -521,6 +541,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiPingRoute: ApiPingRoute,
+  ApiProbeRoute: ApiProbeRoute,
   InviteIdRoute: InviteIdRoute,
   OrgsNewRoute: OrgsNewRoute,
   TTenantRoute: TTenantRouteWithChildren,
