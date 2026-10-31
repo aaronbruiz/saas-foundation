@@ -4,7 +4,7 @@
 Copy state from Git, the PR and CI, and say when you read it; those three win over this file. -->
 
 Observed: <date and time>
-PR: <number or none> · Branch: <branch> · Worktree: <path> · Owner: <coordinating session>
+PR: <number or none> · Branch: <branch> · Worktree: <path> · Owner: <task-owning session; a session id may identify it>
 Base: <sha> · Head: <sha> · Status: <merged / validated / deployed / operational, or in progress>
 
 ## Goal

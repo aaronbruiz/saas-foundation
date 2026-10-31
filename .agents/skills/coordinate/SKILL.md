@@ -22,6 +22,16 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
    Exit 1 means part of the evidence is stale or unknown: rerun it, or report it as not rerun.
    The owner merges. Rewrite the brief and add the PR's line to the handoff (`handoff-template.md`).
 8. **Base update, when only `main` moved, for the PR about to merge.** Merge `main` into the branch (ADR-0030) and push, so CI tests the new pair; `gh run rerun` reuses the original commit. Re-review if the merge had conflicts, or if `main`'s new commits touch the PR's files, contracts, migrations or shared fixtures. Otherwise record `base update, review carried over: <reason>` in the evidence line. Waiting PRs wait for their turn, so one merge doesn't spend CI minutes on every open PR.
+9. **Close, after the human owner merges.** The task-owning session confirms from Git and GitHub that the PR merged and its merge commit is on `origin/main`, records the merge SHA and the final evidence in the brief, removes the task from the handoff's active tasks and sets `Selected task: none` if it was selected. If local `main` is behind `origin/main`, report it; don't update it.
+
+## Task ownership
+
+The human owner is the person who decides and merges; the task-owning session is the agent session assigned a task.
+
+- The brief's `Owner` names the task-owning session. A session id may identify it. A PID or liveness check is optional context, never a gate.
+- Task ownership moves to another session only on the human owner's explicit instruction, recorded in the brief.
+- A readiness assessment doesn't transfer task ownership. An assessing agent reports its findings; the task-owning session updates shared briefs and the handoff, unless the human owner assigns those edits separately.
+- `Selected task` in the handoff records the human owner's selection, not task status.
 
 ## Limits
 
