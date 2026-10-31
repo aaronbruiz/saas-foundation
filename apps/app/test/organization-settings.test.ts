@@ -6,7 +6,7 @@ import { createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { startCheckout } from '../src/modules/billing/service'
 import { isLive } from '../src/modules/billing/policy'
-import { readAccountState } from '../src/modules/billing/providers/polar'
+import { completeList, readAccountState } from '../src/modules/billing/providers/polar'
 import {
   CheckoutNotCreated,
   PriceNotFound,
@@ -649,6 +649,10 @@ describe('an organization keeps an owner (ADR-0043)', { timeout: 60_000 }, () =>
   })
 })
 
+async function* each<T>(items: T[]) {
+  yield* items
+}
+
 describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => {
   const quiet = { subscriptions: [], hasPendingCheckout: false }
   type State = Awaited<ReturnType<BillingProvider['accountState']>>
@@ -726,18 +730,121 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     await expect(attempt).resolves.toBeDefined()
   })
 
+  /** One account at the provider: what a checkout creates, an account read then sees. */
+  function sharedAccount() {
+    const account = {
+      sessions: [] as { id: string; status: string }[],
+      subscriptions: [] as { status: string; checkout_id: string | null }[],
+    }
+    const provider: BillingProvider = {
+      checkout: async () => {
+        account.sessions.push({ id: crypto.randomUUID(), status: 'open' })
+        return 'https://checkout.example/x'
+      },
+      portal: async () => 'https://portal.example/x',
+      accountState: () =>
+        readAccountState({
+          checkouts: () => each(account.sessions),
+          subscriptions: () => each(account.subscriptions),
+        }),
+    }
+    return { account, provider }
+  }
+
   it('of a checkout and a deletion racing, never both', async () => {
     for (let i = 0; i < 10; i++) {
       const { owner, slug, orgId } = await team()
+      const { provider } = sharedAccount()
       const [checkout, deletion] = await Promise.allSettled([
-        buy(owner, slug, providerWith()),
-        begin(orgId, providerWith()),
+        buy(owner, slug, provider),
+        begin(orgId, provider),
       ])
       const checkoutWon = checkout.status === 'fulfilled'
       const deletionWon = deletion.status === 'fulfilled' && deletion.value === null
-      expect(checkoutWon && deletionWon).toBe(false)
+      expect(checkoutWon !== deletionWon).toBe(true)
       if (!checkoutWon) expect(checkout.reason).toMatchObject({ status: 409 })
     }
+  })
+
+  describe('a deletion paused while a payment completes', () => {
+    /** Payment finishing: the session succeeds, then its subscription appears. */
+    const pay = (account: ReturnType<typeof sharedAccount>['account'], id: string) => {
+      account.sessions.find((c) => c.id === id)!.status = 'succeeded'
+      account.subscriptions.push({ status: 'active', checkout_id: id })
+    }
+    /** Runs a deletion with `pause` awaited at each named point of its provider read. */
+    function pausedRead(
+      account: ReturnType<typeof sharedAccount>['account'],
+      pause: (point: 'before sessions' | 'between sessions' | 'between reads') => Promise<void>,
+    ): BillingProvider {
+      return {
+        ...sharedAccount().provider,
+        accountState: () =>
+          readAccountState({
+            checkouts: async function* () {
+              await pause('before sessions')
+              for (const session of [...account.sessions]) {
+                yield { ...session }
+                await pause('between sessions')
+              }
+              await pause('between reads')
+            },
+            subscriptions: () => each(account.subscriptions),
+          }),
+      }
+    }
+
+    for (const point of ['before sessions', 'between sessions'] as const)
+      it(`paused ${point}: refused, and nothing is committed`, async () => {
+        const { owner, slug, orgId } = await team()
+        const { account } = sharedAccount()
+        // An earlier session finished, so the read gets past it to the pause.
+        account.sessions.push({ id: 'c0', status: 'expired' }, { id: 'c1', status: 'open' })
+        const gate = paused<void>()
+        const reached = paused<void>()
+        const deletion = begin(
+          orgId,
+          pausedRead(account, (at) => {
+            if (at !== point) return Promise.resolve()
+            reached.resume()
+            return gate.promise
+          }),
+        )
+        await reached.promise
+        pay(account, 'c1')
+        gate.resume()
+        await expect(deletion).resolves.toMatch(/active subscription|still open/)
+        await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
+      })
+
+    it('paused between the reads, the subscription appears: refused as live', async () => {
+      const { orgId } = await team()
+      const { account } = sharedAccount()
+      account.sessions.push({ id: 'c1', status: 'succeeded' })
+      const gate = paused<void>()
+      const reached = paused<void>()
+      const deletion = begin(
+        orgId,
+        pausedRead(account, (at) => {
+          if (at !== 'between reads') return Promise.resolve()
+          reached.resume()
+          return gate.promise
+        }),
+      )
+      await reached.promise
+      account.subscriptions.push({ status: 'active', checkout_id: 'c1' })
+      gate.resume()
+      await expect(deletion).resolves.toMatch(/active subscription/)
+    })
+
+    it('paid, with the subscription not listed yet: refused until it is', async () => {
+      const { orgId } = await team()
+      const { account, provider } = sharedAccount()
+      account.sessions.push({ id: 'c1', status: 'succeeded' })
+      await expect(begin(orgId, provider)).resolves.toMatch(/still open/)
+      account.subscriptions.push({ status: 'canceled', checkout_id: 'c1' })
+      await expect(begin(orgId, provider)).resolves.toBeNull()
+    })
   })
 
   it('a checkout whose outcome is unknown blocks the deletion until someone resolves it', async () => {
@@ -884,9 +991,6 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
 describe("reading Polar's state for a deletion (ADR-0043)", () => {
   type Checkout = { id: string; status: string }
   type Subscription = { status: string; checkout_id: string | null }
-  async function* each<T>(items: T[]) {
-    yield* items
-  }
   const read = (checkouts: Checkout[], subscriptions: Subscription[] = []) =>
     readAccountState({ checkouts: () => each(checkouts), subscriptions: () => each(subscriptions) })
 
@@ -938,6 +1042,41 @@ describe("reading Polar's state for a deletion (ADR-0043)", () => {
     })
     expect(order).toEqual(['checkouts:start', 'checkouts:end', 'subscriptions:start'])
     expect(result).toEqual({ subscriptions: [{ status: 'active' }], hasPendingCheckout: false })
+  })
+
+  describe('listing every item across pages', () => {
+    const pages = (lists: string[][], total: number) => async (n: number) => ({
+      items: lists[n - 1]!.map((id) => ({ id })),
+      pagination: { total_count: total, max_page: lists.length },
+    })
+    const ids = async (list: AsyncIterable<{ id: string }>) => {
+      const out = []
+      for await (const { id } of list) out.push(id)
+      return out
+    }
+
+    it('reads each page once and each item once', async () => {
+      await expect(
+        ids(
+          completeList(
+            pages(
+              [
+                ['a', 'b'],
+                ['b', 'c'],
+              ],
+              3,
+            ),
+          ),
+        ),
+      ).resolves.toEqual(['a', 'b', 'c'])
+      await expect(ids(completeList(pages([[]], 0)))).resolves.toEqual([])
+    })
+
+    it('refuses when equal timestamps repeat one item and push out another', async () => {
+      await expect(ids(completeList(pages([['a', 'b'], ['b']], 3)))).rejects.toThrow(
+        'listed 2 of 3',
+      )
+    })
   })
 
   it('an unknown subscription status counts as live, as in the webhook', async () => {

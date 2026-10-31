@@ -216,6 +216,32 @@ async function productFor(polar: PolarClient, priceKey: string) {
 }
 
 /**
+ * Every item of a page-numbered list, or a refusal. Polar breaks no ties when sorting, so items with
+ * equal timestamps can repeat across pages and push another out of the result: the distinct count
+ * has to reach the total it reports.
+ */
+export async function* completeList<T extends { id: string }>(
+  page: (n: number) => Promise<{
+    items: T[]
+    pagination: { total_count: number; max_page: number }
+  }>,
+): AsyncGenerator<T> {
+  const seen = new Set<string>()
+  let total = 0
+  for (let n = 1, last = 1; n <= last; n++) {
+    const { items, pagination } = await page(n)
+    total = pagination.total_count
+    last = pagination.max_page
+    for (const item of items) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      yield item
+    }
+  }
+  if (seen.size !== total) throw new ProviderUnavailable(`listed ${seen.size} of ${total} items`)
+}
+
+/**
  * ADR-0043. Checkouts first: a session seen as finished can't change, so once none can still
  * complete, the subscriptions read after them include everything those sessions produced. Anything
  * but `expired`, or `succeeded` with its subscription listed, blocks: there's no call to cancel a
@@ -301,9 +327,10 @@ export function polarProvider(config: PolarConfig): BillingProvider {
       if (!customer) return { subscriptions: [], hasPendingCheckout: false }
       const query = { customer_id: customer.id, limit: 100 }
       return readAccountState({
-        // No status filter and a stable order: a filter would shift pages as sessions finish.
-        checkouts: () => polar.checkouts.iterList({ ...query, sorting: ['created_at'] }),
-        subscriptions: () => polar.subscriptions.iterList(query),
+        // No status filter: it would shift pages as sessions finish.
+        checkouts: () =>
+          completeList((page) => polar.checkouts.list({ ...query, page, sorting: ['created_at'] })),
+        subscriptions: () => completeList((page) => polar.subscriptions.list({ ...query, page })),
       })
     },
   }

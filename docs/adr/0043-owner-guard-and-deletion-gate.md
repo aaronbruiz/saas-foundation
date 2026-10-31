@@ -54,7 +54,7 @@ ADR-0022's hooks still run, and their order can't change: the revoke runs before
 
 **Why that's enough.** With none in flight at step 1, every session that will ever exist from earlier attempts already exists, so step 2 sees them. The generation check proves none started during step 2, however long it took, and after the commit none can start. Nothing here expires, so a request paused at any point either fails its commit or finds checkouts closed.
 
-**Reading the provider.** Sessions are read first, with no status filter and a stable order, so a session finishing mid-read can't shift a page. A finished session can't change, so the subscriptions read afterwards include what they produced. Only `expired`, or `succeeded` with a subscription whose `checkout_id` is that session's, counts as finished. Everything else blocks, including `failed` and any future status, and with no settling window.
+**Reading the provider.** Sessions are read first, with no status filter, so a session finishing mid-read can't shift a page. Polar breaks no ties when sorting, so items with equal timestamps could repeat and push another out of a page: each list must reach the total Polar reports, or the read fails (503). A finished session can't change, so the subscriptions read afterwards include what they produced. Only `expired`, or `succeeded` with a subscription whose `checkout_id` is that session's, counts as finished. Everything else blocks, including `failed` and any future status, and with no settling window.
 
 The database holds no billing policy: the app decides what's live (`isLive`), and the row only orders checkouts against deletion. A refused deletion changes nothing, so it costs checkouts nothing.
 
@@ -74,6 +74,8 @@ The database holds no billing policy: the app decides what's live (`isLive`), an
 **The limitation that remains.** An attempt whose outcome is unknown blocks that organization's deletion, indefinitely, until someone checks Polar and clears it (runbook, "Stuck checkout attempts"). That check is a judgment, not a proof: a request that never answered could in principle land afterwards. If it did, a customer could pay for a deleted organization; the webhook would answer `unlinked` and log it. Closing this needs a provider feature (idempotency, or a way to cancel a session) or a compensating action, such as revoking and refunding on `unlinked`, which is a policy decision and isn't built here.
 
 A session that never reaches a finished status would also block deletion, with no operator step to clear it. Whether Polar always moves `open` and `failed` to `expired` is a release gate below.
+
+Two more things it can't see. **A database restore** can lose an in-flight count or a commit made after the restore point, while the request it counted can still land: after a restore, treat checkouts since the restore point as unknown (runbook). **Anything outside the app**, such as a subscription created in Polar's dashboard or API after the read, isn't ordered by the gate; only the app creates sessions, and only by this path.
 
 ### Release gates
 
@@ -97,7 +99,7 @@ The roadmap records it. It covers the proven owner race and, if accepted, this g
 
 ## Consequences
 
-- A new SQL function and trigger, registered in `packages/db/sql-only-objects.tsv`, and a new tenant table with its grant and archive trigger. A restored gate row isn't needed: a missing row means nothing in flight and nothing committed.
+- A new SQL function and trigger, registered in `packages/db/sql-only-objects.tsv`, and a new tenant table with its grant and archive trigger. The gate row is safety state: restoring a single organization from the archive doesn't need it (its deletion had finished, and its customer is gone), but a database restore can roll it back, as above.
 - Deleting an organization in Polar mode reads two more provider lists, and fails closed if they fail. The token's existing scopes cover them (`subscriptions:read`, `checkouts:write`).
 - After the commit, an organization whose deletion crashed can't buy until the deletion is retried: the customer may already be gone.
 - Rollback of the app alone is safe: old code ignores the gate, and the guard only refuses what would leave no owner.

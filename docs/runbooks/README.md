@@ -664,6 +664,8 @@ To clear one, the owner decides:
 2. Allow time for the request to have landed. This is a judgment, not a proof: a request that lands later could still be paid for, against a deleted organization.
 3. `UPDATE billing_checkout_gate SET checkouts_in_flight = 0 WHERE organization_id = '<id>';` as `app_owner`.
 
+**After a database restore:** the restore can lose an in-flight count, or a committed deletion's closure, from after the restore point. Before deleting any organization that tried to check out since then, check its sessions in Polar.
+
 ## Rollback (ADR-0029)
 
 Code only, seconds, no build: **Actions → Rollback → Run workflow** with a short `reason` (the message `rollback by <you>: <reason>` must fit 120 characters) and the target `version_id` (required; ids from `pnpm --filter app exec wrangler deployments list`, usually the previous 100% version). It refuses while a candidate is held (`discard` it first); refuses a target lacking a contract migration production has applied (or one not uploaded by `release.yml`, such as a manual deploy or a `wrangler secret put` version, whose commit is unknown) unless `confirm_breaking`; and refuses a target older than a secret change (or than the 10 newest versions) unless `confirm_secret_revert`, because wrangler then restores the old secret values without asking in CI. It succeeds only once the target serves 100% (and, for a release, `/api/health` reports its version and build). **In an emergency, roll back first, then fix forward.** The database is never rolled back by a workflow: restoring loses writes since the restore point, so it stays the manual "Database" procedure, using the `pre-migrate-*` branch or a snapshot.
