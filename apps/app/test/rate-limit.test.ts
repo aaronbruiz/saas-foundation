@@ -9,6 +9,7 @@ import { captchaHeader } from './turnstile-fake'
 // Login rate limiting (ADR-0005): 5 requests per 60 s per IP on sign-in and sign-up, counted in
 // Postgres (the memory limiter is per isolate, so it can't hold across Workers).
 const LIMIT = 5
+type Query = (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
 
 const counterRow = (key: string) =>
   withDb((db) => rawDb(db).query.rateLimit.findFirst({ where: (t, { eq }) => eq(t.key, key) }))
@@ -82,6 +83,55 @@ describe('login rate limiting', () => {
       )
     await statuses(LIMIT + 1, get)
     expect((await authPost('/sign-in/email', { email, password: PASSWORD }, ip)).status).toBe(200)
+  })
+
+  it('limits account deletion per IP: the sixth request gets 429 and the password is not checked', async () => {
+    const user = await signUp()
+    const ip = randomIp()
+    const attempt = (password: string) => authPost('/delete-account', { password }, ip, user)
+    const res = await statuses(LIMIT, () => attempt('wrong-password-123'))
+    expect(res.map((r) => r.status)).toEqual(Array(LIMIT).fill(401))
+    expect((await attempt(PASSWORD)).status).toBe(429)
+    expect(await counterRow(`${ip}|/delete-account`)).toBeTruthy()
+    const { rows } = await withDb((db) =>
+      (rawDb(db) as unknown as { $client: { query: Query } }).$client.query(
+        'SELECT count(*)::int AS n FROM user_deletion WHERE user_id = $1',
+        [user.userId],
+      ),
+    )
+    expect(rows[0]!.n).toBe(0)
+  })
+
+  it('does not limit account deletion from a different IP', async () => {
+    const user = await signUp()
+    const ip = randomIp()
+    await statuses(LIMIT + 1, () =>
+      authPost('/delete-account', { password: 'wrong-password-123' }, ip, user),
+    )
+    const other = await authPost(
+      '/delete-account',
+      { password: 'wrong-password-123' },
+      randomIp(),
+      user,
+    )
+    expect(other.status).toBe(401)
+  })
+
+  it('counts only POSTs toward the account deletion limit', async () => {
+    const user = await signUp()
+    const ip = randomIp()
+    const get = () =>
+      withDb((db) =>
+        authFor(db).handler(
+          new Request(`${env.BETTER_AUTH_URL}/api/auth/delete-account`, {
+            headers: { 'cf-connecting-ip': ip },
+          }),
+        ),
+      )
+    await statuses(LIMIT + 1, get)
+    expect(
+      (await authPost('/delete-account', { password: 'wrong-password-123' }, ip, user)).status,
+    ).toBe(401)
   })
 
   it('limits sign-up per IP and returns 429', async () => {

@@ -1,5 +1,5 @@
 # SQL-only objects: created on purpose by custom migrations, not expressible in the Drizzle
-# schema (ADR-0039 archive and audit, ADR-0040 webhook definer, ADR-0043 owner guard), and drizzle's own migration
+# schema (ADR-0039 archive and audit, ADR-0040 webhook definer, ADR-0043 owner guard, ADR-0044 account deletion), and drizzle's own migration
 # bookkeeping (the `drizzle` schema, created by the migrator). scripts/check-schema-sql.sh
 # requires each to exist in the migrated database with exactly this definition hash, and compares
 # everything else with the schema. One object per line: <kind>\t<name>\t<sha256 of definition>.
@@ -68,3 +68,13 @@ relation	drizzle.__drizzle_migrations	d79365593eead6e60ffadf3f51f286f21de4ac6f25
 relation	drizzle.__drizzle_migrations_id_seq	74344feec5b8f8e76467a676566be74fc13914098c114267f8f265c4886f5a03
 schema	drizzle	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 sequence	drizzle.__drizzle_migrations_id_seq	240fa77b2f950da7494b87fd63cbcdfd727131a93d7733d554c41eba6e4b6a55
+function	public.purge_deleted_account(target text)	b9144b560a3cc6cea886c9b6c5b32ebaa50a1845337ddabf5e9c9b4eee3b9d00
+function	public.refuse_deleted_user()	f34d62bd7b80a14e52268e1be5613bbdc441bfbcbfd531983adb6d12ba2b66f4
+function	public.replay_account_deletion(target text, deleted timestamp with time zone)	321faa34010780944aef970d14367f6bb1a9e869d8a9672fa6c8a7165f8b0bd1
+trigger	public.account.refuse_deleted_user	b56abaa28b64080c79bcd23af8415063952df45d379e8bfb81e84d1297716dbe
+trigger	public.invitation.refuse_deleted_user	0f4819be4fc608872d326ed3cc926775a6c6f0a80e10545900869e6d624c100c
+trigger	public.member.refuse_deleted_user	64746096ec4fe52df4c38e66127e4d45e0324a04cbcfb5d4b45671554fc0cf1e
+trigger	public.project.refuse_deleted_user	1ba6fea78821cacf172a6195a409eb7cc167fbce654500cda84a3deb4ad69676
+trigger	public.session.refuse_deleted_user	f9491ef4f12b0f04e5680e2b81db0288c3b839d3e1cb2dc4ce45b026ffe37858
+trigger	public.user.refuse_deleted_user	af83732c6d9920361a85d5256c7b3f3dc6f678d90fd642dde7c2dbb7f9fbb3c8
+trigger	public.verification.refuse_deleted_user	ed86c404a60ad5a04399ebd669681af0bd09b2fa9f9597a19f33bf77a51d4af4

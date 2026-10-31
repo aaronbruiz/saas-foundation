@@ -37,7 +37,7 @@ test('a signed-in user changes their name on the account page', async ({ page })
   const slug = await createOrg(page, 'acc')
   await page.getByRole('link', { name: 'Account' }).click()
   await expect(page).toHaveURL(/\/account$/)
-  await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible()
 
   await page.getByLabel('Name').fill('   ')
   await page.getByRole('button', { name: 'Save name' }).click()
@@ -138,6 +138,51 @@ test('the name form sends one request while one is pending', async ({ page }) =>
   finish()
   await expect(page.getByRole('status')).toHaveText('Name saved.')
   expect(requests).toBe(1)
+})
+
+test('deleting the account: a wrong password is refused, and fields stay out of the URL', async ({
+  page,
+}) => {
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill('wrong-password-123')
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toContainText('Incorrect password.')
+  expect(page.url()).not.toContain('password')
+})
+
+test('deleting the account: a part-way refusal says what already happened', async ({ page }) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'NOW_SOLE_OWNER',
+        message: "You're now the only owner of Beta: transfer or delete it, then try again.",
+        left: ['Acme'],
+        stillOwner: 'Beta',
+      }),
+    }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    "Your account wasn't deleted. You left Acme. You're now the only owner of Beta: transfer or delete it, then try again.",
+  )
+})
+
+test('deleting the account: on success you land signed out on the home page', async ({ page }) => {
+  await page.route('**/api/auth/delete-account', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: true }),
+    }),
+  )
+  await page.goto('/account')
+  await page.getByLabel('Password to delete your account').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Delete account' }).click()
+  await expect(page).not.toHaveURL(/\/account$/)
 })
 
 test('signed out, the account page sends you to sign in and back', async ({ browser }) => {

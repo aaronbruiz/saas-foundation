@@ -17,6 +17,7 @@ export const ProjectFields = z.strictObject({
 })
 
 export const TenantInput = z.strictObject({ tenant: TenantSlug })
+export const DeleteAccountInput = z.strictObject({ password: z.string().min(1).max(1024) })
 export const ProjectRef = z.strictObject({ tenant: TenantSlug, id: ProjectId })
 export const CreateProjectInput = z.strictObject({ tenant: TenantSlug, project: ProjectFields })
 export const UpdateProjectInput = z.strictObject({

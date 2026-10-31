@@ -10,6 +10,7 @@ import {
   CheckoutNotCreated,
   InvalidPayload,
   InvalidSignature,
+  MemberWriteUnknown,
   PriceNotFound,
   ProviderUnavailable,
   type BillingAccountState,
@@ -143,6 +144,17 @@ type PolarClient = ReturnType<typeof createPolar>
 const statusOf = (e: unknown) =>
   (e as { statusCode?: number })?.statusCode ?? (e as { status?: number })?.status
 
+/** Runs a write of a user into Polar; anything but Polar's own refusal may have landed (ADR-0044). */
+export async function memberWrite<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write()
+  } catch (e) {
+    const status = statusOf(e)
+    if (typeof status === 'number' && status >= 400 && status < 500) throw e
+    throw new MemberWriteUnknown('a member write may have reached the provider', { cause: e })
+  }
+}
+
 export type PolarConfig = {
   /** Worker secret POLAR_ACCESS_TOKEN: an organization access token. */
   accessToken: string
@@ -175,8 +187,14 @@ async function ensureCustomer(
       metadata: { [ORGANIZATION_METADATA_KEY]: org.id },
       owner: { email: owner.email, external_id: owner.userId },
     })
-  } catch {
-    return await polar.customers.getExternal(org.id)
+  } catch (created) {
+    try {
+      return await polar.customers.getExternal(org.id)
+    } catch (e) {
+      // Not found yet, but the create carries the owner as a member and may still land.
+      await memberWrite(() => Promise.reject(created))
+      throw e
+    }
   }
 }
 
@@ -201,11 +219,13 @@ async function ensureMember(
 ) {
   const members = await allMembers(polar, customerId)
   if (members.some((m) => m.external_id === user.userId)) return
-  await polar.customers.members.create(customerId, {
-    email: user.email,
-    external_id: user.userId,
-    role: 'billing_manager',
-  })
+  await memberWrite(() =>
+    polar.customers.members.create(customerId, {
+      email: user.email,
+      external_id: user.userId,
+      role: 'billing_manager',
+    }),
+  )
 }
 
 async function productFor(polar: PolarClient, priceKey: string) {
@@ -368,12 +388,16 @@ export function polarMembers(config: PolarConfig): BillingMembers {
         const existing = members.find((m) => m.external_id === next.userId)
         const successor =
           existing ??
-          (await polar.customers.members.create(customer.id, {
-            email: next.email,
-            external_id: next.userId,
-            role: 'billing_manager',
-          }))
-        await polar.customers.members.update(customer.id, successor.id, { role: 'owner' })
+          (await memberWrite(() =>
+            polar.customers.members.create(customer.id, {
+              email: next.email,
+              external_id: next.userId,
+              role: 'billing_manager',
+            }),
+          ))
+        await memberWrite(() =>
+          polar.customers.members.update(customer.id, successor.id, { role: 'owner' }),
+        )
       }
       await polar.customers.members.delete(customer.id, target.id)
     },

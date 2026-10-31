@@ -44,7 +44,7 @@ export async function findMembership(db: Db, orgId: string, userId: string) {
   return m ?? null
 }
 
-const holdsOwnerRole = (role: string) => role.split(',').some((x) => x.trim() === 'owner')
+export const holdsOwnerRole = (role: string) => role.split(',').some((x) => x.trim() === 'owner')
 
 /**
  * Members holding the `owner` role (billing:manage; ADR-0022 mirrors them as provider members). A

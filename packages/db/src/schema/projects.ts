@@ -13,9 +13,8 @@ export const project = pgTable(
       .references(() => organization.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id),
+    // Null once its creator's account is purged (ADR-0044); the project stays with its organization.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
