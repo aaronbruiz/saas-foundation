@@ -166,7 +166,7 @@ These items wait here until a milestone needs them. Each one is pulled in by a r
 
 ## Engineering rules while this roadmap holds
 
-- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope.
+- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope. Exception (owner, 2026-10-31): ADR-0043, for the proven race that left organizations with no owner.
 - **No rework during stabilization:** `GuardedClient` and the other merged controls stay as they are during M1–M2. Fix only proven defects.
 - **When a review is done:**
   - By default, one review, then one review of the corrections.

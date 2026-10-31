@@ -74,4 +74,4 @@ Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, 
 ## Notes (2026-10-31)
 
 - Renaming an organization (`organization:rename`) changes only its display name; Polar's customer keeps the name it was created with, which is what invoices bill. Whether the two should be coupled is decided before live billing.
-- ADR-0043 adds to the deletion path: before the customer is removed, the provider's subscriptions and checkout sessions are read directly, and a new checkout can't start. A concurrent owner change can now be refused at commit after its revoke ran, which fails toward less access as above.
+- ADR-0043 adds to the deletion path: before the customer is removed, the provider's checkout sessions and subscriptions are read directly, and checkouts close. A concurrent owner change can now be refused at commit after its revoke ran, which fails toward less access as above.

@@ -52,7 +52,7 @@ export type BillingMembers = {
 /** The provider's own view of an organization's account, ahead of any webhook (ADR-0043). */
 export type BillingAccountState = {
   subscriptions: { status: SubscriptionStatus }[]
-  /** A checkout session could still complete, or has just completed. */
+  /** A session could still complete, or completed and its subscription isn't listed yet. */
   hasPendingCheckout: boolean
 }
 
@@ -71,7 +71,11 @@ export class InvalidSignature extends Error {
 export class InvalidPayload extends Error {
   name = 'InvalidPayload'
 }
-export class PriceNotFound extends Error {
+/** The checkout can never exist at the provider: it refused, or the request was never sent. */
+export class CheckoutNotCreated extends Error {
+  name = 'CheckoutNotCreated'
+}
+export class PriceNotFound extends CheckoutNotCreated {
   name = 'PriceNotFound'
 }
 /**

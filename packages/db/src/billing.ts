@@ -1,5 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
-import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { rawDb, type Db } from './client.ts'
 import { organization } from './schema/auth.ts'
 import {
@@ -144,48 +143,68 @@ function supersedes(
   return TERMINAL.includes(current.status) || at > current.providerEventAt
 }
 
-/** True when the claim in `column` is unset or older than `seconds`. */
-const claimExpired = (column: AnyPgColumn, seconds: number) =>
-  sql`(${column} IS NULL OR ${column} < now() - make_interval(secs => ${seconds}))`
-
 /** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2, ADR-0040). */
 export function billing(db: Db, scope: TenantScope) {
   return {
     /**
-     * Before asking the provider for a checkout: refused (false) while a deletion holds its claim.
-     * ADR-0043: one conditional upsert, so the condition holds in the write: of a checkout and a
-     * deletion claiming at once, the row lock makes the second re-read the first's claim.
+     * Before anything reaches the provider: counts the attempt, unless a deletion has committed
+     * (false). ADR-0043: one conditional upsert, so the condition holds in the write.
      */
-    claimCheckout: (seconds: number): Promise<boolean> =>
+    startCheckoutAttempt: (): Promise<boolean> =>
       inTenant(db, scope, async (tx) => {
+        const gate = billingCheckoutGate
         const rows = await tx
-          .insert(billingCheckoutGate)
-          .values({ organizationId: scope.orgId, checkoutStartedAt: sql`now()` })
+          .insert(gate)
+          .values({ organizationId: scope.orgId, checkoutGeneration: 1, checkoutsInFlight: 1 })
           .onConflictDoUpdate({
-            target: billingCheckoutGate.organizationId,
-            set: { checkoutStartedAt: sql`now()` },
-            where: claimExpired(billingCheckoutGate.deletionStartedAt, seconds),
+            target: gate.organizationId,
+            set: {
+              checkoutGeneration: sql`${gate.checkoutGeneration} + 1`,
+              checkoutsInFlight: sql`${gate.checkoutsInFlight} + 1`,
+            },
+            where: isNull(gate.removalStartedAt),
           })
-          .returning({ organizationId: billingCheckoutGate.organizationId })
+          .returning({ organizationId: gate.organizationId })
         return rows.length > 0
       }),
-    /**
-     * Before reading the provider for a deletion: refused (false) while a checkout holds its claim.
-     * Otherwise it renews the claim, shared by anyone deleting (another owner, or a retry after a
-     * failed delete). Nothing ever releases it: a request that gives up can't tell whether another
-     * is still relying on it, so it just expires.
-     */
-    claimDeletion: (seconds: number): Promise<boolean> =>
+    /** The attempt's outcome is known: its session exists, or it can never exist. */
+    finishCheckoutAttempt: (): Promise<void> =>
       inTenant(db, scope, async (tx) => {
+        const gate = billingCheckoutGate
+        await tx
+          .update(gate)
+          .set({ checkoutsInFlight: sql`${gate.checkoutsInFlight} - 1` })
+          .where(and(eq(gate.organizationId, scope.orgId), gt(gate.checkoutsInFlight, 0)))
+      }),
+    /** Read before the provider: `commitRemoval` then proves nothing started since. */
+    deletionGate: () =>
+      inTenant(db, scope, async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(billingCheckoutGate)
+          .where(eq(billingCheckoutGate.organizationId, scope.orgId))
+        return {
+          generation: row?.checkoutGeneration ?? 0,
+          checkoutsInFlight: row?.checkoutsInFlight ?? 0,
+          removalStarted: !!row?.removalStartedAt,
+        }
+      }),
+    /**
+     * Closes checkouts for good, if none started since `generation` was read and none is in flight
+     * (false otherwise). A stalled request can't get past this however long it took to arrive.
+     */
+    commitRemoval: (generation: number): Promise<boolean> =>
+      inTenant(db, scope, async (tx) => {
+        const gate = billingCheckoutGate
         const rows = await tx
-          .insert(billingCheckoutGate)
-          .values({ organizationId: scope.orgId, deletionStartedAt: sql`now()` })
+          .insert(gate)
+          .values({ organizationId: scope.orgId, removalStartedAt: sql`now()` })
           .onConflictDoUpdate({
-            target: billingCheckoutGate.organizationId,
-            set: { deletionStartedAt: sql`now()` },
-            where: claimExpired(billingCheckoutGate.checkoutStartedAt, seconds),
+            target: gate.organizationId,
+            set: { removalStartedAt: sql`now()` },
+            where: and(eq(gate.checkoutGeneration, generation), eq(gate.checkoutsInFlight, 0)),
           })
-          .returning({ organizationId: billingCheckoutGate.organizationId })
+          .returning({ organizationId: gate.organizationId })
         return rows.length > 0
       }),
     subscription: (): Promise<BillingSubscription | null> =>

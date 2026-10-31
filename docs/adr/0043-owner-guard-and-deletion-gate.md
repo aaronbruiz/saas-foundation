@@ -2,6 +2,8 @@
 
 Status: Proposed · Date: 2026-10-31
 
+Owner 2026-10-31: supports decision 1 and documenting it here with an explicit freeze exception. Decision 2 isn't approved; this version answers the owner's objections to the earlier one.
+
 ## Context
 
 The organization settings feature (roadmap, "Parallel track: Starting kit") adds leave, transfer and delete. Two check-then-write gaps were investigated first.
@@ -39,37 +41,50 @@ ADR-0022's hooks still run, and their order can't change: the revoke runs before
 
 ### 2. The deletion gate
 
-`billing_checkout_gate`: one row per organization, with two timestamps. They're claims, each honored for `BILLING_CLAIM_SECONDS` (300). The database holds no billing policy: the app decides what's live (`isLive`), and the database only serializes who goes first.
+**What Polar can't do.** It has no idempotency keys, no conditional writes, and no call to cancel or expire a checkout session (API 2026-04). So once a create request has left, nothing on our side can prove it won't still land: not a timeout, not an abort, not time passing. The design therefore uses no clock for safety. It only goes ahead on what it can prove, and otherwise refuses.
 
-- **Checkout:** after the existing checks and before calling the provider, one conditional upsert sets `checkout_started_at`, unless a deletion claim is unexpired. Refused: 409, and the provider is never called.
+`billing_checkout_gate`: one row per organization.
+
+- **Checkout.** Before anything reaches the provider, one conditional upsert raises `checkout_generation` and `checkouts_in_flight`, unless `removal_started_at` is set (409; the provider is never called). When the outcome is known, the count comes down: the session exists, or the attempt can never exist (nothing was sent to create it, or Polar answered 4xx). A network error or a 5xx on the create is unknown, and stays counted.
 - **Deletion,** in Better Auth's `beforeDeleteOrganization`, after its permission check, so every path is covered:
-  1. One conditional upsert sets `deletion_started_at`, unless a checkout claim is unexpired. Refused: 409.
-  2. Read the provider: every subscription for the customer, and its checkout sessions. Polar's `open` unexpired, `confirmed`, and `succeeded` in the last 10 minutes count as pending.
-  3. Live by `isLive`, on our row or the provider's, or a pending checkout: 409. Provider unreadable: 503.
+  1. Read the gate. Removal already committed: go ahead (a retry). Anything in flight: 409.
+  2. Read the provider: every checkout session first, then every subscription. Live by `isLive`, on our row or the provider's, or a session that could still complete: 409. Unreadable: 503.
+  3. Commit: one conditional upsert sets `removal_started_at`, only if the generation is unchanged and nothing is in flight. Otherwise 409.
   4. Remove the provider's customer (ADR-0022), then Better Auth deletes the organization.
 
-Each upsert is the condition held in the write: the row lock makes the second claimant re-read the first's claim, so of a checkout and a deletion, one is refused.
+**Why that's enough.** With none in flight at step 1, every session that will ever exist from earlier attempts already exists, so step 2 sees them. The generation check proves none started during step 2, however long it took, and after the commit none can start. Nothing here expires, so a request paused at any point either fails its commit or finds checkouts closed.
 
-A claim is never released, only renewed or expired. Several deletions can share it (a second owner, a retry after a failed delete), and one that gives up can't know whether another still relies on it. An earlier design released on refusal, and review showed a failed attempt reopening checkouts behind a deletion still in progress. The cost: a refused or failed deletion blocks that organization's new checkouts for up to 5 minutes.
+**Reading the provider.** Sessions are read first, with no status filter and a stable order, so a session finishing mid-read can't shift a page. A finished session can't change, so the subscriptions read afterwards include what they produced. Only `expired`, or `succeeded` with a subscription whose `checkout_id` is that session's, counts as finished. Everything else blocks, including `failed` and any future status, and with no settling window.
 
-| Case                                                         | What happens                                                                   |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| New checkout during a deletion                               | Refused by the claim                                                           |
-| Checkout on its way to the provider, session not visible yet | Its claim refuses the deletion for 5 minutes                                   |
-| Session already issued, unpaid                               | Pending: deletion refused until it expires or completes; it can't be cancelled |
-| Paid, webhook not delivered                                  | The provider's subscription is read directly: refused                          |
-| Webhook delivered late, after a legitimate deletion          | `unlinked`, acknowledged and logged; only ended subscriptions can get here     |
-| Request crashes after claiming                               | The claim expires; checkouts wait at most 5 minutes                            |
-| Delete fails after the claim, or a second owner deletes      | The claim is shared and renewed, and a retry proceeds                          |
-| Deletion refused, or the provider is unreadable              | The claim stays, and new checkouts wait for it to expire                       |
-| Polar unreachable                                            | 503 and nothing changes                                                        |
+The database holds no billing policy: the app decides what's live (`isLive`), and the row only orders checkouts against deletion. A refused deletion changes nothing, so it costs checkouts nothing.
 
-**Limits, not closed here:**
+| Case                                                       | What happens                                                                              |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| New checkout after the commit                              | Refused; the provider isn't called                                                        |
+| Checkout paused on its way to the provider, for any time   | In flight: deletion refused until it resolves                                             |
+| Deletion paused on a provider read while a checkout starts | Its commit fails                                                                          |
+| Session issued, unpaid, or payment in progress             | Refused until Polar says it's finished                                                    |
+| Payment completes between the two reads                    | Seen as `open`: refused. Seen as `succeeded`: its subscription must be listed, or refused |
+| Paid, webhook not delivered                                | Read from the provider: refused                                                           |
+| Request crashes after the commit                           | Checkouts stay closed; retrying the deletion finishes it                                  |
+| Request crashes before the commit                          | Nothing changed                                                                           |
+| Checkout's outcome unknown (crash, network error)          | Refused until an operator resolves it                                                     |
+| Polar unreachable                                          | 503, nothing changes                                                                      |
 
-- It trusts Polar's list APIs to reflect a confirmed payment at once, and that a succeeded checkout's subscription appears within 10 minutes; neither is measured. `apps/app/eval/polar-provider.test.ts` asserts the read against the sandbox; the owner runs it before live billing.
-- A request that outlasts the claim could let a checkout in behind it. Worker requests calling Polar should take seconds, and a claim lasts 5 minutes.
-- An owner can be blocked until an abandoned session expires, for as long as Polar keeps it open. There's no way to shorten that.
-- Removing the provider's customer before a database failure can't be undone (ADR-0022): a retry deletes the rest.
+**The limitation that remains.** An attempt whose outcome is unknown blocks that organization's deletion, indefinitely, until someone checks Polar and clears it (runbook, "Stuck checkout attempts"). That check is a judgment, not a proof: a request that never answered could in principle land afterwards. If it did, a customer could pay for a deleted organization; the webhook would answer `unlinked` and log it. Closing this needs a provider feature (idempotency, or a way to cancel a session) or a compensating action, such as revoking and refunding on `unlinked`, which is a policy decision and isn't built here.
+
+A session that never reaches a finished status would also block deletion, with no operator step to clear it. Whether Polar always moves `open` and `failed` to `expired` is a release gate below.
+
+### Release gates
+
+Neither is verified, and both must pass before this ships to production:
+
+- **Hyperdrive.** The settings e2e against a preview, plus the owner races through the preview, with the trigger's refusals and the isolation assumption observed through Hyperdrive.
+- **Real Polar, in the sandbox.** `apps/app/eval/polar-provider.test.ts` for session visibility, plus a paid checkout showing that: a session is listed as soon as its create answers; a paid session's subscription has its `checkout_id`, and appears in the list by customer; abandoned `open` and `failed` sessions reach `expired`; and the portal can't start a subscription for a customer without a live one.
+
+### Freeze exception
+
+The roadmap records it. It covers the proven owner race and, if accepted, this gate.
 
 ## Alternatives
 
@@ -77,10 +92,12 @@ A claim is never released, only renewed or expired. Several deletions can share 
 - **A lock taken in middleware.** Rejected: a Worker request has no transaction spanning Better Auth's statements, and session-level advisory locks don't survive Hyperdrive's pooling.
 - **SERIALIZABLE for owner changes.** Rejected: Better Auth's adapter doesn't set a level, and every retry path would need handling. The check would still be in the database.
 - **Trusting the webhook, or a lock around it.** Rejected: payment can complete before delivery, so no lock around delivery closes the gap.
+- **Timed claims with a longer timeout or a settling window.** The first version of this ADR's gate. Rejected: an expired operation can still complete, and a window proves nothing about remote work. Releasing a claim on refusal also let a failed attempt reopen checkouts behind a deletion in progress.
 - **Encoding "live" in SQL so a trigger can refuse the delete.** Rejected: billing policy stays in `policy.ts` (ADR-0020), and the provider's state isn't in the database anyway.
 
 ## Consequences
 
-- A new SQL function and trigger, registered in `packages/db/sql-only-objects.tsv`, and a new tenant table with its grant and archive trigger. A restored gate row isn't needed: a missing row means no claim.
-- Deleting an organization in Polar mode makes two more provider calls, and fails closed if they fail. The token's existing scopes cover them (`subscriptions:read`, `checkouts:write`).
+- A new SQL function and trigger, registered in `packages/db/sql-only-objects.tsv`, and a new tenant table with its grant and archive trigger. A restored gate row isn't needed: a missing row means nothing in flight and nothing committed.
+- Deleting an organization in Polar mode reads two more provider lists, and fails closed if they fail. The token's existing scopes cover them (`subscriptions:read`, `checkouts:write`).
+- After the commit, an organization whose deletion crashed can't buy until the deletion is retried: the customer may already be gone.
 - Rollback of the app alone is safe: old code ignores the gate, and the guard only refuses what would leave no owner.

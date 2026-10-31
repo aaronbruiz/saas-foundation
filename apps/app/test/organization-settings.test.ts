@@ -5,8 +5,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { startCheckout } from '../src/modules/billing/service'
-import { isPendingCheckout } from '../src/modules/billing/providers/polar'
-import type { BillingProvider } from '../src/modules/billing/provider'
+import { isLive } from '../src/modules/billing/policy'
+import { readAccountState } from '../src/modules/billing/providers/polar'
+import {
+  CheckoutNotCreated,
+  PriceNotFound,
+  type BillingProvider,
+} from '../src/modules/billing/provider'
 import {
   deleteOrganization,
   getTenant,
@@ -646,9 +651,8 @@ describe('an organization keeps an owner (ADR-0043)', { timeout: 60_000 }, () =>
 
 describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => {
   const quiet = { subscriptions: [], hasPendingCheckout: false }
-  const providerWith = (
-    state: Awaited<ReturnType<BillingProvider['accountState']>> | Error = quiet,
-  ) =>
+  type State = Awaited<ReturnType<BillingProvider['accountState']>>
+  const providerWith = (state: State | Error = quiet) =>
     ({
       checkout: vi.fn(async () => 'https://checkout.example/x'),
       portal: vi.fn(async () => 'https://portal.example/x'),
@@ -657,37 +661,72 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
         return state
       }),
     }) satisfies BillingProvider
+  /** A promise the test settles, so a request stays paused exactly as long as the test wants. */
+  function paused<T>() {
+    let resume: (value: T) => void = () => {}
+    let fail: (e: Error) => void = () => {}
+    const promise = new Promise<T>((res, rej) => {
+      resume = res
+      fail = rej
+    })
+    return { promise, resume, fail }
+  }
   const begin = (orgId: string, provider: BillingProvider | null) =>
     withDb((db) => beginOrganizationDeletion(db, orgId, provider))
   const buy = (user: TestUser, tenant: string, provider: BillingProvider) =>
     startCheckout(user.headers, { tenant, price: 'pro_monthly' }, provider)
-  const age = (orgId: string, column: string) =>
-    asOwner((q) =>
-      q(
-        `UPDATE billing_checkout_gate SET ${column} = now() - interval '6 minutes'
-          WHERE organization_id = $1`,
-        [orgId],
-      ),
-    )
 
-  it('a new checkout is refused once a deletion has begun, before reaching the provider', async () => {
+  it('a checkout paused on its way to the provider blocks the deletion for as long as it lasts', async () => {
     const { owner, slug, orgId } = await team()
-    expect(await begin(orgId, providerWith())).toBeNull()
+    const session = paused<string>()
     const provider = providerWith()
-    await expectStatus(() => buy(owner, slug, provider), 409)
-    expect(provider.checkout).not.toHaveBeenCalled()
-  })
-
-  it('a deletion is refused just after a checkout started, even with nothing at the provider yet', async () => {
-    const { owner, slug, orgId } = await team()
-    const provider = providerWith()
-    await buy(owner, slug, provider)
-    expect(await begin(orgId, providerWith())).toMatch(/just started/)
-    await age(orgId, 'checkout_started_at')
+    provider.checkout.mockImplementation(() => session.promise)
+    const attempt = buy(owner, slug, provider)
+    await vi.waitFor(() => expect(provider.checkout).toHaveBeenCalled())
+    // However long this takes: no timestamp is stored, so nothing here can expire.
+    expect(await begin(orgId, providerWith())).toMatch(/hasn't finished/)
+    expect(await begin(orgId, providerWith())).toMatch(/hasn't finished/)
+    session.resume('https://checkout.example/late')
+    await expect(attempt).resolves.toEqual({ url: 'https://checkout.example/late' })
+    // Finished: the session is at the provider now, so its state decides.
+    const open = { subscriptions: [], hasPendingCheckout: true }
+    expect(await begin(orgId, providerWith(open))).toMatch(/still open/)
     expect(await begin(orgId, providerWith())).toBeNull()
   })
 
-  it('of a checkout and a deletion claiming together, exactly one wins', async () => {
+  it('a deletion paused on the provider cannot go on after a checkout started meanwhile', async () => {
+    const { owner, slug, orgId } = await team()
+    const read = paused<State>()
+    const stalled = providerWith()
+    stalled.accountState.mockImplementation(() => read.promise)
+    const deletion = begin(orgId, stalled)
+    await vi.waitFor(() => expect(stalled.accountState).toHaveBeenCalled())
+    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
+    // Its read says nothing is there: it was true when taken, and it's stale now.
+    read.resume(quiet)
+    await expect(deletion).resolves.toMatch(/just started/)
+    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
+  })
+
+  it('a deletion paused on the provider cannot go on while that checkout is still in flight', async () => {
+    const { owner, slug, orgId } = await team()
+    const read = paused<State>()
+    const stalled = providerWith()
+    stalled.accountState.mockImplementation(() => read.promise)
+    const deletion = begin(orgId, stalled)
+    await vi.waitFor(() => expect(stalled.accountState).toHaveBeenCalled())
+    const session = paused<string>()
+    const buying = providerWith()
+    buying.checkout.mockImplementation(() => session.promise)
+    const attempt = buy(owner, slug, buying)
+    await vi.waitFor(() => expect(buying.checkout).toHaveBeenCalled())
+    read.resume(quiet)
+    await expect(deletion).resolves.toMatch(/just started/)
+    session.resume('https://checkout.example/x')
+    await expect(attempt).resolves.toBeDefined()
+  })
+
+  it('of a checkout and a deletion racing, never both', async () => {
     for (let i = 0; i < 10; i++) {
       const { owner, slug, orgId } = await team()
       const [checkout, deletion] = await Promise.allSettled([
@@ -696,15 +735,58 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
       ])
       const checkoutWon = checkout.status === 'fulfilled'
       const deletionWon = deletion.status === 'fulfilled' && deletion.value === null
-      expect(checkoutWon).not.toBe(deletionWon)
+      expect(checkoutWon && deletionWon).toBe(false)
+      if (!checkoutWon) expect(checkout.reason).toMatchObject({ status: 409 })
     }
   })
 
-  it('an open checkout session blocks the deletion', async () => {
-    const { orgId } = await team()
-    const pending = { subscriptions: [], hasPendingCheckout: true }
-    expect(await begin(orgId, providerWith(pending))).toMatch(/still open/)
+  it('a checkout whose outcome is unknown blocks the deletion until someone resolves it', async () => {
+    const { owner, slug, orgId } = await team()
+    const lost = providerWith()
+    lost.checkout.mockRejectedValue(new Error('connection lost after sending'))
+    await expect(buy(owner, slug, lost)).rejects.toThrow('connection lost')
+    expect(await begin(orgId, providerWith())).toMatch(/outcome is unknown/)
+    // Another checkout still works; the unknown one stays counted.
+    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
+    expect(await begin(orgId, providerWith())).toMatch(/outcome is unknown/)
+    // The runbook's step, after checking the provider.
+    await asOwner((q) =>
+      q('UPDATE billing_checkout_gate SET checkouts_in_flight = 0 WHERE organization_id = $1', [
+        orgId,
+      ]),
+    )
     expect(await begin(orgId, providerWith())).toBeNull()
+  })
+
+  it('a checkout that can never exist at the provider does not block the deletion', async () => {
+    for (const error of [new CheckoutNotCreated('refused'), new PriceNotFound('no price')]) {
+      const { owner, slug, orgId } = await team()
+      const refused = providerWith()
+      refused.checkout.mockRejectedValue(error)
+      await expect(buy(owner, slug, refused)).rejects.toBeDefined()
+      expect(await begin(orgId, providerWith())).toBeNull()
+    }
+  })
+
+  it('once committed, no checkout starts, however late it arrives, and a retry goes ahead', async () => {
+    const { owner, slug, orgId } = await team()
+    expect(await begin(orgId, providerWith())).toBeNull()
+    const provider = providerWith()
+    await expectStatus(() => buy(owner, slug, provider), 409)
+    expect(provider.checkout).not.toHaveBeenCalled()
+    // A failed delete's retry: the checks passed, nothing can have started, the provider's
+    // customer may already be gone.
+    const unreadable = providerWith(new Error('down'))
+    expect(await begin(orgId, unreadable)).toBeNull()
+    expect(unreadable.accountState).not.toHaveBeenCalled()
+  })
+
+  it('a refused deletion leaves checkouts working and needs nothing released', async () => {
+    const { owner, slug, orgId } = await team()
+    const open = { subscriptions: [], hasPendingCheckout: true }
+    expect(await begin(orgId, providerWith(open))).toMatch(/still open/)
+    await expect(begin(orgId, providerWith(new Error('down')))).rejects.toThrow('down')
+    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
   })
 
   it('a subscription the provider knows but no webhook delivered blocks the deletion', async () => {
@@ -715,42 +797,28 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     expect(await begin(orgId, providerWith(ended))).toBeNull()
   })
 
-  it('an unreadable provider refuses the deletion; its claim stays until it expires', async () => {
-    const { owner, slug, orgId } = await team()
-    await expect(begin(orgId, providerWith(new Error('down')))).rejects.toThrow('down')
-    await expectStatus(() => buy(owner, slug, providerWith()), 409)
-    await age(orgId, 'deletion_started_at')
-    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
-  })
-
-  it("a crashed deletion's claim expires, so checkouts come back", async () => {
-    const { owner, slug, orgId } = await team()
-    expect(await begin(orgId, providerWith())).toBeNull()
-    await expectStatus(() => buy(owner, slug, providerWith()), 409)
-    await age(orgId, 'deletion_started_at')
-    await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
-  })
-
-  it('a retry after a failed delete proceeds, without waiting out its own claim', async () => {
-    const { orgId } = await team()
-    expect(await begin(orgId, providerWith())).toBeNull()
-    expect(await begin(orgId, providerWith())).toBeNull()
-  })
-
-  it('a deletion that fails leaves the claim another deletion is relying on', async () => {
-    const { owner, slug, orgId } = await team()
-    // A is waiting on the provider while B reads an empty account and goes on to delete.
-    let failA: (e: Error) => void = () => {}
-    const providerA = providerWith()
-    providerA.accountState.mockImplementation(() => new Promise((_, reject) => (failA = reject)))
-    const a = begin(orgId, providerA)
-    await vi.waitFor(() => expect(providerA.accountState).toHaveBeenCalled())
-    expect(await begin(orgId, providerWith())).toBeNull()
-    failA(new Error('down'))
-    await expect(a).rejects.toThrow('down')
+  it("one organization's attempt or commit doesn't touch another's", async () => {
+    const { owner, slug, outsider, otherSlug, orgId } = await team()
+    const session = paused<string>()
     const provider = providerWith()
-    await expectStatus(() => buy(owner, slug, provider), 409)
-    expect(provider.checkout).not.toHaveBeenCalled()
+    provider.checkout.mockImplementation(() => session.promise)
+    const attempt = buy(outsider, otherSlug, provider)
+    await vi.waitFor(() => expect(provider.checkout).toHaveBeenCalled())
+    expect(await begin(orgId, providerWith())).toBeNull()
+    await expectStatus(() => buy(owner, slug, providerWith()), 409)
+    session.resume('https://checkout.example/x')
+    await expect(attempt).resolves.toBeDefined()
+  })
+
+  it('the gate row goes with the organization', async () => {
+    const { owner, slug, orgId } = await team()
+    await buy(owner, slug, providerWith())
+    const { name } = await getTenant(owner.headers, { tenant: slug })
+    await deleteOrganization(owner.headers, { tenant: slug, confirmName: name })
+    const { rows } = await asOwner((q) =>
+      q('SELECT 1 FROM billing_checkout_gate WHERE organization_id = $1', [orgId]),
+    )
+    expect(rows).toEqual([])
   })
 
   describe('through Better Auth, on every path', () => {
@@ -811,41 +879,70 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
       expect(await exists(orgId)).toBe(true)
     })
   })
+})
 
-  it("one organization's claim doesn't touch another's", async () => {
-    const { outsider, otherSlug, orgId } = await team()
-    expect(await begin(orgId, providerWith())).toBeNull()
-    await expect(buy(outsider, otherSlug, providerWith())).resolves.toBeDefined()
+describe("reading Polar's state for a deletion (ADR-0043)", () => {
+  type Checkout = { id: string; status: string }
+  type Subscription = { status: string; checkout_id: string | null }
+  async function* each<T>(items: T[]) {
+    yield* items
+  }
+  const read = (checkouts: Checkout[], subscriptions: Subscription[] = []) =>
+    readAccountState({ checkouts: () => each(checkouts), subscriptions: () => each(subscriptions) })
+
+  it('anything that could still complete blocks, without looking at a clock', async () => {
+    for (const status of ['open', 'confirmed', 'failed', 'some_future_status'])
+      await expect(read([{ id: 'c', status }])).resolves.toMatchObject({ hasPendingCheckout: true })
   })
 
-  it('the claim row goes with the organization', async () => {
-    const { owner, slug, orgId } = await team()
-    await buy(owner, slug, providerWith())
-    await age(orgId, 'checkout_started_at')
-    const { name } = await getTenant(owner.headers, { tenant: slug })
-    await deleteOrganization(owner.headers, { tenant: slug, confirmName: name })
-    const { rows } = await asOwner((q) =>
-      q('SELECT 1 FROM billing_checkout_gate WHERE organization_id = $1', [orgId]),
-    )
-    expect(rows).toEqual([])
-  })
-
-  it("counts Polar's open, confirmed and recently succeeded checkouts as pending", () => {
-    const now = Date.parse('2026-10-31T12:00:00Z')
-    const at = (minutes: number) => new Date(now + minutes * 60_000).toISOString()
-    const checkout = (status: string, fields = {}) => ({
-      status,
-      expires_at: at(30),
-      created_at: at(-60),
-      modified_at: null,
-      ...fields,
+  it('only an expired session is finished without a subscription', async () => {
+    await expect(read([{ id: 'c', status: 'expired' }])).resolves.toEqual({
+      subscriptions: [],
+      hasPendingCheckout: false,
     })
-    expect(isPendingCheckout(checkout('open'), now)).toBe(true)
-    expect(isPendingCheckout(checkout('open', { expires_at: at(-1) }), now)).toBe(false)
-    expect(isPendingCheckout(checkout('confirmed', { expires_at: at(-1) }), now)).toBe(true)
-    expect(isPendingCheckout(checkout('succeeded', { modified_at: at(-5) }), now)).toBe(true)
-    expect(isPendingCheckout(checkout('succeeded', { modified_at: at(-11) }), now)).toBe(false)
-    expect(isPendingCheckout(checkout('expired'), now)).toBe(false)
-    expect(isPendingCheckout(checkout('failed'), now)).toBe(false)
+  })
+
+  it('a succeeded session blocks until its own subscription is listed, however long ago it succeeded', async () => {
+    const paid = { id: 'c1', status: 'succeeded' }
+    await expect(read([paid])).resolves.toMatchObject({ hasPendingCheckout: true })
+    await expect(
+      read([paid], [{ status: 'canceled', checkout_id: 'another-session' }]),
+    ).resolves.toMatchObject({ hasPendingCheckout: true })
+    await expect(read([paid], [{ status: 'active', checkout_id: 'c1' }])).resolves.toEqual({
+      subscriptions: [{ status: 'active' }],
+      hasPendingCheckout: false,
+    })
+  })
+
+  it('reads subscriptions only after every session, so a payment between the reads is seen', async () => {
+    // The session is open when read, and payment completes while this request is paused: it must
+    // already have refused, not gone on to a subscription list that predates the payment.
+    const subscriptions = vi.fn(() => each<Subscription>([]))
+    await expect(
+      readAccountState({ checkouts: () => each([{ id: 'c', status: 'open' }]), subscriptions }),
+    ).resolves.toMatchObject({ hasPendingCheckout: true })
+    expect(subscriptions).not.toHaveBeenCalled()
+
+    // Paid before the session is read: the subscription list, read later, must show it.
+    const order: string[] = []
+    const result = await readAccountState({
+      checkouts: async function* () {
+        order.push('checkouts:start')
+        yield { id: 'c', status: 'succeeded' }
+        order.push('checkouts:end')
+      },
+      subscriptions: async function* () {
+        order.push('subscriptions:start')
+        yield { status: 'active', checkout_id: 'c' }
+      },
+    })
+    expect(order).toEqual(['checkouts:start', 'checkouts:end', 'subscriptions:start'])
+    expect(result).toEqual({ subscriptions: [{ status: 'active' }], hasPendingCheckout: false })
+  })
+
+  it('an unknown subscription status counts as live, as in the webhook', async () => {
+    const { subscriptions } = await read([], [{ status: 'some_future_status', checkout_id: null }])
+    expect(subscriptions).toEqual([{ status: 'incomplete' }])
+    expect(isLive(subscriptions[0]!)).toBe(true)
   })
 })

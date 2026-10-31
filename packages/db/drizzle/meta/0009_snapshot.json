@@ -1,5 +1,5 @@
 {
-  "id": "b3bb223f-805c-4eb7-b62c-4cf5da190b19",
+  "id": "92c74932-c651-410d-942a-03a43e60c402",
   "prevId": "9fd61161-8599-4b37-8ec7-cff11e66de24",
   "version": "7",
   "dialect": "postgresql",
@@ -806,14 +806,22 @@
           "primaryKey": true,
           "notNull": true
         },
-        "checkout_started_at": {
-          "name": "checkout_started_at",
-          "type": "timestamp with time zone",
+        "checkout_generation": {
+          "name": "checkout_generation",
+          "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": 0
         },
-        "deletion_started_at": {
-          "name": "deletion_started_at",
+        "checkouts_in_flight": {
+          "name": "checkouts_in_flight",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "removal_started_at": {
+          "name": "removal_started_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
