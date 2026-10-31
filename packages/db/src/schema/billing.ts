@@ -39,6 +39,17 @@ export const billingSubscription = pgTable(
   ],
 )
 
+// ADR-0043: one row per organization once it has tried to check out or be deleted. Each column is
+// a claim with a time limit the app chooses, so nothing can stay stuck. Reading the provider's state
+// (a network call) happens between the claim and the deletion, outside any transaction.
+export const billingCheckoutGate = pgTable('billing_checkout_gate', {
+  organizationId: text('organization_id')
+    .primaryKey()
+    .references(() => organization.id, { onDelete: 'cascade' }),
+  checkoutStartedAt: timestamp('checkout_started_at', { withTimezone: true }),
+  deletionStartedAt: timestamp('deletion_started_at', { withTimezone: true }),
+})
+
 // Dedupe log for webhook deliveries (AGENTS.md invariant 11). Not tenant data.
 export const billingWebhookEvent = pgTable(
   'billing_webhook_event',

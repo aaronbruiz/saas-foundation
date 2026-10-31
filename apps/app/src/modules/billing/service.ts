@@ -6,7 +6,7 @@ import { withDb } from '../../server/db'
 import { HttpError, parseInput } from '../../server/errors'
 import { authorize, can } from '../../server/permissions'
 import { PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
-import { configuredProvider } from './config'
+import { BILLING_CLAIM_SECONDS, configuredProvider } from './config'
 import { PriceNotFound, type BillingProvider } from './provider'
 
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
@@ -55,6 +55,9 @@ export async function startCheckout(
     if (isLive(sub))
       throw new HttpError(409, 'This organization already has a subscription. Use Manage billing.')
     if (!provider) throw new HttpError(503, 'Billing is not configured')
+    // ADR-0043: before the session exists, so a deletion that reads the provider next can't miss it.
+    if (!(await billing(db, ctx).claimCheckout(BILLING_CLAIM_SECONDS)))
+      throw new HttpError(409, 'This organization is being deleted.')
     const back = `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
     try {
       const url = await provider.checkout({

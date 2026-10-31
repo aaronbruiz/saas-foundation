@@ -1,7 +1,11 @@
 import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth, type BotProtection } from '@saas-foundation/auth'
 import { billing, listOwners, type Db } from '@saas-foundation/db'
-import { configuredMembers } from '../modules/billing/config'
+import {
+  BILLING_CLAIM_SECONDS,
+  configuredMembers,
+  configuredProvider,
+} from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
 import { mailerFor, render } from './email'
 import { logBetterAuth, logWarn } from './log'
@@ -83,6 +87,39 @@ export const turnstileSiteKey = () =>
     ? null
     : vars.TURNSTILE_SITE_KEY!
 
+/**
+ * ADR-0043: claims the deletion so no new checkout starts, then asks for what a webhook may not have
+ * delivered yet. Because no session can start after the claim and every open one blocks, none can
+ * complete after the provider is read. Returns the refusal's message, or null to go ahead. The
+ * decision stays in the billing policy; the database only holds the claim.
+ */
+export async function beginOrganizationDeletion(
+  db: Db,
+  orgId: string,
+  provider: ReturnType<typeof configuredProvider>,
+): Promise<string | null> {
+  const gate = billing(db, { orgId })
+  const claim = await gate.claimDeletion(BILLING_CLAIM_SECONDS)
+  if (claim === 'refused')
+    return 'A checkout for this organization was just started. Try again in a few minutes.'
+  // A claim someone else took stays: they may be past this point, deleting.
+  const release = () => (claim === 'taken' ? gate.releaseDeletion() : undefined)
+  try {
+    const state = provider && (await provider.accountState(orgId))
+    const live = isLive(await gate.subscription()) || !!state?.subscriptions.some(isLive)
+    const refusal = live
+      ? 'This organization has an active subscription. Cancel it in Billing first.'
+      : state?.hasPendingCheckout
+        ? 'A checkout for this organization is still open. Try again once it completes or expires.'
+        : null
+    if (refusal) await release()
+    return refusal
+  } catch (e) {
+    await release()
+    throw e
+  }
+}
+
 export function authFor(db: Db) {
   const mailer = mailerFor(env)
   const members = configuredMembers()
@@ -110,6 +147,7 @@ export function authFor(db: Db) {
       memberLimit: async (orgId) =>
         entitlementsFor(await billing(db, { orgId }).subscription()).limits.members,
       blocksDeletion: async (orgId) => isLive(await billing(db, { orgId }).subscription()),
+      beginDeletion: (orgId) => beginOrganizationDeletion(db, orgId, configuredProvider()),
       // ADR-0022: the provider's billing logins follow the owner role.
       ...(members && {
         members: {

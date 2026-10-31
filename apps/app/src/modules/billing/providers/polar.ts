@@ -213,6 +213,29 @@ async function productFor(polar: PolarClient, priceKey: string) {
   return product
 }
 
+/** A succeeded checkout's subscription may not be listed yet, for about this long (unmeasured). */
+const SUCCEEDED_SETTLE_MS = 10 * 60 * 1000
+
+/**
+ * Polar can't cancel or expire a checkout session (API 2026-04), so a deletion waits for each one:
+ * unexpired `open`, `confirmed` (payment in progress), and recently `succeeded`.
+ */
+export function isPendingCheckout(
+  checkout: {
+    status: string
+    expires_at: string
+    created_at: string
+    modified_at: string | null
+  },
+  now: number,
+) {
+  if (checkout.status === 'confirmed') return true
+  if (checkout.status === 'open') return Date.parse(checkout.expires_at) > now
+  if (checkout.status !== 'succeeded') return false
+  const settled = Date.parse(checkout.modified_at ?? checkout.created_at) + SUCCEEDED_SETTLE_MS
+  return settled > now
+}
+
 /** Polar behind the provider interface. Tax: Polar is merchant of record (ADR-0022). */
 export function polarProvider(config: PolarConfig): BillingProvider {
   const polar = polarClient(config)
@@ -254,6 +277,22 @@ export function polarProvider(config: PolarConfig): BillingProvider {
         return_url: req.returnUrl,
       })
       return session.customer_portal_url
+    },
+    async accountState(organizationId) {
+      const customer = await customerOf(polar, organizationId)
+      if (!customer) return { subscriptions: [], hasPendingCheckout: false }
+      const subscriptions = []
+      for await (const s of polar.subscriptions.iterList({ customer_id: customer.id, limit: 100 }))
+        // An unknown status maps as the webhook does: non-terminal, so it blocks (fails closed).
+        subscriptions.push({ status: STATUS[s.status] ?? ('incomplete' as const) })
+      const now = Date.now()
+      for await (const c of polar.checkouts.iterList({
+        customer_id: customer.id,
+        status: ['open', 'confirmed', 'succeeded'],
+        limit: 100,
+      }))
+        if (isPendingCheckout(c, now)) return { subscriptions, hasPendingCheckout: true }
+      return { subscriptions, hasPendingCheckout: false }
     },
   }
 }

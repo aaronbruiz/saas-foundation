@@ -49,6 +49,9 @@ function TenantLayout() {
               Billing
             </Link>
           )}
+          <Link to="/t/$tenant/settings" params={{ tenant: tenant.slug }} className="underline">
+            Settings
+          </Link>
           <Link to="/account" className="underline">
             Account
           </Link>

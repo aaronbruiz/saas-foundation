@@ -9,6 +9,7 @@ export {
   type SubscriptionSnapshot,
 } from './billing.ts'
 export { createDb, type Db } from './client.ts'
+export { isOwnerGuardViolation } from './owner-guard.ts'
 export { currentDatabase, ping } from './health.ts'
 export {
   cancelPendingInvitation,

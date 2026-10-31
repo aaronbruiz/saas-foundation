@@ -14,6 +14,9 @@ export const CAPABILITIES = [
   'member:read',
   'member:invite',
   'member:manage',
+  'organization:rename',
+  'organization:transfer',
+  'organization:delete',
   'billing:read',
   'billing:manage',
 ] as const
@@ -25,10 +28,13 @@ export type Capability = (typeof CAPABILITIES)[number]
 // non-owner or switching them between member and admin goes with `member:manage`; an admin may do
 // it to themselves, and no one to an owner (owner decisions 2026-10-30). Billing (ADR-0020): owner and admin see the plan
 // and usage; only the owner, who also alone can delete the organization, starts or changes a paid
-// subscription.
+// subscription. Owners and admins rename the organization; only an owner transfers ownership or
+// deletes it (owner decisions 2026-10-31). Leaving needs only membership.
 const MATRIX = {
   owner: CAPABILITIES,
-  admin: CAPABILITIES.filter((c) => c !== 'billing:manage'),
+  admin: CAPABILITIES.filter(
+    (c) => c !== 'billing:manage' && c !== 'organization:transfer' && c !== 'organization:delete',
+  ),
   member: ['project:read', 'project:create', 'project:update', 'member:read'],
 } as const satisfies Record<string, readonly Capability[]>
 

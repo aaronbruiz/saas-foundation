@@ -176,6 +176,21 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   await carol.getByRole('button', { name: `Make ${carolEmail} member` }).click()
   await expect(carol.getByRole('button', { name: /^Remove / })).toHaveCount(0)
 
+  // Ownership moves to Carol in settings and back: each time the giver becomes an admin. Here,
+  // since it needs two real users and the login limit leaves no sign-in for a test of its own.
+  await alice.getByRole('link', { name: 'Settings' }).click()
+  await alice.getByLabel('New owner').selectOption({ label: carolEmail })
+  await alice.getByRole('button', { name: 'Transfer ownership' }).click()
+  await expect(alice.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
+  await carol.goto(`/t/${orgA}/settings`)
+  await expect(carol.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
+  await carol.getByRole('button', { name: 'Transfer ownership' }).click()
+  await expect(carol.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
+  await alice.getByRole('link', { name: 'Members' }).click()
+  await alice.getByRole('button', { name: `Make ${carolEmail} member` }).click()
+  await expect(alice.getByRole('button', { name: `Make ${carolEmail} admin` })).toBeVisible()
+  await carol.goto(`/t/${orgA}/members`)
+
   // Promoted again, Carol removes herself and leaves the tenant.
   await alice.reload()
   await alice.getByRole('button', { name: `Make ${carolEmail} admin` }).click()

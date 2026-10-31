@@ -70,3 +70,8 @@ Supersedes in part [ADR-0018](0018-billing-platform.md) (the provider, its SDK, 
      - **plan change:** switching `pro_monthly` ↔ `pro_yearly` in the portal produces `subscription.updated` events that link to the organization and map to the new `price_key`, with Polar's proration;
      - **failed renewal:** a subscription whose renewal is charged to a failing test card goes `past_due` (plan kept, ADR-0020) and then `unpaid` or `canceled` (Free), each event linked and applied;
      - **cancellation at period end:** cancel in the portal keeps `active` with `cancel_at_period_end` until the period ends, then Free.
+
+## Notes (2026-10-31)
+
+- Renaming an organization (`organization:rename`) changes only its display name; Polar's customer keeps the name it was created with, which is what invoices bill. Whether the two should be coupled is decided before live billing.
+- ADR-0043 adds to the deletion path: before the customer is removed, the provider's subscriptions and checkout sessions are read directly, and a new checkout can't start. A concurrent owner change can now be refused at commit after its revoke ran, which fails toward less access as above.

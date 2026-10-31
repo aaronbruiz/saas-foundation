@@ -1,7 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import { rawDb, type Db } from './client.ts'
 import { organization } from './schema/auth.ts'
 import {
+  billingCheckoutGate,
   billingSubscription,
   billingWebhookEvent,
   type BillingSubscription,
@@ -142,9 +144,61 @@ function supersedes(
   return TERMINAL.includes(current.status) || at > current.providerEventAt
 }
 
+/** True when the claim in `column` is unset or older than `seconds`. */
+const claimExpired = (column: AnyPgColumn, seconds: number) =>
+  sql`(${column} IS NULL OR ${column} < now() - make_interval(secs => ${seconds}))`
+
 /** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2, ADR-0040). */
 export function billing(db: Db, scope: TenantScope) {
   return {
+    /**
+     * Before asking the provider for a checkout: refused (false) while a deletion holds its claim.
+     * ADR-0043: one conditional upsert, so the condition holds in the write: of a checkout and a
+     * deletion claiming at once, the row lock makes the second re-read the first's claim.
+     */
+    claimCheckout: (seconds: number): Promise<boolean> =>
+      inTenant(db, scope, async (tx) => {
+        const rows = await tx
+          .insert(billingCheckoutGate)
+          .values({ organizationId: scope.orgId, checkoutStartedAt: sql`now()` })
+          .onConflictDoUpdate({
+            target: billingCheckoutGate.organizationId,
+            set: { checkoutStartedAt: sql`now()` },
+            where: claimExpired(billingCheckoutGate.deletionStartedAt, seconds),
+          })
+          .returning({ organizationId: billingCheckoutGate.organizationId })
+        return rows.length > 0
+      }),
+    /**
+     * Before reading the provider for a deletion: 'refused' while a checkout holds its claim.
+     * 'taken' claims it now; 'held' finds an unexpired deletion claim, kept as it is (another owner
+     * deleting, or a retry after a failed delete). Only whoever took it may release it. `now()` is
+     * this transaction's start, so it equals the column only if this statement set it.
+     */
+    claimDeletion: (seconds: number): Promise<'taken' | 'held' | 'refused'> =>
+      inTenant(db, scope, async (tx) => {
+        const started = billingCheckoutGate.deletionStartedAt
+        const [row] = await tx
+          .insert(billingCheckoutGate)
+          .values({ organizationId: scope.orgId, deletionStartedAt: sql`now()` })
+          .onConflictDoUpdate({
+            target: billingCheckoutGate.organizationId,
+            set: {
+              deletionStartedAt: sql`CASE WHEN ${claimExpired(started, seconds)} THEN now() ELSE ${started} END`,
+            },
+            where: claimExpired(billingCheckoutGate.checkoutStartedAt, seconds),
+          })
+          .returning({ taken: sql<boolean>`${started} = now()` })
+        return !row ? 'refused' : row.taken ? 'taken' : 'held'
+      }),
+    /** The deletion was refused: checkouts may start again without waiting out the claim. */
+    releaseDeletion: (): Promise<void> =>
+      inTenant(db, scope, async (tx) => {
+        await tx
+          .update(billingCheckoutGate)
+          .set({ deletionStartedAt: null })
+          .where(eq(billingCheckoutGate.organizationId, scope.orgId))
+      }),
     subscription: (): Promise<BillingSubscription | null> =>
       inTenant(
         db,

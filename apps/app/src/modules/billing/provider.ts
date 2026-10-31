@@ -1,7 +1,7 @@
 // What the billing service needs from a payment provider (ADR-0009, ADR-0022). providers/<name>.ts
 // implements it; tests pass a fake. Nothing provider-shaped crosses this seam: each adapter owns its
 // customer identity, tax handling and webhook signature scheme.
-import type { BillingEvent, SubscriptionSnapshot } from '@saas-foundation/db'
+import type { BillingEvent, SubscriptionSnapshot, SubscriptionStatus } from '@saas-foundation/db'
 
 export type CheckoutRequest = {
   organizationId: string
@@ -49,11 +49,20 @@ export type BillingMembers = {
   removeAccount(organizationId: string): Promise<void>
 }
 
+/** The provider's own view of an organization's account, ahead of any webhook (ADR-0043). */
+export type BillingAccountState = {
+  subscriptions: { status: SubscriptionStatus }[]
+  /** A checkout session could still complete, or has just completed. */
+  hasPendingCheckout: boolean
+}
+
 export type BillingProvider = {
   /** Returns the hosted checkout URL. */
   checkout(req: CheckoutRequest): Promise<string>
   /** Returns the hosted billing-portal URL (plan changes, payment methods, invoices, cancel). */
   portal(req: PortalRequest): Promise<string>
+  /** Throws if it can't be read: the caller refuses rather than assume there's nothing. */
+  accountState(organizationId: string): Promise<BillingAccountState>
 }
 
 export class InvalidSignature extends Error {
