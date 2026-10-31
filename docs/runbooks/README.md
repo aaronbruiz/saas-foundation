@@ -635,9 +635,9 @@ Fallback when CI or the token is unavailable: the manual sequence ("First produc
 
 ### Before releasing ADR-0043 (owner guard and deletion gate)
 
-Each is a gate: record it here before the release, or the release waits.
+Each is a gate: record it here before the release, or the release waits. If one exposes a broken assumption, correct the implementation before the release.
 
-- [ ] **No organization without an owner.** The guard doesn't repair existing rows. Read-only, as `app_owner`, only with the owner's authorization; the expected result is no rows. Any row is the owner's to decide on before the release.
+- [ ] **No organization without an owner.** The guard doesn't repair existing rows. Read-only, as `app_owner`, during release preparation and only with the owner's authorization for that run; the expected result is no rows. Any row is the owner's to decide on before the release.
 
   ```sql
   BEGIN READ ONLY;
@@ -654,17 +654,22 @@ Each is a gate: record it here before the release, or the release waits.
 - [ ] **Through Hyperdrive.** The gate in ADR-0043, on a preview.
 - [ ] **Real Polar, in the sandbox.** The gate in ADR-0043.
 
+**Live billing (`POLAR_SERVER=production`) stays blocked** until unknown checkout outcomes, sessions that never finish and operator recovery have a reviewed policy, including whether to compensate (ADR-0043, conditions of acceptance).
+
 ### Stuck checkout attempts
 
-Deleting an organization answers "hasn't finished, or its outcome is unknown" while `billing_checkout_gate.checkouts_in_flight` is above zero, which a crashed or unanswered checkout leaves behind. Nothing clears it by itself, because nothing can prove the request won't still land (ADR-0043).
+Deleting an organization answers "hasn't finished, or its outcome is unknown" while `billing_checkout_gate.checkouts_in_flight` is above zero, which a crashed or unanswered checkout leaves behind. Nothing clears it by itself, because nothing can prove the request won't still land (ADR-0043). The organization stays undeletable: that's the normal state, not a fault to recover from.
 
-To clear one, the owner decides:
+Clearing one is a **risk override, not recovery**. It needs the owner's explicit authorization for that organization, each time, and is recorded with who authorized it:
 
 1. List the customer's checkout sessions in Polar. A session still open blocks the deletion anyway: wait for it.
 2. Allow time for the request to have landed. This is a judgment, not a proof: a request that lands later could still be paid for, against a deleted organization.
 3. `UPDATE billing_checkout_gate SET checkouts_in_flight = 0 WHERE organization_id = '<id>';` as `app_owner`.
 
-**After a database restore:** the restore can lose an in-flight count, or a committed deletion's closure, from after the restore point. Before deleting any organization that tried to check out since then, check its sessions in Polar.
+**Operating constraints (ADR-0043):**
+
+- **After a database restore:** the restore can lose an in-flight count, or a committed deletion's closure, from after the restore point. Before deleting any organization that tried to check out since then, check its sessions in Polar.
+- **Subscriptions created outside the app:** the gate doesn't order one made in Polar's dashboard or API after a deletion's read. Don't create one for an organization that may be being deleted.
 
 ## Rollback (ADR-0029)
 

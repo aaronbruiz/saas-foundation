@@ -1,8 +1,8 @@
 # ADR-0043: A database guard keeps an owner; a claim plus the provider's state guards deletion
 
-Status: Proposed · Date: 2026-10-31
+Status: Accepted for the smoke-test-only environment, with conditions (owner 2026-10-31) · Date: 2026-10-31
 
-Owner 2026-10-31: supports decision 1 and documenting it here with an explicit freeze exception. Decision 2 isn't approved; this version answers the owner's objections to the earlier one.
+Owner 2026-10-31: supports decision 1 and documenting it here with an explicit freeze exception; approves decision 2 for the current smoke-test-only environment, on the conditions below. This approves the bounded design, not a merge or a deployment. Anything beyond that environment comes back to the owner.
 
 ## Context
 
@@ -12,7 +12,7 @@ The organization settings feature (roadmap, "Parallel track: Starting kit") adds
 
 **Deletion.** ADR-0020 refuses to delete an organization with a live subscription, but reads only our row, which only webhooks write. Payment can complete before its webhook arrives. A checkout session already issued can be paid after the check. A new checkout can start between the check and the delete. The webhook then answers `unlinked` for an organization that no longer exists, and the customer has paid for nothing. Polar (API 2026-04) has no call to cancel or expire a checkout session, and neither `CheckoutCreate` nor `CheckoutUpdate` sets its expiry.
 
-**The freeze.** The roadmap freezes new security ADRs, except for "a finding that is proven and within the current milestone's scope". The owner race is proven above and this feature is on the approved track; the deletion race comes from the owner's instruction not to accept it. This ADR is written as that exception, and accepting it is the owner's decision at merge. It's a new ADR, not ADR-0022 Notes, because every other SQL-only object family has its own (ADR-0039, ADR-0040) and this is a new integrity rule on tables Better Auth writes.
+**The freeze.** The roadmap freezes new security ADRs, except for "a finding that is proven and within the current milestone's scope". The owner race is proven above and this feature is on the approved track; the deletion race comes from the owner's instruction not to accept it. This ADR is written as that exception. It's a new ADR, not ADR-0022 Notes, because every other SQL-only object family has its own (ADR-0039, ADR-0040) and this is a new integrity rule on tables Better Auth writes.
 
 ## Decision
 
@@ -68,14 +68,23 @@ The database holds no billing policy: the app decides what's live (`isLive`), an
 | Paid, webhook not delivered                                | Read from the provider: refused                                                           |
 | Request crashes after the commit                           | Checkouts stay closed; retrying the deletion finishes it                                  |
 | Request crashes before the commit                          | Nothing changed                                                                           |
-| Checkout's outcome unknown (crash, network error)          | Refused until an operator resolves it                                                     |
+| Checkout's outcome unknown (crash, network error)          | Refused; only an authorized override clears it                                            |
 | Polar unreachable                                          | 503, nothing changes                                                                      |
 
-**The limitation that remains.** An attempt whose outcome is unknown blocks that organization's deletion, indefinitely, until someone checks Polar and clears it (runbook, "Stuck checkout attempts"). That check is a judgment, not a proof: a request that never answered could in principle land afterwards. If it did, a customer could pay for a deleted organization; the webhook would answer `unlinked` and log it. Closing this needs a provider feature (idempotency, or a way to cancel a session) or a compensating action, such as revoking and refunding on `unlinked`, which is a policy decision and isn't built here.
+**The limitation that remains.** An attempt whose outcome is unknown blocks that organization's deletion, indefinitely. Clearing it is a risk override, not recovery (runbook, "Stuck checkout attempts"): checking Polar is a judgment, not a proof, because a request that never answered could in principle land afterwards. If it did, a customer could pay for a deleted organization; the webhook would answer `unlinked` and log it. Closing this needs a provider feature (idempotency, or a way to cancel a session) or a compensating action, such as revoking and refunding on `unlinked`, which is a policy decision and isn't built here.
 
 A session that never reaches a finished status would also block deletion, with no operator step to clear it. Whether Polar always moves `open` and `failed` to `expired` is a release gate below.
 
-Two more things it can't see. **A database restore** can lose an in-flight count or a commit made after the restore point, while the request it counted can still land: after a restore, treat checkouts since the restore point as unknown (runbook). **Anything outside the app**, such as a subscription created in Polar's dashboard or API after the read, isn't ordered by the gate; only the app creates sessions, and only by this path.
+**Operating constraints.** Two things the gate can't see, which operators work within. **A database restore** can lose an in-flight count or a commit made after the restore point, while the request it counted can still land: after a restore, treat checkouts since the restore point as unknown (runbook). **Anything outside the app**, such as a subscription created in Polar's dashboard or API after the read, isn't ordered by the gate; only the app creates sessions, and only by this path, so don't create subscriptions for an organization outside the app while it may be deleted.
+
+### Conditions of acceptance (owner, 2026-10-31)
+
+1. Unknown checkout outcomes block deletion. An operator clearing one is a separate, explicitly authorized risk override, not normal recovery.
+2. No automatic subscription revocation or refund is built here. Compensation and recovery policy are decided before live billing.
+3. The Hyperdrive and Polar sandbox gates below stay release gates. If either exposes a broken assumption, the implementation is corrected before release.
+4. **Live billing (`POLAR_SERVER=production`) stays blocked** until unknown outcomes, unfinished sessions and operator recovery have a reviewed policy.
+5. The production check for ownerless organizations is deferred to release preparation. No production access is authorized by this acceptance.
+6. The restore limitation and subscriptions created outside the app are the operating constraints above.
 
 ### Release gates
 
@@ -86,7 +95,7 @@ Neither is verified, and both must pass before this ships to production:
 
 ### Freeze exception
 
-The roadmap records it. It covers the proven owner race and, if accepted, this gate.
+The roadmap records it. It covers the proven owner race and this gate, on the conditions above.
 
 ## Alternatives
 
