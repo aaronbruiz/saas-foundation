@@ -1,5 +1,7 @@
 # Session index
 
+Selected task: <link to its brief, or none>
+
 <!-- About 80 lines. Lives in .local/handoff.md. It's the owner's index, not state: no task state, no SHAs.
 Task state is in Git, the PR and CI, then in .local/tasks/<branch>.md. Move older log entries to a monthly archive file. -->
 
