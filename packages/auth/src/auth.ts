@@ -100,6 +100,12 @@ export type AuthOptions = {
     /** True while the organization must not be deleted (e.g. a live subscription). */
     blocksDeletion: (organizationId: string) => Promise<boolean>
     /**
+     * ADR-0043: claims the deletion against new checkouts and asks the provider's current state,
+     * after Better Auth's permission check. A string refuses, and is the message. Throwing refuses
+     * as unavailable, failing closed. Without it, only `blocksDeletion` guards a deletion.
+     */
+    beginDeletion?: (organizationId: string) => Promise<string | null>
+    /**
      * The billing provider's own logins, kept in step with the owner role (ADR-0022: revoke before,
      * grant after). `revoke` throws when access can't be removed, and the change is refused.
      * Without it, owner changes touch nothing outside Better Auth.
@@ -291,6 +297,14 @@ export function createAuth({
           // Backstop for deletions that don't come through the HTTP middleware above.
           async beforeDeleteOrganization({ organization }) {
             if (await blocksDeletion(organization.id)) throw billingStateConflict()
+            let refusal: string | null | undefined
+            try {
+              refusal = await billingPolicy?.beginDeletion?.(organization.id)
+            } catch {
+              log?.('warn', 'billing.deletion.begin_failed')
+              throw billingAccessUnavailable()
+            }
+            if (refusal) throw new APIError('CONFLICT', { message: refusal })
             // ADR-0022: only here, after Better Auth's own permission check (the middleware above
             // runs before it). The billing account goes first; if it can't, nothing is deleted.
             if (!members) return

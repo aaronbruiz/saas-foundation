@@ -3,10 +3,14 @@ import { getTenantContext } from '../src/server/context'
 import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { capabilitiesOf, CAPABILITIES, type Capability } from '../src/server/permissions'
+import { HttpError } from '../src/server/errors'
 import {
+  deleteOrganization,
   getTenant,
   inviteMember,
   listMembers,
+  renameOrganization,
+  transferOwnership,
   updateMemberRole,
 } from '../src/modules/organizations/service'
 import {
@@ -34,14 +38,24 @@ import {
 type Role = 'owner' | 'admin' | 'member'
 const EXPECTED: Record<Role, Capability[]> = {
   owner: [...CAPABILITIES],
-  admin: CAPABILITIES.filter((c) => c !== 'billing:manage'),
+  admin: CAPABILITIES.filter(
+    (c) => c !== 'billing:manage' && c !== 'organization:transfer' && c !== 'organization:delete',
+  ),
   member: ['project:read', 'project:create', 'project:update', 'member:read'],
 }
 
 const fakeProvider: BillingProvider = {
   checkout: async () => 'https://checkout.example',
   portal: async () => 'https://portal.example',
+  accountState: async () => ({ subscriptions: [], hasPendingCheckout: false }),
 }
+
+/** These change too much to run for real here: a 400 means the role check already passed. */
+const passedRoleCheck = (attempted: Promise<unknown>) =>
+  attempted.catch((e: unknown) => {
+    if (e instanceof HttpError && e.status === 400) return 'authorized'
+    throw e
+  })
 
 // Capabilities that act on a project id: another tenant's id must be a 404 before any role check.
 const ID_BASED: Capability[] = ['project:read', 'project:update', 'project:delete']
@@ -89,6 +103,17 @@ async function attempt(user: TestUser, tenant: string, capability: Capability, i
     case 'member:manage':
       // Sets the role it already has, so the other tests keep their member.
       return updateMemberRole(h, { tenant, memberId: plainMemberId, role: 'member' })
+    case 'organization:rename':
+      return renameOrganization(h, { tenant, name: 'renamed' })
+    case 'organization:transfer':
+      return passedRoleCheck(
+        transferOwnership(h, {
+          tenant,
+          memberId: (await listMembers(h, { tenant })).find((m) => m.email === user.email)!.id,
+        }),
+      )
+    case 'organization:delete':
+      return passedRoleCheck(deleteOrganization(h, { tenant, confirmName: 'not its name' }))
     case 'billing:read':
       return getBillingOverview(h, { tenant })
     case 'billing:manage':

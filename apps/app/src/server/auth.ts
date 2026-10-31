@@ -1,7 +1,7 @@
 import { env, waitUntil } from 'cloudflare:workers'
 import { createAuth, type BotProtection } from '@saas-foundation/auth'
 import { billing, listOwners, type Db } from '@saas-foundation/db'
-import { configuredMembers } from '../modules/billing/config'
+import { configuredMembers, configuredProvider } from '../modules/billing/config'
 import { entitlementsFor, isLive } from '../modules/billing/policy'
 import { mailerFor, render } from './email'
 import { logBetterAuth, logWarn } from './log'
@@ -83,6 +83,34 @@ export const turnstileSiteKey = () =>
     ? null
     : vars.TURNSTILE_SITE_KEY!
 
+/**
+ * ADR-0043: goes ahead only with proof that no session can still complete, with no clock involved.
+ * Every attempt counts as in flight until its outcome is known. With none in flight when this
+ * looks, every session already exists, so the provider's state is complete; the commit then fails
+ * if an attempt started in between, and closes checkouts for good if not. Returns the refusal's
+ * message, or null to go ahead. Which subscriptions block stays in the billing policy.
+ */
+export async function beginOrganizationDeletion(
+  db: Db,
+  orgId: string,
+  provider: ReturnType<typeof configuredProvider>,
+): Promise<string | null> {
+  const repo = billing(db, { orgId })
+  const gate = await repo.deletionGate()
+  // A retry: the checks passed and nothing can have started since.
+  if (gate.removalStarted) return null
+  if (gate.checkoutsInFlight > 0)
+    return "A checkout for this organization hasn't finished, or its outcome is unknown. Try again shortly; if this persists, contact support."
+  const state = provider && (await provider.accountState(orgId))
+  if (isLive(await repo.subscription()) || state?.subscriptions.some(isLive))
+    return 'This organization has an active subscription. Cancel it in Billing first.'
+  if (state?.hasPendingCheckout)
+    return 'A checkout for this organization is still open. Try again once it completes or expires.'
+  if (!(await repo.commitRemoval(gate.generation)))
+    return 'This organization changed while it was being deleted. Try again shortly.'
+  return null
+}
+
 export function authFor(db: Db) {
   const mailer = mailerFor(env)
   const members = configuredMembers()
@@ -110,6 +138,7 @@ export function authFor(db: Db) {
       memberLimit: async (orgId) =>
         entitlementsFor(await billing(db, { orgId }).subscription()).limits.members,
       blocksDeletion: async (orgId) => isLive(await billing(db, { orgId }).subscription()),
+      beginDeletion: (orgId) => beginOrganizationDeletion(db, orgId, configuredProvider()),
       // ADR-0022: the provider's billing logins follow the owner role.
       ...(members && {
         members: {

@@ -43,6 +43,16 @@ export const UpdateMemberRoleInput = z.strictObject({
   role: z.enum(['member', 'admin']),
 })
 
+export const RenameOrganizationInput = z.strictObject({
+  tenant: TenantSlug,
+  name: CreateOrganizationInput.shape.name,
+})
+export const TransferOwnershipInput = MemberRef
+export const DeleteOrganizationInput = z.strictObject({
+  tenant: TenantSlug,
+  confirmName: z.string().min(1).max(200),
+})
+
 // Billing (ADR-0020). The price is a key from the product policy, checked by the server.
 export const StartCheckoutInput = z.strictObject({
   tenant: TenantSlug,

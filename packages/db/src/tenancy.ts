@@ -37,7 +37,7 @@ export async function countMembers(db: Db, orgId: string): Promise<number> {
 
 export async function findMembership(db: Db, orgId: string, userId: string) {
   const [m] = await rawDb(db)
-    .select({ role: member.role })
+    .select({ id: member.id, role: member.role })
     .from(member)
     .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
     .limit(1)

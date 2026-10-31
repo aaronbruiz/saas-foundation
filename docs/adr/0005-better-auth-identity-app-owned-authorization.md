@@ -24,6 +24,8 @@ Authentication and authorization/tenancy are separate problems. Candidates were 
   | `member:invite`: list pending invitations, revoke one    |  yes  |  yes  |   no   |
   | `member:read`: the member list (names, emails, roles)    |  yes  |  yes  |  yes   |
   | `member:manage`: remove a non-owner, set member or admin |  yes  |  yes  |   no   |
+  | `organization:rename`: the display name only             |  yes  |  yes  |   no   |
+  | `organization:transfer`, `organization:delete`           |  yes  |  no   |   no   |
   | _Better Auth HTTP endpoints (its default roles):_        |       |       |        |
   | organization update (name, slug)                         |  yes  |  yes  |   no   |
   | invite, change role, remove: non-owner members           |  yes  |  yes  |   no   |

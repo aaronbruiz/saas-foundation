@@ -118,6 +118,7 @@ describe('the archive triggers in the catalog', () => {
         'account.archive_delete',
         'account.audit_insert',
         'account.audit_update',
+        'billing_checkout_gate.archive_delete',
         'billing_subscription.archive_delete',
         'invitation.archive_delete',
         'member.archive_delete',

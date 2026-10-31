@@ -633,6 +633,44 @@ The default way to deploy production. Every merge to `main` updates one release 
 
 Fallback when CI or the token is unavailable: the manual sequence ("First production deploy" step 0, then a restore point, `pnpm db:migrate`, `pnpm run deploy`). It bypasses the candidate stage and its versions carry no tag. To roll back without CI, see "Rollback" → manual fallback.
 
+### Before releasing ADR-0043 (owner guard and deletion gate)
+
+Each is a gate: record it here before the release, or the release waits. If one exposes a broken assumption, correct the implementation before the release.
+
+- [ ] **No organization without an owner.** The guard doesn't repair existing rows. Read-only, as `app_owner`, during release preparation and only with the owner's authorization for that run; the expected result is no rows. Any row is the owner's to decide on before the release.
+
+  ```sql
+  BEGIN READ ONLY;
+  SET LOCAL statement_timeout = '10s';
+  SELECT o.id, o.slug, o.created_at, count(m.id) AS members
+    FROM public.organization o
+    LEFT JOIN public.member m ON m.organization_id = o.id
+   GROUP BY o.id, o.slug, o.created_at
+  HAVING count(*) FILTER (WHERE m.role ~ '(^|,)\s*owner\s*(,|$)') = 0
+   ORDER BY o.created_at;
+  ROLLBACK;
+  ```
+
+- [ ] **Through Hyperdrive.** The gate in ADR-0043, on a preview.
+- [ ] **Real Polar, in the sandbox.** The gate in ADR-0043.
+
+**Live billing (`POLAR_SERVER=production`) stays blocked** until unknown checkout outcomes, sessions that never finish and operator recovery have a reviewed policy, including whether to compensate (ADR-0043, conditions of acceptance).
+
+### Stuck checkout attempts
+
+Deleting an organization answers "hasn't finished, or its outcome is unknown" while `billing_checkout_gate.checkouts_in_flight` is above zero, which a crashed or unanswered checkout leaves behind. Nothing clears it by itself, because nothing can prove the request won't still land (ADR-0043). The organization stays undeletable: that's the normal state, not a fault to recover from.
+
+Clearing one is a **risk override, not recovery**. It needs the owner's explicit authorization for that organization, each time, and is recorded with who authorized it:
+
+1. List the customer's checkout sessions in Polar. A session still open blocks the deletion anyway: wait for it.
+2. Allow time for the request to have landed. This is a judgment, not a proof: a request that lands later could still be paid for, against a deleted organization.
+3. `UPDATE billing_checkout_gate SET checkouts_in_flight = 0 WHERE organization_id = '<id>';` as `app_owner`.
+
+**Operating constraints (ADR-0043):**
+
+- **After a database restore:** the restore can lose an in-flight count, or a committed deletion's closure, from after the restore point. Before deleting any organization that tried to check out since then, check its sessions in Polar.
+- **Subscriptions created outside the app:** the gate doesn't order one made in Polar's dashboard or API after a deletion's read. Don't create one for an organization that may be being deleted.
+
 ## Rollback (ADR-0029)
 
 Code only, seconds, no build: **Actions → Rollback → Run workflow** with a short `reason` (the message `rollback by <you>: <reason>` must fit 120 characters) and the target `version_id` (required; ids from `pnpm --filter app exec wrangler deployments list`, usually the previous 100% version). It refuses while a candidate is held (`discard` it first); refuses a target lacking a contract migration production has applied (or one not uploaded by `release.yml`, such as a manual deploy or a `wrangler secret put` version, whose commit is unknown) unless `confirm_breaking`; and refuses a target older than a secret change (or than the 10 newest versions) unless `confirm_secret_revert`, because wrangler then restores the old secret values without asking in CI. It succeeds only once the target serves 100% (and, for a release, `/api/health` reports its version and build). **In an emergency, roll back first, then fix forward.** The database is never rolled back by a workflow: restoring loses writes since the restore point, so it stays the manual "Database" procedure, using the `pre-migrate-*` branch or a snapshot.

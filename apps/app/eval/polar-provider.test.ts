@@ -58,6 +58,12 @@ describe.runIf(run !== '' && !vars.POLAR_EVAL_PAID)('polar adapter against the s
       ])
       expect(url1).toMatch(/^https:\/\/sandbox\.polar\.sh\/checkout\//)
       expect(url2).toMatch(/^https:\/\/sandbox\.polar\.sh\/checkout\//)
+
+      // ADR-0043: both open sessions are visible at once, before anyone has paid.
+      await expect(provider.accountState(orgId)).resolves.toEqual({
+        subscriptions: [],
+        hasPendingCheckout: true,
+      })
       const customer = await polar.customers.getExternal(orgId)
       expect(customer).toMatchObject({ type: 'team', name: `Eval ${run}` })
       expect(await memberList(customer.id)).toEqual([{ ext: owner.userId, role: 'owner' }])

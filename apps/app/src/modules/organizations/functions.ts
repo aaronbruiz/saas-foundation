@@ -2,10 +2,13 @@ import { createServerFn } from '@tanstack/react-start'
 import {
   AcceptInvitationInput,
   CreateOrganizationInput,
+  DeleteOrganizationInput,
   InvitationRef,
   InviteMemberInput,
   MemberRef,
+  RenameOrganizationInput,
   TenantInput,
+  TransferOwnershipInput,
   UpdateMemberRoleInput,
 } from '@saas-foundation/contracts'
 import { requestHeaders, serve } from '../../server/boundary'
@@ -13,13 +16,17 @@ import { validateWith } from '../../server/validate'
 import {
   acceptInvitation,
   createOrganization,
+  deleteOrganization,
   getTenant,
   getViewer,
   inviteMember,
+  leaveOrganization,
   listInvitations,
   listMembers,
   removeMember,
+  renameOrganization,
   revokeInvitation,
+  transferOwnership,
   updateMemberRole,
 } from './service'
 
@@ -53,3 +60,15 @@ export const removeMemberFn = createServerFn({ method: 'POST' })
 export const updateMemberRoleFn = createServerFn({ method: 'POST' })
   .validator(validateWith(UpdateMemberRoleInput))
   .handler(({ data }) => serve(() => updateMemberRole(requestHeaders(), data)))
+export const renameOrganizationFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(RenameOrganizationInput))
+  .handler(({ data }) => serve(() => renameOrganization(requestHeaders(), data)))
+export const transferOwnershipFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(TransferOwnershipInput))
+  .handler(({ data }) => serve(() => transferOwnership(requestHeaders(), data)))
+export const leaveOrganizationFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(TenantInput))
+  .handler(({ data }) => serve(() => leaveOrganization(requestHeaders(), data)))
+export const deleteOrganizationFn = createServerFn({ method: 'POST' })
+  .validator(validateWith(DeleteOrganizationInput))
+  .handler(({ data }) => serve(() => deleteOrganization(requestHeaders(), data)))

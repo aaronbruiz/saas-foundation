@@ -7,7 +7,7 @@ import { HttpError, parseInput } from '../../server/errors'
 import { authorize, can } from '../../server/permissions'
 import { PLANS, entitlementsFor, isLive, purchasablePrices, trialDaysFor } from './policy'
 import { configuredProvider } from './config'
-import { PriceNotFound, type BillingProvider } from './provider'
+import { CheckoutNotCreated, PriceNotFound, type BillingProvider } from './provider'
 
 // Plain functions (testable in workerd); ./functions.ts adapts them. Every rule comes from
 // ./policy (product) or the capability matrix (roles); this file only wires them (ADR-0020).
@@ -55,6 +55,10 @@ export async function startCheckout(
     if (isLive(sub))
       throw new HttpError(409, 'This organization already has a subscription. Use Manage billing.')
     if (!provider) throw new HttpError(503, 'Billing is not configured')
+    // ADR-0043: counted before anything reaches the provider, so a deletion can't miss it.
+    const repo = billing(db, ctx)
+    if (!(await repo.startCheckoutAttempt()))
+      throw new HttpError(409, 'This organization is being deleted.')
     const back = `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`
     try {
       const url = await provider.checkout({
@@ -70,8 +74,12 @@ export async function startCheckout(
         successUrl: `${back}?checkout=success`,
         cancelUrl: back,
       })
+      await repo.finishCheckoutAttempt()
       return { url }
     } catch (e) {
+      // Anything else may have reached the provider: it stays counted, and blocks deletion, until
+      // someone checks (runbook "Stuck checkout attempts"). No timeout can prove it never landed.
+      if (e instanceof CheckoutNotCreated) await repo.finishCheckoutAttempt()
       if (e instanceof PriceNotFound) throw new HttpError(503, 'This price is not available yet')
       throw e
     }

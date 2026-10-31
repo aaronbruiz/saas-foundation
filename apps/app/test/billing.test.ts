@@ -660,6 +660,7 @@ describe('billing actions', () => {
     const provider: BillingProvider = {
       checkout: async (req) => (calls.checkout.push(req), 'https://checkout.example/session'),
       portal: async (req) => (calls.portal.push(req), 'https://portal.example/session'),
+      accountState: async () => ({ subscriptions: [], hasPendingCheckout: false }),
     }
     return { provider, calls }
   }

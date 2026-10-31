@@ -7,10 +7,12 @@ import { createPolar, webhooks } from '@polar-sh/sdk/2026-04'
 import type { SubscriptionStatus } from '@saas-foundation/db'
 import { z } from 'zod'
 import {
+  CheckoutNotCreated,
   InvalidPayload,
   InvalidSignature,
   PriceNotFound,
   ProviderUnavailable,
+  type BillingAccountState,
   type BillingManager,
   type BillingMembers,
   type BillingProvider,
@@ -213,34 +215,99 @@ async function productFor(polar: PolarClient, priceKey: string) {
   return product
 }
 
+/**
+ * Every item of a page-numbered list, or a refusal. Polar breaks no ties when sorting, so items with
+ * equal timestamps can repeat across pages and push another out of the result: the distinct count
+ * has to reach the total it reports.
+ */
+export async function* completeList<T extends { id: string }>(
+  page: (n: number) => Promise<{
+    items: T[]
+    pagination: { total_count: number; max_page: number }
+  }>,
+): AsyncGenerator<T> {
+  const seen = new Set<string>()
+  let total = 0
+  for (let n = 1, last = 1; n <= last; n++) {
+    const { items, pagination } = await page(n)
+    total = pagination.total_count
+    last = pagination.max_page
+    for (const item of items) {
+      if (seen.has(item.id)) continue
+      seen.add(item.id)
+      yield item
+    }
+  }
+  if (seen.size !== total) throw new ProviderUnavailable(`listed ${seen.size} of ${total} items`)
+}
+
+/**
+ * ADR-0043. Checkouts first: a session seen as finished can't change, so once none can still
+ * complete, the subscriptions read after them include everything those sessions produced. Anything
+ * but `expired`, or `succeeded` with its subscription listed, blocks: there's no call to cancel a
+ * session, and how long one takes to settle isn't something we can know.
+ */
+export async function readAccountState(reads: {
+  checkouts: () => AsyncIterable<{ id: string; status: string }>
+  subscriptions: () => AsyncIterable<{ status: string; checkout_id: string | null }>
+}): Promise<BillingAccountState> {
+  const succeeded: string[] = []
+  for await (const c of reads.checkouts()) {
+    if (c.status === 'succeeded') succeeded.push(c.id)
+    else if (c.status !== 'expired') return { subscriptions: [], hasPendingCheckout: true }
+  }
+  const subscriptions: BillingAccountState['subscriptions'] = []
+  const listed = new Set<string | null>()
+  for await (const s of reads.subscriptions()) {
+    // An unknown status maps as the webhook does: non-terminal, so it blocks (fails closed).
+    subscriptions.push({ status: STATUS[s.status] ?? 'incomplete' })
+    listed.add(s.checkout_id)
+  }
+  return { subscriptions, hasPendingCheckout: succeeded.some((id) => !listed.has(id)) }
+}
+
 /** Polar behind the provider interface. Tax: Polar is merchant of record (ADR-0022). */
 export function polarProvider(config: PolarConfig): BillingProvider {
   const polar = polarClient(config)
   return {
     async checkout(req: CheckoutRequest) {
       const user = { userId: req.userId, email: req.customerEmail }
-      const customer = await ensureCustomer(
-        polar,
-        { id: req.organizationId, name: req.organizationName },
-        user,
-      )
-      await ensureMember(polar, customer.id, user)
-      const product = await productFor(polar, req.priceKey)
-      const checkout = await polar.checkouts.create({
-        products: [product.id],
-        customer_id: customer.id,
-        // The checkout is created server-side, so Polar can't see the buyer: without their IP it
-        // leaves the country blank; with it, it prefills their country (sandbox probe 2026-09-29).
-        ...(req.customerIp && { customer_ip_address: req.customerIp }),
-        // Copied onto the subscription; the webhook links through it (with the customer's id).
-        metadata: { [ORGANIZATION_METADATA_KEY]: req.organizationId },
-        success_url: req.successUrl,
-        allow_trial: req.trialDays > 0,
-        ...(req.trialDays > 0 && {
-          trial_interval: 'day' as const,
-          trial_interval_count: req.trialDays,
-        }),
+      // Nothing here creates a session: a failure before the create means none can exist.
+      const { customer, product } = await (async () => {
+        const customer = await ensureCustomer(
+          polar,
+          { id: req.organizationId, name: req.organizationName },
+          user,
+        )
+        await ensureMember(polar, customer.id, user)
+        return { customer, product: await productFor(polar, req.priceKey) }
+      })().catch((e: unknown) => {
+        if (e instanceof CheckoutNotCreated) throw e
+        throw new CheckoutNotCreated('the checkout was never sent', { cause: e })
       })
+      const checkout = await polar.checkouts
+        .create({
+          products: [product.id],
+          customer_id: customer.id,
+          // The checkout is created server-side, so Polar can't see the buyer: without their IP it
+          // leaves the country blank; with it, it prefills their country (sandbox probe 2026-09-29).
+          ...(req.customerIp && { customer_ip_address: req.customerIp }),
+          // Copied onto the subscription; the webhook links through it (with the customer's id).
+          metadata: { [ORGANIZATION_METADATA_KEY]: req.organizationId },
+          success_url: req.successUrl,
+          allow_trial: req.trialDays > 0,
+          ...(req.trialDays > 0 && {
+            trial_interval: 'day' as const,
+            trial_interval_count: req.trialDays,
+          }),
+        })
+        .catch((e: unknown) => {
+          // Polar answered no. Anything else (a network error, a 5xx) may have landed.
+          const status = statusOf(e)
+          if (typeof status === 'number' && status >= 400 && status < 500)
+            throw new CheckoutNotCreated('the provider refused the checkout', { cause: e })
+          throw e
+        })
       return checkout.url
     },
     async portal(req: PortalRequest) {
@@ -254,6 +321,17 @@ export function polarProvider(config: PolarConfig): BillingProvider {
         return_url: req.returnUrl,
       })
       return session.customer_portal_url
+    },
+    async accountState(organizationId) {
+      const customer = await customerOf(polar, organizationId)
+      if (!customer) return { subscriptions: [], hasPendingCheckout: false }
+      const query = { customer_id: customer.id, limit: 100 }
+      return readAccountState({
+        // No status filter: it would shift pages as sessions finish.
+        checkouts: () =>
+          completeList((page) => polar.checkouts.list({ ...query, page, sorting: ['created_at'] })),
+        subscriptions: () => completeList((page) => polar.subscriptions.list({ ...query, page })),
+      })
     },
   }
 }
