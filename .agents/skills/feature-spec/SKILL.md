@@ -12,6 +12,6 @@ Trial skill (ADR-0042 Notes). The output is PR description text (ADR-0030); writ
 3. **Races:** for each check followed by a write, including a write a library makes, say where the condition holds (AGENTS.md recipe "Add a tenant-scoped server function"). The concurrency line names the interleaving.
 4. **Checks:** per Behaviour line, the planned test (the file to copy) or manual check, with empty result and commit columns.
 
-**Amending:** when scope changes mid-work, update Behaviour and Out of scope first, list the tests and code the change affects, and stop only the work that depends on an unsettled change. After the owner approves Behaviour, only an amendment the owner sees changes it.
+**Amending:** when scope changes mid-work, update Behaviour and Out of scope first, list the tests and code the change affects, and stop only the work that depends on an unsettled change. After the owner approves Behaviour, amendments follow AGENTS.md "Working rules".
 
 Output: the PR description draft, plus "Blocked on owner".

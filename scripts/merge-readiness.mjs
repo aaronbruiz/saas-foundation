@@ -6,8 +6,9 @@
 // fails too. Read-only: GitHub API GETs through `gh api`, and the review file.
 // It checks that the evidence is fresh. It doesn't establish the owner's approval or authorize a
 // merge. Governance files: GOVERNANCE below, the list in review-pr step 5 (the test checks they
-// match). Description edits after approval need --approved-at; without it they're "not assessed".
-// Usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time>]
+// match). Description edits after approval need --approved-at; --no-approval says the PR needs no
+// approval (AGENTS.md "Working rules"); with neither they're "not assessed".
+// Usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time> | --no-approval]
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -124,7 +125,9 @@ function ci(pr) {
 
 function edits(n, approvedAt, problems) {
   if (!approvedAt) {
-    problems.push('description edits after approval not assessed: pass --approved-at')
+    problems.push(
+      'description edits after approval not assessed: pass --approved-at or --no-approval',
+    )
     return 'not assessed (no --approved-at)'
   }
   const at = Date.parse(approvedAt)
@@ -149,7 +152,7 @@ function edits(n, approvedAt, problems) {
   return String(e.nodes.filter((x) => Date.parse(x.editedAt) > at).length)
 }
 
-function report(n, { review, approvedAt }) {
+function report(n, { review, approvedAt, noApproval }) {
   const problems = []
   const line = []
   const pr = api(`repos/{owner}/{repo}/pulls/${n}`)
@@ -218,7 +221,7 @@ function report(n, { review, approvedAt }) {
     })}`,
   )
   line.push(
-    `description edits after approval: ${item(problems, () => edits(n, approvedAt, problems))}`,
+    `description edits after approval: ${noApproval ? 'n/a (approval not required)' : item(problems, () => edits(n, approvedAt, problems))}`,
   )
 
   console.log(line.join('; ') + moved)
@@ -237,17 +240,30 @@ function report(n, { review, approvedAt }) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { review: { type: 'string' }, 'approved-at': { type: 'string' } },
+    options: {
+      review: { type: 'string' },
+      'approved-at': { type: 'string' },
+      'no-approval': { type: 'boolean' },
+    },
   })
-  if (positionals.length !== 1 || !/^[1-9]\d*$/.test(positionals[0]) || !values.review) {
+  if (
+    positionals.length !== 1 ||
+    !/^[1-9]\d*$/.test(positionals[0]) ||
+    !values.review ||
+    (values['approved-at'] && values['no-approval'])
+  ) {
     console.error(
-      'usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time>]',
+      'usage: node scripts/merge-readiness.mjs <pr> --review <result file> [--approved-at <ISO time> | --no-approval]',
     )
     process.exit(2)
   }
   try {
     process.exit(
-      report(positionals[0], { review: values.review, approvedAt: values['approved-at'] }),
+      report(positionals[0], {
+        review: values.review,
+        approvedAt: values['approved-at'],
+        noApproval: values['no-approval'],
+      }),
     )
   } catch (e) {
     console.log(`UNKNOWN: ${e.message.replace(/\s+/g, ' ').trim()}`)
