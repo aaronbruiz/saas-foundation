@@ -2,7 +2,7 @@ import { createAuth } from '@saas-foundation/auth'
 import { APIError } from 'better-auth/api'
 import { env } from 'cloudflare:workers'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
+import { billing, createDb, findOrganizationBySlug, type Db } from '@saas-foundation/db'
 import { rawDb } from '@saas-foundation/db/internal'
 import { startCheckout } from '../src/modules/billing/service'
 import { isLive } from '../src/modules/billing/policy'
@@ -708,7 +708,7 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
     // Its read says nothing is there: it was true when taken, and it's stale now.
     read.resume(quiet)
-    await expect(deletion).resolves.toMatch(/just started/)
+    await expect(deletion).resolves.toMatch(/changed while/)
     await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
   })
 
@@ -725,9 +725,27 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     const attempt = buy(owner, slug, buying)
     await vi.waitFor(() => expect(buying.checkout).toHaveBeenCalled())
     read.resume(quiet)
-    await expect(deletion).resolves.toMatch(/just started/)
+    await expect(deletion).resolves.toMatch(/changed while/)
     session.resume('https://checkout.example/x')
     await expect(attempt).resolves.toBeDefined()
+  })
+
+  it('a deletion paused on the provider while another deletes the organization is refused, not an error', async () => {
+    const { owner, slug, orgId } = await team()
+    const read = paused<State>()
+    const stalled = providerWith()
+    stalled.accountState.mockImplementation(() => read.promise)
+    const deletion = begin(orgId, stalled)
+    await vi.waitFor(() => expect(stalled.accountState).toHaveBeenCalled())
+    await deleteOrganization(owner.headers, { tenant: slug, confirmName: slug })
+    read.resume(quiet)
+    await expect(deletion).resolves.toMatch(/changed while/)
+  })
+
+  it('a checkout attempt for an organization deleted since its membership check is refused, not an error', async () => {
+    const { owner, slug, orgId } = await team()
+    await deleteOrganization(owner.headers, { tenant: slug, confirmName: slug })
+    await expect(withDb((db) => billing(db, { orgId }).startCheckoutAttempt())).resolves.toBe(false)
   })
 
   /** One account at the provider: what a checkout creates, an account read then sees. */

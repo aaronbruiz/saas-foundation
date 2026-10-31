@@ -49,7 +49,7 @@ ADR-0022's hooks still run, and their order can't change: the revoke runs before
 - **Deletion,** in Better Auth's `beforeDeleteOrganization`, after its permission check, so every path is covered:
   1. Read the gate. Removal already committed: go ahead (a retry). Anything in flight: 409.
   2. Read the provider: every checkout session first, then every subscription. Live by `isLive`, on our row or the provider's, or a session that could still complete: 409. Unreadable: 503.
-  3. Commit: one conditional upsert sets `removal_started_at`, only if the generation is unchanged and nothing is in flight. Otherwise 409.
+  3. Commit: one conditional upsert sets `removal_started_at`, only if the generation is unchanged, nothing is in flight and the organization still exists. Otherwise 409.
   4. Remove the provider's customer (ADR-0022), then Better Auth deletes the organization.
 
 **Why that's enough.** With none in flight at step 1, every session that will ever exist from earlier attempts already exists, so step 2 sees them. The generation check proves none started during step 2, however long it took, and after the commit none can start. Nothing here expires, so a request paused at any point either fails its commit or finds checkouts closed.
@@ -66,6 +66,7 @@ The database holds no billing policy: the app decides what's live (`isLive`), an
 | Session issued, unpaid, or payment in progress             | Refused until Polar says it's finished                                                    |
 | Payment completes between the two reads                    | Seen as `open`: refused. Seen as `succeeded`: its subscription must be listed, or refused |
 | Paid, webhook not delivered                                | Read from the provider: refused                                                           |
+| Another deletion removed the organization first            | Its commit is refused; the tenant then answers 404                                        |
 | Request crashes after the commit                           | Checkouts stay closed; retrying the deletion finishes it                                  |
 | Request crashes before the commit                          | Nothing changed                                                                           |
 | Checkout's outcome unknown (crash, network error)          | Refused; only an authorized override clears it                                            |

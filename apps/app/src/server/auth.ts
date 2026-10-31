@@ -107,7 +107,7 @@ export async function beginOrganizationDeletion(
   if (state?.hasPendingCheckout)
     return 'A checkout for this organization is still open. Try again once it completes or expires.'
   if (!(await repo.commitRemoval(gate.generation)))
-    return 'A checkout for this organization was just started. Try again shortly.'
+    return 'This organization changed while it was being deleted. Try again shortly.'
   return null
 }
 
