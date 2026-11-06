@@ -1,0 +1,6 @@
+# ADR-0045: static assets are served by Workers Static Assets without the Worker, so its middleware
+# (src/start.ts) doesn't set their headers. A CSP does nothing on JS and CSS files.
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

@@ -37,7 +37,11 @@ test('a signed-in user changes their name on the account page', async ({ page })
   const slug = await createOrg(page, 'acc')
   await page.getByRole('link', { name: 'Account' }).click()
   await expect(page).toHaveURL(/\/account$/)
+  // The loader's background reload remounts the page when it lands, dropping anything typed before
+  // it; start typing on a freshly loaded, hydrated page instead.
+  await page.reload()
   await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
 
   await page.getByLabel('Name').fill('   ')
   await page.getByRole('button', { name: 'Save name' }).click()
@@ -49,6 +53,8 @@ test('a signed-in user changes their name on the account page', async ({ page })
   await expect(page.getByRole('status')).toHaveText('Name saved.')
   await page.reload()
   await expect(page.getByLabel('Name')).toHaveValue(name)
+  // A click before hydration can be lost.
+  await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
 
   await page.getByRole('link', { name: `Org ${slug}` }).click()
   await page.getByRole('link', { name: 'Members' }).click()

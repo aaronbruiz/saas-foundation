@@ -128,6 +128,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Code or configuration contradicting an Accepted ADR, flagged with the relevant `ADR-NNNN`. Significant architectural decisions without an ADR, flagged for documentation and approval before the change is accepted.
 - New bindings in `wrangler.jsonc` without an ADR, or without a `previews` override.
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
+- A change to the app's security headers (ADR-0045): a third-party script, frame or connection origin used without being added to the CSP, `unsafe-inline` or `unsafe-eval` for scripts, a relaxed `frame-ancestors`, or a response path that skips the middleware in `start.ts`.
 - A plan name, price id, limit number or subscription status checked outside `modules/billing/policy.ts` (product assumptions spread through the app, ADR-0020); a limit enforced only in our service when Better Auth's own endpoints can bypass it.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent; a billing webhook that works without its secret configured, or that lets an older or duplicate event change state (ADR-0018).
 - A Polar subscription event applied from its payload alone (instead of the re-read subscription), or linked to an organization unless its `metadata.organization_id` equals the customer's `external_id`; Polar mode inferred from a token instead of `BILLING_PROVIDER=polar` (ADR-0022).

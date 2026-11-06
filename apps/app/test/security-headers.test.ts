@@ -1,0 +1,36 @@
+import { describe, expect, it } from 'vitest'
+import { contentSecurityPolicy, newNonce, setSecurityHeaders } from '../src/server/security-headers'
+
+// ADR-0045. The middleware itself can't load in the workerd pool (see ping.test.ts); e2e checks it
+// on real responses (e2e/security-headers.spec.ts).
+describe('security headers', () => {
+  it('a nonce is 128 random bits and differs on every request', () => {
+    const a = newNonce()
+    expect(atob(a)).toHaveLength(16)
+    expect(newNonce()).not.toBe(a)
+  })
+
+  it('the CSP allows scripts only from the app, Turnstile or the nonce, and forbids framing', () => {
+    const csp = contentSecurityPolicy('abc')
+    expect(csp).toContain("script-src 'self' 'nonce-abc' https://challenges.cloudflare.com;")
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).toContain("connect-src 'self';")
+    expect(csp).not.toContain('unsafe-inline')
+    expect(csp).not.toContain('unsafe-eval')
+    expect(csp).not.toContain('ws:')
+  })
+
+  it("only the dev server's policy allows Vite's WebSocket", () => {
+    expect(contentSecurityPolicy('abc', true)).toContain("connect-src 'self' ws: wss:")
+  })
+
+  it('sets HSTS for a year without subdomains, nosniff, the referrer policy and no framing', () => {
+    const h = new Headers()
+    setSecurityHeaders(h, 'abc')
+    expect(h.get('content-security-policy')).toBe(contentSecurityPolicy('abc'))
+    expect(h.get('strict-transport-security')).toBe('max-age=31536000')
+    expect(h.get('x-content-type-options')).toBe('nosniff')
+    expect(h.get('referrer-policy')).toBe('strict-origin-when-cross-origin')
+    expect(h.get('x-frame-options')).toBe('DENY')
+  })
+})
