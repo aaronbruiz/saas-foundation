@@ -52,6 +52,16 @@ Where to look when production fails:
 - **Retention:** 7 days (Workers Paid). Copy anything needed longer into the incident notes, without PII.
 - **Never** paste log lines containing user data into tickets or chat. The logger redacts emails and URL credentials; check anything you copy.
 
+### Instrumenting a new feature
+
+Before the PR is ready, for any feature with a failure path the owner would need to diagnose in production:
+
+1. Write down the 2–3 questions you'd ask when it fails (did it fail, why, for how many requests). Each log line added must help answer one; don't log anything else.
+2. Give each failure path a stable `event` name (dot-separated, e.g. `billing.checkout_failed`) through `server/log.ts`, with an error `code` and non-identifying fields only (ADR-0015's log contract). Unexpected errors in server functions are already logged as `server_fn.unhandled`; add an event only where that one wouldn't answer the questions.
+3. Trigger each path locally once and read the line in the `pnpm dev` output: one JSON object, the `event` and `code` present, and no email, name, token or request data.
+4. If the event is new, add it to the filter list under "Dashboard" above.
+5. An alert beyond Issues' default (every new issue, ADR-0031) needs a symptom users feel, a threshold and a link to the runbook section that answers it.
+
 ## CI credentials (ADR-0019, ADR-0021, ADR-0023)
 
 No preview secret lives at repo level: a `pull_request` workflow runs the PR's own YAML and could read it. Every secret sits in an environment that only `main` may use, and only default-branch code (`workflow_run`, `pull_request_target`, schedule) uses it.
@@ -192,6 +202,16 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
   - **Fallback to Free:** `canceled` isn't in `ENTITLED`, so the policy gives Free; the owner saw Billing show Free.
   - **Eval run `r13-0929`** (`POLAR_EVAL_PAID=events`): Polar holds it `canceled`, ended 2026-10-21 06:00:02Z, about 21 days after the 2026-09-30 failure; the retry attempts themselves aren't shown, so that this was the last retry isn't established. The eval showed no later subscription events for this run (its endpoint is an `example.com` URL), so the end is seen only in the subscription's state, as this check anticipated ("if Polar has disabled its endpoint by then").
 - [x] **Cancellation at period end:** cancelling in the portal keeps `active` with `cancel_at_period_end` until the period ends, then Free. 2026-09-30 (sandbox, eval run `r12-0929`, trialing adapter checkout): cancelling in the portal at 02:43Z sent `subscription.updated` and `subscription.canceled` right away, both sent and re-read as `trialing` with `cancel_at_period_end: true` (plan kept); `subscription.canceled` doesn't mean the plan ended, and the parser applies the re-read status, not the event type. With the period end brought forward to 02:54:05Z (`POLAR_EVAL_PAID=endtrial`), Polar sent `subscription.updated`, `subscription.canceled` and `subscription.revoked`, sent and re-read as `canceled` (Free). Every event linked to the organization (`POLAR_EVAL_PAID=events`). This was a trialing subscription; 2026-09-30 through the deployed app (the plan-change subscription above, `active`, paid): cancelling in the portal at 06:12:25Z sent `subscription.updated` and `subscription.canceled`, both `active` with `cancel_at_period_end: true`, delivered (HTTP 200) and linked; Billing showed Pro (active), ending on 2026-10-30, and the portal "To be cancelled". Done 2026-10-14 (sandbox, deployed app; owner and Claude): to run the step now rather than on 2026-10-30, that subscription's period end was brought forward to 15:51:29Z through the API (`PATCH /v1/subscriptions/{id}` with `current_billing_period_end`; `ends_at` moved with it, still `active` with `cancel_at_period_end: true`). At 15:51Z Polar sent `subscription.updated`, `subscription.canceled` and `subscription.revoked`, each delivered (HTTP 200); Polar's API then showed `canceled`, `ended_at` 15:51:29Z; Billing showed "Plan: Free (canceled)" with the Free limits (projects 1 of 3, members 1 of 3).
+
+## Before admitting pilot users (open checks)
+
+Launch checks that neither M3's "Before it starts" nor the release steps cover. Each one needs the owner's decision (do it, or accept it for the pilot) recorded here before the first pilot user is admitted. The state shown is as of 2026-11-05.
+
+- [ ] **Security headers on the app:** the app Worker sends no `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options` or `frame-ancestors`, `X-Content-Type-Options` or `Referrer-Policy`. Checked with `curl -sIL` on `https://app.aaronlabr.dev/` (which ends at `/login`) and `/api/ping`. The docs and marketing sites do set them (`apps/{docs,site}/public/_headers`). Without `frame-ancestors`, the sign-in page can be framed by another site.
+- [ ] **Browser errors:** errors thrown in the browser aren't captured anywhere. Workers Logs sees only server errors, and ADR-0015 lists browser error capture as a reason to adopt an error tracker.
+- [ ] **Accessibility:** there's no automated accessibility check (no axe in the E2E suite). Check sign-up, sign-in, invitations and organization settings at least by keyboard.
+- [ ] **Dependency alerts:** no open Dependabot alerts on 2026-11-05 (`gh api repos/:owner/:repo/dependabot/alerts?state=open`). Dependabot security updates are on. Re-check on the day.
+- [ ] **Secret scanning:** GitGuardian checks pull request commits (`docs/architecture/README.md`). The repository's own GitHub secret scanning and push protection are off (`gh api repos/:owner/:repo --jq .security_and_analysis`). Decide whether GitGuardian alone is enough.
 
 ## Recovery card (ADR-0036)
 
