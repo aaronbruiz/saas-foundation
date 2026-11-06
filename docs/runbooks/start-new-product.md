@@ -131,7 +131,7 @@ Claude implements and Codex reviews (ADR-0012), with one coordinating session an
 
 - Log in to Claude Code and Codex, and run `pnpm install --frozen-lockfile`, `pnpm db:up` and step 5's `.dev.vars` copy. `.worktreeinclude` copies `.dev.vars` into each worker's worktree.
 - Create `../<product>-review/` for Codex's detached worktrees and result files.
-- Create `.local/tasks/`, and `.local/handoff.md` from `.agents/skills/coordinate/handoff-template.md`. `.local/` is git-ignored.
+- Create `.local/tasks/`, and `.local/index.md` from `.agents/skills/coordinate/index-template.md`. `.local/` is git-ignored.
 
 Start `claude` once in the clone and accept the workspace trust dialog: until you do, Claude Code ignores the project's allow rules and the worker's hook. In an untrusted clone, `deny` rules still block pushes to `main` and branch pushes prompt; the hook only adds protection after trust. Run a coordinated session in auto mode, not `bypassPermissions`: workers inherit the mode, and in `bypassPermissions` nothing judges a command the rules don't list. Run every `pnpm test` and `pnpm test:e2e` through `scripts/test-lock.sh`, manual ones too: all clones on a machine share the test database, and the lock can't see a run that skips it.
 
