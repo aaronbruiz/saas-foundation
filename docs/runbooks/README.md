@@ -54,13 +54,13 @@ Where to look when production fails:
 
 ### Instrumenting a new feature
 
-Before the PR is ready, for any feature with a failure path the owner would need to diagnose in production:
+Suggested practice, not a requirement (the rules are ADR-0015's log contract and ADR-0031). For a feature with a failure path the owner would need to diagnose in production:
 
-1. Write down the 2–3 questions you'd ask when it fails (did it fail, why, for how many requests). Each log line added must help answer one; don't log anything else.
-2. Give each failure path a stable `event` name (dot-separated, e.g. `billing.checkout_failed`) through `server/log.ts`, with an error `code` and non-identifying fields only (ADR-0015's log contract). Unexpected errors in server functions are already logged as `server_fn.unhandled`; add an event only where that one wouldn't answer the questions.
-3. Trigger each path locally once and read the line in the `pnpm dev` output: one JSON object, the `event` and `code` present, and no email, name, token or request data.
-4. If the event is new, add it to the filter list under "Dashboard" above.
-5. An alert beyond Issues' default (every new issue, ADR-0031) needs a symptom users feel, a threshold and a link to the runbook section that answers it.
+1. Note the 2–3 questions you'd ask when it fails (did it fail, why, for how many requests), and log only what helps answer them.
+2. Unexpected errors in server functions are already logged as `server_fn.unhandled`. Where that wouldn't answer the questions, add a stable `event` name (dot-separated, e.g. `billing.checkout_failed`) through `server/log.ts`, relying on the error's `code` when it has one and on non-identifying fields (ADR-0015).
+3. Trigger the path locally once and read the line in the `pnpm dev` output: one JSON object with the `event`, and no email, name, token or request data.
+4. If the event is new, consider adding it to the filter list under "Dashboard" above.
+5. Before proposing an alert beyond Issues' default (every new issue, ADR-0031), name the symptom users feel, the threshold and the runbook section that answers it.
 
 ## CI credentials (ADR-0019, ADR-0021, ADR-0023)
 
@@ -207,7 +207,7 @@ Each check must pass in the sandbox, through a checkout opened by the app, and b
 
 Launch checks that neither M3's "Before it starts" nor the release steps cover. Each one needs the owner's decision (do it, or accept it for the pilot) recorded here before the first pilot user is admitted. The state shown is as of 2026-11-05.
 
-- [ ] **Security headers on the app:** the app Worker sends no `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options` or `frame-ancestors`, `X-Content-Type-Options` or `Referrer-Policy`. Checked with `curl -sIL` on `https://app.aaronlabr.dev/` (which ends at `/login`) and `/api/ping`. The docs and marketing sites do set them (`apps/{docs,site}/public/_headers`). Without `frame-ancestors`, the sign-in page can be framed by another site.
+- [ ] **Security headers on the app:** the app Worker sends no `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options` or `frame-ancestors`, `X-Content-Type-Options` or `Referrer-Policy`. Checked with `curl -sIL` on `https://app.aaronlabr.dev/` (which ends at `/login`) and `/api/ping`. The docs and marketing sites set a CSP with `frame-ancestors 'none'`, `X-Content-Type-Options` and `Referrer-Policy` (`apps/{docs,site}/public/_headers`), but not HSTS or `X-Frame-Options`. Without `frame-ancestors`, the sign-in page can be framed by another site.
 - [ ] **Browser errors:** errors thrown in the browser aren't captured anywhere. Workers Logs sees only server errors, and ADR-0015 lists browser error capture as a reason to adopt an error tracker.
 - [ ] **Accessibility:** there's no automated accessibility check (no axe in the E2E suite). Check sign-up, sign-in, invitations and organization settings at least by keyboard.
 - [ ] **Dependency alerts:** no open Dependabot alerts on 2026-11-05 (`gh api repos/:owner/:repo/dependabot/alerts?state=open`). Dependabot security updates are on. Re-check on the day.
