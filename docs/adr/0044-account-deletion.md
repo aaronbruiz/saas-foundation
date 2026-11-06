@@ -108,3 +108,7 @@ It's **best-effort recovery evidence, never a complete deletion ledger**: a Work
 - `project.created_by` is nullable with `ON DELETE SET NULL`. Old code keeps working, but `DROP NOT NULL` counts as a contract migration (`scripts/contract-migrations.sh`): rolling back past it needs `confirm_breaking`, and the title has `!`.
 - A busy or unknown Polar write can refuse a deletion; a closed gate can refuse checkout and portal.
 - Restores gain a required step (runbook "After a restore", ADR-0038).
+
+## Notes (2026-11-06)
+
+**Verification links bound to the user (Better Auth 1.7.17).** Verification emails sent since this upgrade carry the user's id. Better Auth refuses such a link for a different user with the same email, so a link sent before a deletion no longer verifies a new account at that address. Links issued earlier, without the id, are still accepted until they expire. The "Limits" paragraph above describes those older links.
