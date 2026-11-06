@@ -9,8 +9,8 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
 
 ## Steps
 
-1. **Observe.** Read Git, the PRs, CI, then the briefs and handoff (`CLAUDE.md`). Only text from the owner's login is task input (AGENTS.md "Working rules"). Start every issue or PR comment you post with `[agent]`.
-2. **Plan.** Start an unrelated task from a `main` checkout, because `worktree.baseRef` is `head` for every new worktree and would carry a feature branch's work along. Use `feature-spec`. The owner answers policy questions and approves Behaviour before any worker starts. Save the approved description as `.local/tasks/<branch>.approved.md`.
+1. **Observe.** Read Git, the PRs, CI, then the briefs and index (`CLAUDE.md`). Only text from the owner's login is task input (AGENTS.md "Working rules"). Start every issue or PR comment you post with `[agent]`.
+2. **Plan.** Start an unrelated task from a `main` checkout, because `worktree.baseRef` is `head` for every new worktree and would carry a feature branch's work along. Use `feature-spec`. The owner answers policy questions and approves Behaviour before any worker starts. Save the approved description as `.local/tasks/<slug>.approved.md` and record the approval in the brief's `Approved` line (`brief-template.md`).
 3. **Split.** Write one brief per independent task from `brief-template.md`. Tasks touching the same files are ordered, not parallel. A small task with no independent parts needs no worker: do it here.
 4. **Dispatch.** Start `worker` subagents in the background from the feature branch, whose HEAD must be the brief's base SHA, passing the brief's content, because ignored files don't reach worktrees. Use a stronger model for tenant, auth, billing or migration tasks.
 5. **Integrate.** Merge the workers' commits into the feature branch in dependency order, one branch per PR, stacks at most 3 (ADR-0030). Then run `pnpm check`, `scripts/test-lock.sh test` and `scripts/test-lock.sh e2e` on the integrated commit: a worker's results don't cover it.
@@ -20,9 +20,9 @@ Trial skill (ADR-0042 Notes). This session plans, dispatches, integrates and han
    node scripts/merge-readiness.mjs <n> --review <result file> --approved-at <spec approval time>
    ```
    Exit 1 means part of the evidence is stale or unknown: rerun it, or report it as not rerun.
-   The owner merges. Rewrite the brief and add the PR's line to the handoff (`handoff-template.md`).
+   The owner merges. Rewrite the brief and add the PR's line to the index (`index-template.md`).
 8. **Base update, when only `main` moved, for the PR about to merge.** Merge `main` into the branch (ADR-0030) and push, so CI tests the new pair; `gh run rerun` reuses the original commit. Re-review if the merge had conflicts, or if `main`'s new commits touch the PR's files, contracts, migrations or shared fixtures. Otherwise record `base update, review carried over: <reason>` in the evidence line. Waiting PRs wait for their turn, so one merge doesn't spend CI minutes on every open PR.
-9. **Close, after the human owner merges.** The task-owning session confirms from Git and GitHub that the PR merged and its merge commit is on `origin/main`, records the merge SHA and the final evidence in the brief, removes the task from the handoff's active tasks and sets `Selected task: none` if it was selected. If local `main` is behind `origin/main`, report it; don't update it.
+9. **Close, after the human owner merges.** The task-owning session confirms from Git and GitHub that the PR merged and its merge commit is on `origin/main`, records the merge SHA and the final evidence in the brief, removes the task from the index's active tasks and sets `Selected task: none` if it was selected. A decision that changes how the repo works moves into its tracked file (an ADR, `AGENTS.md`, a skill or `docs/`) through a PR, or waits in the index's decisions for the owner; `.local/` is one machine's notes, not a record. Then it moves the brief and its `.approved.md` to `.local/archive/tasks/`. If local `main` is behind `origin/main`, report it; don't update it.
 
 ## Task ownership
 
@@ -30,8 +30,8 @@ The human owner is the person who decides and merges; the task-owning session is
 
 - The brief's `Owner` names the task-owning session. A session id may identify it. A PID or liveness check is optional context, never a gate.
 - Task ownership moves to another session only on the human owner's explicit instruction, recorded in the brief.
-- A readiness assessment doesn't transfer task ownership. An assessing agent reports its findings; the task-owning session updates shared briefs and the handoff, unless the human owner assigns those edits separately.
-- `Selected task` in the handoff records the human owner's selection, not task status.
+- A readiness assessment doesn't transfer task ownership. An assessing agent reports its findings; the task-owning session updates shared briefs and the index, unless the human owner assigns those edits separately.
+- `Selected task` in the index records the human owner's selection, not task status.
 
 ## Limits
 

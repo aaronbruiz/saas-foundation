@@ -20,7 +20,7 @@ test-results
 .dev.vars*
 !.dev.vars.example
 
-# local-only notes (handoffs etc.)
+# local-only notes (index, briefs etc.)
 .local/
 
 # Agent config: .claude/settings.json, hooks/ and CLAUDE.md are shared (committed);
@@ -51,7 +51,7 @@ test-results
 .agents/skills/coordinate/*
 !.agents/skills/coordinate/SKILL.md
 !.agents/skills/coordinate/brief-template.md
-!.agents/skills/coordinate/handoff-template.md
+!.agents/skills/coordinate/index-template.md
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/

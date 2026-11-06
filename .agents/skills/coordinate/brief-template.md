@@ -1,11 +1,13 @@
-# <branch>: <task>
+# <slug>: <task>
 
-<!-- At most 40 lines. Rewrite this file, never append. Lives in .local/tasks/<branch>.md.
+<!-- At most 40 lines. Rewrite this file, never append. Lives in .local/tasks/<slug>.md: the branch with `/` as `-`, or a short name until a branch exists (the brief then says it's pending, which is no permission to start).
 Copy state from Git, the PR and CI, and say when you read it; those three win over this file. -->
 
 Observed: <date and time>
 PR: <number or none> · Branch: <branch> · Worktree: <path> · Owner: <task-owning session; a session id may identify it>
 Base: <sha> · Head: <sha> · Status: <merged / validated / deployed / operational, or in progress>
+Approved: <owner>, <time>, <scope>, <where said> / pending / not required (<why>)
+<!-- The time is the owner's message timestamp or their own statement, never your clock or the PR's time; if you can't see it, say so and ask. A filename, folder or status label is never approval. -->
 
 ## Goal
 
