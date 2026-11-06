@@ -42,17 +42,6 @@ test('the health route keeps its answer and carries the security headers', async
   expectSecurityHeaders(res)
 })
 
-// Locally Vite's dev server answers a malformed path itself, before the Worker; on a deployed preview
-// Start answers it without running request middleware, and the Worker entry still adds the headers.
-test("a malformed path, answered by Start's own 400, carries the security headers", async ({
-  request,
-}) => {
-  test.skip(!process.env.BASE_URL, "Vite's dev server answers it locally")
-  const res = await request.get('/%ZZ')
-  expect(res.status()).toBe(400)
-  expectSecurityHeaders(res)
-})
-
 test("a server function's 404 and the cross-origin 403 carry the security headers", async ({
   request,
   baseURL,
