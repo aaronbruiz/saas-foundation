@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.5.0...app-v0.6.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **account:** self-service account deactivation, eligible for purge after 90 days ([#237](https://github.com/aaronbruiz/saas-foundation/issues/237))
+
+### Features
+
+* **account:** organization menu and account page ([#231](https://github.com/aaronbruiz/saas-foundation/issues/231)) ([55fd9cf](https://github.com/aaronbruiz/saas-foundation/commit/55fd9cfe328d4ef412ab604826ffcdfcaab23233))
+* **account:** self-service account deactivation, eligible for purge after 90 days ([#237](https://github.com/aaronbruiz/saas-foundation/issues/237)) ([ad32b8c](https://github.com/aaronbruiz/saas-foundation/commit/ad32b8c75fd3740d7c8cb133e2a859e3fbb606aa))
+* **agents:** coordinated workflow with parallel workers, trial skills and permission rules ([#226](https://github.com/aaronbruiz/saas-foundation/issues/226)) ([4fdb2d3](https://github.com/aaronbruiz/saas-foundation/commit/4fdb2d3523a60448e2fd340a485921ec00ef2d4c))
+* **organizations:** members page with pending invitations and revoke ([#220](https://github.com/aaronbruiz/saas-foundation/issues/220)) ([2a3167a](https://github.com/aaronbruiz/saas-foundation/commit/2a3167a54b53ac54cb6d56ebf1e1a6be27ad7f9d))
+* **organizations:** remove members and change their role ([#225](https://github.com/aaronbruiz/saas-foundation/issues/225)) ([dac507d](https://github.com/aaronbruiz/saas-foundation/commit/dac507d67994fab501b4923f8da3b0d83ddd0c4c))
+* **organizations:** settings, leave, ownership transfer and delete ([#232](https://github.com/aaronbruiz/saas-foundation/issues/232)) ([3b90eb3](https://github.com/aaronbruiz/saas-foundation/commit/3b90eb37db36d6e42eaa00e4f47b4d2d8602d195))
+
+
+### Bug Fixes
+
+* **app:** security headers and a nonce-based CSP on every app response ([#243](https://github.com/aaronbruiz/saas-foundation/issues/243)) ([007c4ed](https://github.com/aaronbruiz/saas-foundation/commit/007c4edb8ef5236e715fb8c101f4ac2eeea4236d))
+* **db:** answer every request when its database backend is lost ([#210](https://github.com/aaronbruiz/saas-foundation/issues/210)) ([354525e](https://github.com/aaronbruiz/saas-foundation/commit/354525e5f8c7693da98bd9447c983f66d6d31468))
+* **db:** stop waiting to close a connection whose socket has failed ([#223](https://github.com/aaronbruiz/saas-foundation/issues/223)) ([17c5509](https://github.com/aaronbruiz/saas-foundation/commit/17c5509e06a94d786584aad3b4495a7cb4cddf76))
+* **deps:** patch transitive seroval, zod, undici and tooling advisories ([#244](https://github.com/aaronbruiz/saas-foundation/issues/244)) ([a3517e1](https://github.com/aaronbruiz/saas-foundation/commit/a3517e1a717e85205845020eadbd42f962afdfbb))
+* **deps:** update better-auth and its CLI to 1.7.17 ([#242](https://github.com/aaronbruiz/saas-foundation/issues/242)) ([11a488a](https://github.com/aaronbruiz/saas-foundation/commit/11a488a783745abd8332f631b4cada47cfe35cc7))
+
 ## [0.5.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.4.1...app-v0.5.0) (2026-10-29)
 
 
