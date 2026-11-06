@@ -46,3 +46,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0042](0042-tracked-agent-workflows.md): Tracked agent workflows as skills (`.agents/skills/` with `.claude/skills/` links), starting with the Codex review `review-pr`
 - [ADR-0043](0043-owner-guard-and-deletion-gate.md): A database guard keeps an organization's owner; a claim plus the provider's state guards deletion against a subscription. Accepted for the smoke-test-only environment, with conditions.
 - [ADR-0044](0044-account-deletion.md): Self-service account deactivation, purge after 90 days, and a billing access gate. Accepted for the smoke-test-only environment.
+- [ADR-0045](0045-app-security-headers.md): Security headers and a nonce-based Content Security Policy on every app response; new third-party origins go into the policy in the same PR
