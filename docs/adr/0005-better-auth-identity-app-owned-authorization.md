@@ -71,3 +71,13 @@ WAF rules apply to requests on a zone (custom domain), not to `*.workers.dev` or
 ## Notes (2026-10-15)
 
 **Schema generation command.** The `auth` CLI is now a pinned dev dependency of `packages/auth` (its version is in `packages/auth/package.json`; 1.7.7 when this note was written), run with `pnpm auth:generate`, instead of `npx auth@latest generate`. The decision (generated schema, migrations only through drizzle-kit) is unchanged.
+
+## Notes (2026-11-06)
+
+**Invitation visibility tightened by Better Auth 1.7.17 (owner approved 2026-11-06).** Between 1.7.12 and 1.7.17, Better Auth's own organization endpoints started keeping pending invitations from ordinary members. This closes the `list-invitations` gap that the Decision above accepted for 1.7.12.
+
+- `list-invitations` answers 403 to a `member`.
+- `get-full-organization` returns no invitations to a `member`.
+- An `admin` no longer sees `owner` invitations in either endpoint, and can't resend one (`invite-member` with `resend`, 403).
+
+The table above is unchanged: these are Better Auth's defaults, accepted as ours. `test/roles.test.ts` ("pending invitations are hidden from members, and owner invitations from admins") checks them over HTTP. The same test fails against 1.7.12. Our members page is unchanged: it reads pending invitations through `listPendingInvitations` for `member:invite` holders, so an admin still sees `owner` invitations there.

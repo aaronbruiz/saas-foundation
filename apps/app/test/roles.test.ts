@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getTenantContext } from '../src/server/context'
 import { authFor } from '../src/server/auth'
@@ -341,6 +342,63 @@ describe('Better Auth organization endpoints (default roles)', () => {
     })
     expect(removed.status).toBe(200)
     await expectStatus(() => roleIn(o.slug, o.member), 404)
+  })
+
+  it('pending invitations are hidden from members, and owner invitations from admins', async () => {
+    const o = await freshOrg()
+    const memberEmail = `m-${crypto.randomUUID()}@test.local`
+    const ownerEmail = `o-${crypto.randomUUID()}@test.local`
+    for (const [email, role] of [
+      [memberEmail, 'member'],
+      [ownerEmail, 'owner'],
+    ])
+      expect(
+        (await post(o.owner, 'invite-member', { email, role, organizationId: o.orgId })).status,
+      ).toBe(200)
+    const get = (as: TestUser, path: string) =>
+      withDb((db) =>
+        authFor(db).handler(
+          new Request(
+            `${env.BETTER_AUTH_URL}/api/auth/organization/${path}?organizationId=${o.orgId}`,
+            {
+              headers: { origin: env.BETTER_AUTH_URL, cookie: as.headers.get('cookie')! },
+            },
+          ),
+        ),
+      )
+    type Invitations = { email: string; status: string }[]
+    const pending = (list: Invitations) =>
+      list.filter((i) => i.status === 'pending').map((i) => i.email)
+    const listed = async (as: TestUser) => {
+      const res = await get(as, 'list-invitations')
+      expect(res.status).toBe(200)
+      return pending((await res.json()) as Invitations)
+    }
+    const inFullOrganization = async (as: TestUser) => {
+      const res = await get(as, 'get-full-organization')
+      expect(res.status).toBe(200)
+      return pending(((await res.json()) as { invitations: Invitations }).invitations)
+    }
+
+    expect((await get(o.member, 'list-invitations')).status).toBe(403)
+    await expect(inFullOrganization(o.member)).resolves.toEqual([])
+    for (const read of [listed, inFullOrganization]) {
+      await expect(read(o.admin)).resolves.toEqual([memberEmail])
+      await expect(read(o.owner)).resolves.toEqual(
+        expect.arrayContaining([memberEmail, ownerEmail]),
+      )
+    }
+
+    const resend = await post(o.admin, 'invite-member', {
+      email: ownerEmail,
+      role: 'member',
+      resend: true,
+      organizationId: o.orgId,
+    })
+    expect(resend.status).toBe(403)
+    await expect(invitedEmails(o)).resolves.toEqual(
+      expect.arrayContaining([memberEmail, ownerEmail]),
+    )
   })
 })
 
