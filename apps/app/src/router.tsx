@@ -10,9 +10,11 @@ export function getRouter() {
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
     defaultErrorComponent: ErrorPage,
-    // ADR-0045: the request's CSP nonce (start.ts) on the SSR scripts and styles. On the client it's
+    // ADR-0045: the request's CSP nonce (server.ts) on the SSR scripts and styles. On the client it's
     // undefined here; the router reads it back from HeadContent's `<meta property="csp-nonce">`.
-    ssr: { nonce: getGlobalStartContext()?.nonce },
+    // The context isn't typed through Register: server.ts is the Worker's main module, and typing it
+    // there makes the router's own type circular.
+    ssr: { nonce: (getGlobalStartContext() as { nonce?: string } | undefined)?.nonce },
   })
 
   return router

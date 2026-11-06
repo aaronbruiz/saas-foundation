@@ -1,6 +1,6 @@
 // ADR-0045: security headers on every response the Worker produces. Scripts run only from this
 // origin, Turnstile's (ADR-0025) or with the request's nonce, which TanStack Start puts on its own
-// tags (`ssr.nonce` in router.tsx). A new third-party origin is added here in the same PR.
+// tags (`ssr.nonce` in router.tsx). Applied in the Worker's entry, src/server.ts. A new third-party origin is added here in the same PR.
 
 const TURNSTILE = 'https://challenges.cloudflare.com'
 
@@ -26,7 +26,19 @@ export function contentSecurityPolicy(nonce: string, dev = false): string {
   ].join('; ')
 }
 
-export function setSecurityHeaders(headers: Headers, nonce: string, dev = false): void {
+/** Adds the headers; a response whose headers are immutable (`Response.redirect`) is copied first. */
+export function withSecurityHeaders(response: Response, nonce: string, dev = false): Response {
+  try {
+    setSecurityHeaders(response.headers, nonce, dev)
+    return response
+  } catch {
+    const copy = new Response(response.body, response)
+    setSecurityHeaders(copy.headers, nonce, dev)
+    return copy
+  }
+}
+
+function setSecurityHeaders(headers: Headers, nonce: string, dev: boolean): void {
   headers.set('Content-Security-Policy', contentSecurityPolicy(nonce, dev))
   headers.set('Strict-Transport-Security', 'max-age=31536000')
   headers.set('X-Content-Type-Options', 'nosniff')

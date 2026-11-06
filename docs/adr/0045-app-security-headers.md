@@ -12,12 +12,12 @@ TanStack Start renders inline hydration scripts. A CSP that allows them without 
 
 ## Decision
 
-1. **A global request middleware sets the headers** (`src/start.ts`, outermost, so the CSRF 403 and the unknown-server-function 404 get them too). It's free of database work, like the rest of that chain ([ADR-0031](0031-production-alerting-issues-to-slack.md) note on `/api/ping`). The headers are built in `src/server/security-headers.ts`:
+1. **The Worker's entry sets the headers** (`src/server.ts`, `main` in `wrangler.jsonc`, replacing [ADR-0002](0002-single-tanstack-start-worker.md)'s `@tanstack/react-start/server-entry`, which it wraps; owner 2026-11-05). It wraps Start's handler, so every response Start produces gets them, including the CSRF 403, the unknown-server-function 404, and the 400 and 500 answers Start generates without running request middleware. A response with immutable headers (`Response.redirect`) is copied first. The headers are built in `src/server/security-headers.ts`:
    - `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-<n>' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`. The dev server's policy adds `ws: wss:` to `connect-src` for Vite's client, and nothing else.
    - `Strict-Transport-Security: max-age=31536000`, without `includeSubDomains` or `preload` (owner 2026-11-05: the header covers the app host only, and nothing changes for the apex or other subdomains).
    - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` (for browsers without `frame-ancestors`).
-2. **A new nonce per request**, 128 random bits, passed to the router through the middleware's context (`getGlobalStartContext()` in `src/router.tsx`).
-3. **Static assets get their headers from `apps/app/public/_headers`** (HSTS, nosniff, Referrer-Policy). Workers Static Assets serves them without the Worker. A CSP does nothing on JS and CSS files, so they get none, and `wrangler.jsonc` doesn't change (no `run_worker_first`).
+2. **A new nonce per request**, 128 random bits, passed to the router through Start's request context (`handler.fetch(request, { context })`, read with `getGlobalStartContext()` in `src/router.tsx`). On the client the router reads it back from the `<meta property="csp-nonce">` that `HeadContent` renders.
+3. **Static assets get their headers from `apps/app/public/_headers`** (HSTS, nosniff, Referrer-Policy). Workers Static Assets serves them without the Worker. A CSP does nothing on JS and CSS files, so they get none, with no `run_worker_first`.
 4. **Convention:** a new third-party script, frame or connection origin is added to this policy in the same PR that needs it. Allowing `unsafe-inline` or `unsafe-eval` for scripts, or relaxing `frame-ancestors`, needs a new ADR.
 
 ## Alternatives
@@ -29,7 +29,7 @@ TanStack Start renders inline hydration scripts. A CSP that allows them without 
 
 ## Consequences
 
-- An uncaught error that escapes the Worker is answered by the runtime without these headers. It carries no app HTML.
+- Only a failure of the entry itself (an exception in `src/server.ts` or the runtime) would answer without these headers; Start turns errors inside its handler into responses that the entry still covers.
 - CSP violations aren't reported anywhere. A `report-to` endpoint waits for an error tracker (ADR-0015).
 - `e2e/security-headers.spec.ts` checks the headers on real responses and that the sign-in page with Turnstile loads without a violation. The full e2e suite proves hydration still works: forms stay disabled until it does.
 - Raising HSTS to `includeSubDomains` or `preload` affects other hosts on `aaronlabr.dev` and needs the owner.

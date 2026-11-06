@@ -13,7 +13,8 @@
   // CI flips this to true only in its build copy for that Worker.
   "preview_urls": false,
   "routes": [{ "pattern": "app.aaronlabr.dev", "custom_domain": true }],
-  "main": "@tanstack/react-start/server-entry",
+  // ADR-0045: our entry wraps Start's default one to set the security headers on every response.
+  "main": "src/server.ts",
   "compatibility_date": "2026-09-27",
   "compatibility_flags": ["nodejs_compat"],
   // Run SSR and server functions next to Neon (aws-us-east-1); static assets are still served at the edge.

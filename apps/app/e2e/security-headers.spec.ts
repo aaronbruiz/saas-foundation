@@ -1,6 +1,6 @@
 import { expect, test, type APIResponse } from '@playwright/test'
 
-// ADR-0045: the Worker's global middleware sets these on every response it produces.
+// ADR-0045: the Worker's entry (src/server.ts) sets these on every response Start produces.
 function expectSecurityHeaders(res: APIResponse) {
   const h = res.headers()
   expect(h['content-security-policy']).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' /)
@@ -32,6 +32,24 @@ test('the ping route keeps its answer and carries the security headers', async (
   const res = await request.get('/api/ping')
   expect(res.status()).toBe(200)
   expect(await res.json()).toMatchObject({ ok: true })
+  expectSecurityHeaders(res)
+})
+
+test('the health route keeps its answer and carries the security headers', async ({ request }) => {
+  const res = await request.get('/api/health')
+  expect([200, 503]).toContain(res.status())
+  expect(await res.json()).toHaveProperty('ok')
+  expectSecurityHeaders(res)
+})
+
+// Locally Vite's dev server answers a malformed path itself, before the Worker; on a deployed preview
+// Start answers it without running request middleware, and the Worker entry still adds the headers.
+test("a malformed path, answered by Start's own 400, carries the security headers", async ({
+  request,
+}) => {
+  test.skip(!process.env.BASE_URL, "Vite's dev server answers it locally")
+  const res = await request.get('/%ZZ')
+  expect(res.status()).toBe(400)
   expectSecurityHeaders(res)
 })
 

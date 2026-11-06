@@ -12,9 +12,7 @@ const pgCloudflareWorkerdBuild = join(
   'dist/index.js',
 )
 
-// Expected warning on every run: "[vpw:warn] Failed to statically analyze the exports of the main
-// Worker entry-point @tanstack/react-start/server-entry". That module only exists inside TanStack's
-// Vite plugin; our tests import modules directly and don't call the Worker entry.
+// Tests import modules directly and don't call the Worker entry (src/server.ts).
 // Tests run inside workerd with the Worker's real bindings (ADR-0006).
 // The DB binding is pointed at the separate `app_test` database so tests never touch dev data, as
 // the least-privilege runtime role (ADR-0038; test/global-setup.ts gives it its local login).
