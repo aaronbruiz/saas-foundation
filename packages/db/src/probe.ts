@@ -50,6 +50,13 @@ const within = <T>(p: Promise<T>, ms: number, what: string) =>
 
 const BARRIER_MS = 10_000
 
+/** A participant's result or its failure, handled from the start so a rejection is never unhandled. */
+const settled = <T>(p: Promise<T>) =>
+  p.then(
+    (value) => value,
+    (e: unknown) => ({ threw: describe(e) }),
+  )
+
 export async function deletionProbe(connectionString: string): Promise<ProbeResult> {
   const conns: { db: Db; close: () => Promise<void> }[] = []
   const open = async () => {
@@ -58,6 +65,8 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
     return c.db
   }
   const checks: Record<string, ProbeCheck> = {}
+  /** Barriers still holding a transaction open; released before the connections close. */
+  const releases: (() => void)[] = []
   const run = crypto.randomUUID().slice(0, 8)
   const now = new Date()
   const newUser = async (db: Db, name: string) => {
@@ -95,14 +104,21 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
   try {
     const main = await open()
     const raw = rawDb(main)
-    /** Polls until `blocker` blocks a backend: the one with `pid`, or one whose query matches `like`. */
-    const blockedBy = async (blocker: number, target: { pid?: number; like?: string }) => {
+    /**
+     * Polls until one of `blockers` blocks a backend: the one with `pid`, or one whose query matches
+     * `like`. About 3 s at most, inside the 5 s statement timeout of the transactions it watches.
+     */
+    const blockedBy = async (blockers: number[], target: { pid?: number; like?: string }) => {
       const pid = target.pid ?? null
       const like = target.like ?? null
-      for (let i = 0; i < 100; i++) {
+      const pids = sql.join(
+        blockers.map((b) => sql`${b}::int`),
+        sql`, `,
+      )
+      for (let i = 0; i < 30; i++) {
         const res = (await raw.execute(
           sql`select pid from pg_stat_activity
-               where ${blocker}::int = any(pg_blocking_pids(pid))
+               where pg_blocking_pids(pid) && array[${pids}]
                  and (${pid}::int is null or pid = ${pid}::int)
                  and (${like}::text is null or query ilike ${like}::text)`,
         )) as unknown as { rows: { pid: number }[] }
@@ -207,6 +223,7 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
     const [writerA, deleterA] = [await open(), await open()]
     const insertedA = deferred()
     const commitA = deferred()
+    releases.push(commitA.resolve)
     let writerPidA = 0
     const writeA = ownTransaction(writerA, async (tx) => {
       writerPidA = await pidOf(tx)
@@ -221,8 +238,8 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
       (e: unknown) => ({ inserted: false, ...describe(e) }),
     )
     await within(insertedA.promise, BARRIER_MS, 'insert-first insert')
-    const deactivatingA = deactivateAccount(deleterA, da, tokenA)
-    const queuedA = await blockedBy(writerPidA, { like: deactivationQuery })
+    const deactivatingA = settled(deactivateAccount(deleterA, da, tokenA))
+    const queuedA = await blockedBy([writerPidA], { like: deactivationQuery })
     commitA.resolve()
     const [wA, outcomeA] = await Promise.all([writeA, deactivatingA])
     const leftA = await raw.select({ id: session.id }).from(session).where(eq(session.userId, da))
@@ -240,17 +257,20 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
     await closeBillingAccess(main, d, token)
     const [holder, writer, deleter] = [await open(), await open(), await open()]
     const release = deferred()
+    releases.push(release.resolve)
     const held = deferred()
     let holderPid = 0
-    const holding = ownTransaction(holder, async (tx) => {
-      holderPid = await pidOf(tx)
-      await tx.select({ id: user.id }).from(user).where(eq(user.id, d)).for('update')
-      held.resolve()
-      await within(release.promise, BARRIER_MS, 'holder release')
-    })
+    const holding = settled(
+      ownTransaction(holder, async (tx) => {
+        holderPid = await pidOf(tx)
+        await tx.select({ id: user.id }).from(user).where(eq(user.id, d)).for('update')
+        held.resolve()
+        await within(release.promise, BARRIER_MS, 'holder release')
+      }),
+    )
     await within(held.promise, BARRIER_MS, 'holder lock')
-    const deactivating = deactivateAccount(deleter, d, token)
-    const deleterPid = await blockedBy(holderPid, { like: deactivationQuery })
+    const deactivating = settled(deactivateAccount(deleter, d, token))
+    const deleterPid = await blockedBy([holderPid], { like: deactivationQuery })
     const writerStarted = deferred()
     let writerPid = 0
     const inFlight = ownTransaction(writer, async (tx) => {
@@ -263,16 +283,14 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
     )
     await within(writerStarted.promise, BARRIER_MS, 'writer start')
     const writerQueued =
-      deleterPid !== null &&
-      ((await blockedBy(deleterPid, { pid: writerPid })) !== null ||
-        (await blockedBy(holderPid, { pid: writerPid })) !== null)
+      deleterPid !== null && (await blockedBy([deleterPid, holderPid], { pid: writerPid })) !== null
     release.resolve()
-    await holding
-    const [write, outcome] = await Promise.all([inFlight, deactivating])
+    const [held_, write, outcome] = await Promise.all([holding, inFlight, deactivating])
     const left = await raw.select({ id: session.id }).from(session).where(eq(session.userId, d))
     const ledger = await raw.select().from(userDeletion).where(eq(userDeletion.userId, d))
     checks.in_flight_session_doesnt_survive = check(
       deleterPid !== null &&
+        !(held_ && typeof held_ === 'object' && 'threw' in held_) &&
         writerQueued &&
         !write.inserted &&
         'deleted' in write &&
@@ -282,6 +300,7 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
         ledger.length === 1,
       {
         deleterPid,
+        holder: held_ ?? 'committed',
         writerQueued,
         write,
         outcome,
@@ -326,6 +345,7 @@ export async function deletionProbe(connectionString: string): Promise<ProbeResu
   } catch (e) {
     checks.probe_threw = check(false, describe(e))
   } finally {
+    for (const r of releases) r()
     await Promise.all(conns.map((c) => c.close().catch(() => {})))
   }
   return { ok: Object.values(checks).every((c) => c.ok), checks }
