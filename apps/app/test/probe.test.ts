@@ -13,6 +13,7 @@ it(
     expect(Object.keys(result.checks).sort()).toEqual([
       'gate_orders_writes',
       'in_flight_session_doesnt_survive',
+      'insert_first_session_is_removed',
       'isolation_read_committed',
       'owner_race_keeps_an_owner',
       'trigger_refuses_each_table',
