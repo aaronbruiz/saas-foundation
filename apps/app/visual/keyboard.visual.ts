@@ -53,22 +53,26 @@ for (const theme of themes)
       for (const close of ['Escape', 'Cancel'] as const) {
         await transfer.click()
         await expect(dialog).toBeVisible()
-        // More presses than the dialog has buttons: Tab wraps around inside it.
+        // More presses than the dialog has buttons: Tab wraps around inside it. At the wrap, Base
+        // UI's focus guard takes focus for a moment and then moves it to the first button, so this
+        // waits for focus to settle inside the dialog; focus reaching the page behind still fails.
         for (let i = 0; i < 4; i++) {
           await page.keyboard.press('Tab')
-          expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true)
+          await expect
+            .poll(() => dialog.evaluate((d) => d.contains(document.activeElement)))
+            .toBe(true)
         }
         if (close === 'Escape') await page.keyboard.press('Escape')
         else await dialog.getByRole('button', { name: 'Cancel' }).click()
         await expect(dialog).toHaveCount(0)
         await expect(transfer).toBeFocused()
       }
-      // Nothing was sent: both candidates are still members.
-      await page.reload()
-      await expect(page.getByLabel('New owner').getByRole('option')).toHaveText([
-        /\(member\)$/,
-        /\(member\)$/,
-      ])
+      // Nothing was sent: the signed-in owner is still the only owner. Checked on the members page,
+      // not by reloading this one: WebKit's <select> refusals are allowed once per page URL.
+      await page.goto(`/t/${team().slug}/members`)
+      await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
+      await expect(page.getByText('member', { exact: true })).toHaveCount(2)
+      await expect(page.getByText('owner', { exact: true })).toHaveCount(1)
     })
 
     test('settings: the transfer picker answers arrow keys and Escape, and keeps focus', async ({

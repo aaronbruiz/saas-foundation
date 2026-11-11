@@ -209,7 +209,10 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
     .getByRole('button', { name: 'Transfer ownership' })
     .click()
   await expect(aliceLate.getByRole('alert')).toHaveText('forbidden')
-  await expect(aliceLate.getByLabel('New owner')).toHaveAttribute('aria-invalid', 'true')
+  await expect(aliceLate.locator('[data-slot="field"]:has(#new-owner)')).toHaveAttribute(
+    'data-invalid',
+    'true',
+  )
   await expect(
     aliceLate.getByRole('region', { name: /Notifications/ }).getByText(/^Ownership transferred/),
   ).toHaveCount(0)
