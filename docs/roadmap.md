@@ -109,9 +109,9 @@ Owner-approved 2026-11-11. M3 stays deferred; this gives the template a delibera
 - **Outcome:** pages written in a product repo, mostly by agents, use shared components and tokens and come out consistent, accessible and checkable under the app's strict CSP.
 - **Why:** pages are hand-rolled Tailwind with no tokens, no dark theme and no guidance; the experiment (2026-11-10) showed an agent guessing spacing, colour, states and copy.
 - **Done when:**
-  1. Client hardening is merged: contracts type-only in routes and components, zod `jitless`, zod markers in the client-bundle scan, the strict e2e console check.
-  2. The UI foundation is merged: shadcn on Base UI, `packages/brand` tokens (light + dark, contrast-tested), the two CSP hash directives (ADR-0045), the settings pilot, the `AGENTS.md` UI section, local visual tests.
-  3. The remaining pages are on tokens and components, and the app follows the system theme.
+  1. Client hardening is merged: contracts type-only in routes and components, zod `jitless`, zod markers in the client-bundle scan, the strict e2e console check (done: #252).
+  2. The UI foundation is merged: shadcn on Base UI, `packages/brand` tokens (light + dark, contrast-tested), the two CSP hash directives (ADR-0045), the settings pilot, the `AGENTS.md` UI section, local visual tests (done: #253).
+  3. The remaining pages are on tokens and components, and the app follows the system theme (done 2026-11-11: #257, #258, #259, #261).
   4. A tracked UI skill in `.agents/skills/`, written from the pilot and the migrations.
 - **Deferred:** a theme toggle, `packages/ui`, the six excluded Base UI components, visual tests in CI.
 
