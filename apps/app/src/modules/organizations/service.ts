@@ -45,7 +45,7 @@ export async function createOrganization(
   })
 }
 
-/** Needs `member:invite` (owner/admin). Returns the link; no email provider yet (Q7). */
+/** Needs `member:invite` (owner/admin). Also returns the link the invitation email carries. */
 export async function inviteMember(
   headers: Headers,
   input: unknown,

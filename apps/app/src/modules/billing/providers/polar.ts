@@ -198,10 +198,6 @@ async function ensureCustomer(
   }
 }
 
-/**
- * Makes sure the caller (who holds `billing:manage`, checked by the service) is a member, adding
- * them as `billing_manager`: this repairs a grant the membership hooks couldn't make.
- */
 /** Every member of the customer (the API pages at 10 by default). */
 async function allMembers(polar: PolarClient, customerId: string) {
   const items = []
@@ -212,6 +208,10 @@ async function allMembers(polar: PolarClient, customerId: string) {
   }
 }
 
+/**
+ * Makes sure the caller (who holds `billing:manage`, checked by the service) is a member, adding
+ * them as `billing_manager`: this repairs a grant the membership hooks couldn't make.
+ */
 async function ensureMember(
   polar: PolarClient,
   customerId: string,
