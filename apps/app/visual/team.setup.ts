@@ -1,19 +1,18 @@
+import type { Browser, Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { expect, test as setup } from '../e2e/fixtures'
 import { PASSWORD, createAccount, createOrg, verifyAndSignIn } from '../e2e/helpers'
 import { sessionFile } from '../e2e/session'
 import { teamFile } from './team'
 
-// Visual tests need an organization with a second member, so the settings page shows the
-// transfer picker. The candidate is a fixed account, so the picker's text (and the baseline) is the
-// same on every run: it signs up the first time and signs in afterwards.
-const candidate = 'visual-candidate@e2e.test'
+// Visual tests need an organization with two more members, so the settings page shows the
+// transfer picker with a choice (the keyboard pass moves between its options). The candidates are
+// fixed accounts, so the picker's text (and the baseline) is the same on every run: each signs up
+// the first time and signs in afterwards.
+const candidates = ['visual-candidate@e2e.test', 'visual-candidate-2@e2e.test']
 
-setup('an organization with a second member', async ({ browser }) => {
-  const owner = await (await browser.newContext({ storageState: sessionFile })).newPage()
-  await owner.goto('/orgs/new')
-  const slug = await createOrg(owner, 'vis')
-  await owner.getByRole('link', { name: 'Invite' }).click()
+async function join(browser: Browser, owner: Page, slug: string, candidate: string) {
+  await owner.goto(`/t/${slug}/invite`)
   await owner.getByLabel('Invitee email').fill(candidate)
   await owner.getByRole('button', { name: 'Create invitation' }).click()
   const invitePath = new URL((await owner.getByTestId('invite-link').getAttribute('href')) ?? '')
@@ -37,5 +36,12 @@ setup('an organization with a second member', async ({ browser }) => {
   }
   await accept.click()
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/projects$`))
+}
+
+setup('an organization with two more members', async ({ browser }) => {
+  const owner = await (await browser.newContext({ storageState: sessionFile })).newPage()
+  await owner.goto('/orgs/new')
+  const slug = await createOrg(owner, 'vis')
+  for (const candidate of candidates) await join(browser, owner, slug, candidate)
   writeFileSync(teamFile, JSON.stringify({ slug }))
 })

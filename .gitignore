@@ -55,3 +55,6 @@ test-results
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/
+
+# visual-test baselines: local only (`pnpm test:visual --baseline`, docs/testing.md)
+apps/app/visual/.baseline/

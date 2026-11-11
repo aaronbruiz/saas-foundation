@@ -1,9 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Visual tests (ADR-0046): the pilot pages at 320 and 1280 px, light and dark, in Chromium, Firefox
-// and WebKit, against committed baselines. Run with `pnpm test:visual` (through
+// Visual tests (ADR-0046, docs/testing.md): the pilot pages at 320 and 1280 px, light and dark, in
+// Chromium, Firefox and WebKit, with the strict CSP check, the WebKit <select> canary and the
+// keyboard pass. Run with `pnpm test:visual [--baseline | --compare]` (through
 // scripts/test-lock.sh visual): it starts the pinned Playwright Docker image as a browser server,
-// so fonts and rendering match the baselines on any machine. Not run in CI (Actions minutes).
+// so fonts and rendering match on any machine. Screenshots live in the git-ignored
+// `visual/.baseline/` (written by --baseline, compared by --compare). Not run in CI.
 const wsEndpoint = process.env.PW_WS
 if (!wsEndpoint)
   throw new Error('Run visual tests with `pnpm test:visual`: browsers come from the pinned image.')
@@ -17,7 +19,7 @@ export default defineConfig<{ visual: boolean }>({
   globalSetup: './e2e/global-setup.ts',
   timeout: 120_000,
   reporter: 'list',
-  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',
+  snapshotPathTemplate: '{testDir}/.baseline/{projectName}/{arg}{ext}',
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled' } },
   use: { baseURL, trace: 'retain-on-failure', connectOptions, visual: true },
   projects: [

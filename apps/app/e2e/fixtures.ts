@@ -6,6 +6,8 @@ import {
   type PageAssertionsToHaveScreenshotOptions,
 } from '@playwright/test'
 
+import { appendFileSync } from 'node:fs'
+
 export { expect }
 
 type Refusal = {
@@ -172,17 +174,32 @@ export const test = base.extend<{
       if ((await page.locator('select').count()) > 0) cspState.selectPages.add(page.url())
     })
   },
-  snap: async ({ page, cspState, allowWebKitSelect }, use) => {
+  snap: async ({ page, cspState, allowWebKitSelect }, use, testInfo) => {
+    // `pnpm test:visual` mode (scripts/test-visual.mjs): `check` takes no screenshot, `baseline`
+    // saves one, `compare` compares it with the baseline and records the outcome for the summary.
+    const mode = process.env.VISUAL_MODE ?? 'check'
     await use(async (name, options) => {
       await allowWebKitSelect(page)
+      if (mode === 'check') return
       await roundTrip(page)
       cspState.screenshot = true
+      const errors = testInfo.errors.length
       try {
-        await expect(page).toHaveScreenshot(name, options)
+        await expect.soft(page).toHaveScreenshot(name, options)
       } finally {
         await roundTrip(page)
         cspState.screenshot = false
       }
+      const error = testInfo.errors
+        .slice(errors)
+        .map((e) => e.message ?? '')
+        .join('\n')
+      const outcome = !error ? 'same' : /doesn't exist|missing/i.test(error) ? 'missing' : 'changed'
+      if (process.env.VISUAL_RESULTS)
+        appendFileSync(
+          process.env.VISUAL_RESULTS,
+          `${JSON.stringify({ name: `${testInfo.project.name}/${name}`, outcome })}\n`,
+        )
     })
   },
 })

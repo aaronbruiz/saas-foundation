@@ -43,7 +43,7 @@ pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better A
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 pnpm --filter site dev | build   # marketing site (ADR-0033) on http://localhost:4322 | static build to apps/site/dist; CI: site.yml
-pnpm test:visual   # visual tests in the pinned Playwright image (ADR-0046; not in CI)
+pnpm test:visual   # [--baseline|--compare] (ADR-0046; not in CI)
 pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (`pnpm check` fails until you do)
 pnpm plans:export  # regenerate apps/site/src/data/plans.json after changing billing/policy.ts (`pnpm check` fails until you do)
 scripts/{preview,backup,sites,release}/   # previews (ADR-0021), backups (ADR-0003, ADR-0023), static sites (ADR-0028, ADR-0033), releases and rollback (ADR-0029); run by CI; manual procedures in docs/runbooks/README.md
@@ -89,9 +89,10 @@ kill -9 $(lsof -t -i:3000)
 
 ## UI (ADR-0046)
 
-- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`; colours: `packages/brand/brand.css` (contrast-tested).
-- A simple single choice is `NativeSelect`; Base UI `Select` only for rich options, groups, search or custom interaction. Six Base UI components are excluded (module map).
+- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`; colours: `packages/brand/brand.css`.
+- A simple single choice is `NativeSelect`; Base UI `Select` only for rich options, groups, search or custom interaction.
 - A style the CSP refuses fails e2e and visual tests; allowing one is a CSP change (ADR-0045).
+- Before UI work: `pnpm test:visual --baseline`. When done: `--compare`; its summary line (baseline commit, N compared, M changed) in Checks.
 
 ## Git workflow (ADR-0030)
 
