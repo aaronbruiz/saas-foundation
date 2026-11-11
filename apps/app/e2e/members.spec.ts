@@ -15,6 +15,10 @@ test('an owner sees the members and revokes a pending invitation', async ({ page
 
   await page.getByRole('link', { name: 'Members' }).click()
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
+  // The nav marks the current page, and only that one.
+  const nav = page.getByRole('navigation').first()
+  await expect(nav.getByRole('link', { name: 'Members' })).toHaveAttribute('aria-current', 'page')
+  await expect(nav.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current')
   await expect(page.getByText('owner', { exact: true })).toBeVisible()
   const revoke = page.getByRole('button', { name: `Revoke invitation for ${invitee}` })
   await expect(revoke).toBeEnabled()
