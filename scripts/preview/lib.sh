@@ -121,13 +121,11 @@ new_auth_secret() {
   return 0
 }
 
-# Deploy the preview on the preview Worker with its own auth settings, then smoke-test it.
-# Args: extra `wrangler preview` args (e.g. --config). Needs AUTH_SECRET. Previews hold synthetic
-# data only, so sign-up is open there (ADR-0014; production defaults to closed), and they send no
-# email, so email verification is off (ADR-0016; the app honours `off` only on a workers.dev URL,
-# and `pnpm run deploy` refuses it for production). Turnstile runs on Cloudflare's public
-# always-pass test keys (ADR-0025; the app accepts test keys only on workers.dev and localhost).
-# The URL is deterministic, so Better Auth's origin checks match it, and it's the one smoke-tested.
+# Deploy on the preview Worker with its own auth settings, then smoke-test it. Args: extra
+# `wrangler preview` args (e.g. --config); needs AUTH_SECRET. Synthetic data, no email: sign-up
+# open (ADR-0014), verification off (ADR-0016; honoured only on workers.dev), Turnstile test keys
+# (ADR-0025; accepted only on workers.dev and localhost). The URL is deterministic, so Better
+# Auth's origin checks match it, and it's the one smoke-tested.
 # Output: in GitHub Actions writes `url=<preview URL>` to $GITHUB_OUTPUT; otherwise prints it.
 deploy_preview() {
   local subdomain url
