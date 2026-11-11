@@ -19,12 +19,15 @@ jobs:
   # job and run everything.
   changes:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # GITHUB_TOKEN only, no checkout: the 1-vCPU runner ($0.002/min against $0.006 on a private repo).
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:
       app: ${{ steps.filter.outputs.app }}
+      db: ${{ steps.inputs.outputs.db }}
+      backup: ${{ steps.inputs.outputs.backup }}
     steps:
       # These rules are mirrored by preview.yml's `resolve` job (a shell grep on the files API):
       # preview runs on `workflow_run`, where this action would need the PR head fetched into the
@@ -47,6 +50,31 @@ jobs:
               - '!apps/docs/**'
               - '!apps/site/**'
               - '!*.md'
+      # The files two slow check + test steps read (a file matches when it matches any pattern;
+      # the filter above needs every). Same 1..3000 guard: no output → both steps run.
+      #   db: the migrations check (history, drizzle-kit, schema/auth.ts from packages/auth's
+      #       Better Auth config, the migrations' SQL), with the tool versions from the lockfile.
+      #   backup: dump.test.mjs (its Postgres server image is pinned to this file's service).
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event.pull_request.changed_files > 0 && github.event.pull_request.changed_files <= 3000
+        id: inputs
+        with:
+          filters: |
+            ci: &ci
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            db:
+              - *ci
+              - 'packages/db/**'
+              - 'packages/auth/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'scripts/check-migrations.mjs'
+              - 'scripts/check-schema-sql.*'
+            backup:
+              - *ci
+              - 'scripts/backup/**'
 
   # GitHub bills every job at least a whole minute on a private repo (e.g. a copy of this template),
   # so the seconds-long bindings check runs here as its first steps instead of in its own job.
@@ -59,6 +87,9 @@ jobs:
     env:
       # Anything but an explicit 'false' (a push, a missing output) runs the app suite.
       APP: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app != 'false' }}
+      # The same rule for the two steps whose inputs few PRs change (the `changes` job's db/backup).
+      DB: ${{ github.event_name != 'pull_request' || needs.changes.outputs.db != 'false' }}
+      BACKUP: ${{ github.event_name != 'pull_request' || needs.changes.outputs.backup != 'false' }}
     services:
       postgres:
         # An empty image doesn't start the service.
@@ -99,7 +130,7 @@ jobs:
       # schema. Base: the PR's merge parent, or the commit a push to main replaced (fetched if the
       # depth-2 checkout lacks it).
       - name: Migrations are immutable and match the schema
-        if: env.APP == 'true'
+        if: env.APP == 'true' && env.DB == 'true'
         env:
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
@@ -115,7 +146,7 @@ jobs:
       # dump.sh against a disposable Postgres and a local S3 stand-in, with the runner's AWS CLI
       # (runbook "Backups by hand"). Not in package.json: that path also triggers docs/site deploys.
       - run: node --test scripts/backup/dump.test.mjs
-        if: env.APP == 'true'
+        if: env.APP == 'true' && env.BACKUP == 'true'
       - name: Build and scan the client bundle for secrets
         if: env.APP == 'true'
         run: pnpm build && scripts/scan-client-bundle.sh

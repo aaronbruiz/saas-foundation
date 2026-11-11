@@ -38,7 +38,9 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !startsWith(github.event.workflow_run.head_branch, 'release-please--') &&
       !startsWith(github.event.workflow_run.head_branch, 'dependabot/')
-    runs-on: ubuntu-latest
+    # GITHUB_TOKEN only: the 1-vCPU runner (has bash, git, Node, gh, jq, curl). A job holding a
+    # Cloudflare or Neon token stays on ubuntu-latest (a container on a shared VM).
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read # the default branch's scripts
