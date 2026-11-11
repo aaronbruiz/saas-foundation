@@ -16,6 +16,13 @@ test('an owner renames, cannot leave as the only owner, and deletes with the typ
   await expect(danger.getByRole('heading', { name: 'Leave' })).toBeVisible()
   await expect(danger.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
 
+  // A blank name (after trimming) is invalid input: it marks the field.
+  const nameField = page.getByLabel('Organization name', { exact: true })
+  await nameField.fill('   ')
+  await page.getByRole('button', { name: 'Save name' }).click()
+  await expect(page.getByRole('alert')).toHaveText('invalid input')
+  await expect(nameField).toHaveAttribute('aria-invalid', 'true')
+
   const name = `Renamed ${rand()}`
   await page.getByLabel('Organization name', { exact: true }).fill(name)
   await page.getByRole('button', { name: 'Save name' }).click()
@@ -37,6 +44,7 @@ test('an owner renames, cannot leave as the only owner, and deletes with the typ
   await expect(page.getByRole('alert').last()).toHaveText(
     "That doesn't match the organization's name",
   )
+  await expect(confirm).toHaveAttribute('aria-invalid', 'true')
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/settings$`))
 
   await confirm.fill(name)

@@ -209,9 +209,9 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
     .getByRole('button', { name: 'Transfer ownership' })
     .click()
   await expect(aliceLate.getByRole('alert')).toHaveText('forbidden')
-  await expect(aliceLate.locator('[data-slot="field"]:has(#new-owner)')).toHaveAttribute(
+  // Not about the chosen member: a form-level alert, the picker's field unmarked.
+  await expect(aliceLate.locator('[data-slot="field"]:has(#new-owner)')).not.toHaveAttribute(
     'data-invalid',
-    'true',
   )
   await expect(
     aliceLate.getByRole('region', { name: /Notifications/ }).getByText(/^Ownership transferred/),

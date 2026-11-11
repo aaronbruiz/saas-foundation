@@ -46,6 +46,7 @@ test('a signed-in user changes their name on the account page', async ({ page })
   await page.getByLabel('Name').fill('   ')
   await page.getByRole('button', { name: 'Save name' }).click()
   await expect(page.getByRole('alert')).toHaveText('Enter a name.')
+  await expect(page.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
 
   const name = `Sam ${rand()}`
   await page.getByLabel('Name').fill(name)
@@ -146,6 +147,24 @@ test('the name form sends one request while one is pending', async ({ page }) =>
   expect(requests).toBe(1)
 })
 
+test('the name form shows a refusal from the server as a form-level alert', async ({ page }) => {
+  await page.route('**/api/auth/update-user', (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'REFUSED', message: 'Your name was refused.' }),
+    }),
+  )
+  await page.goto('/account')
+  // As above: type only once the loader's background reload can't remount the page.
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
+  await page.getByLabel('Name').fill(`Sam ${rand()}`)
+  await page.getByRole('button', { name: 'Save name' }).click()
+  await expect(page.getByRole('alert')).toHaveText('Your name was refused.')
+  await expect(page.getByLabel('Name')).not.toHaveAttribute('aria-invalid')
+})
+
 test('deleting the account: a wrong password is refused, and fields stay out of the URL', async ({
   page,
 }) => {
@@ -153,6 +172,11 @@ test('deleting the account: a wrong password is refused, and fields stay out of 
   await page.getByLabel('Password to delete your account').fill('wrong-password-123')
   await page.getByRole('button', { name: 'Delete account' }).click()
   await expect(page.getByRole('alert')).toContainText('Incorrect password.')
+  // A wrong password is about the typed value: it marks the field.
+  await expect(page.getByLabel('Password to delete your account')).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  )
   expect(page.url()).not.toContain('password')
 })
 
@@ -174,6 +198,10 @@ test('deleting the account: a part-way refusal says what already happened', asyn
   await page.getByRole('button', { name: 'Delete account' }).click()
   await expect(page.getByRole('alert')).toHaveText(
     "Your account wasn't deleted. You left Acme. You're now the only owner of Beta: transfer or delete it, then try again.",
+  )
+  // Not about the password: a form-level alert, the field unmarked.
+  await expect(page.getByLabel('Password to delete your account')).not.toHaveAttribute(
+    'aria-invalid',
   )
 })
 
@@ -205,6 +233,9 @@ test("deleting the account: an answer that proves nothing doesn't claim it faile
   await page.getByRole('button', { name: 'Delete account' }).click()
   await expect(page.getByRole('alert')).toHaveText(
     "We couldn't confirm your account was deleted. Try signing in again to check.",
+  )
+  await expect(page.getByLabel('Password to delete your account')).not.toHaveAttribute(
+    'aria-invalid',
   )
 })
 
