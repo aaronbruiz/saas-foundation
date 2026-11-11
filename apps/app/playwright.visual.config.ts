@@ -25,7 +25,7 @@ export default defineConfig<{ visual: boolean }>({
   projects: [
     // The shared signed-in user (e2e/session.ts), as in the e2e suite.
     { name: 'setup', testDir: './e2e', testMatch: /auth\.setup\.ts$/ },
-    // An organization with a second member, for the transfer picker (visual/team.setup.ts).
+    // An organization with two more members (the transfer picker) and a project (visual/team.setup.ts).
     { name: 'team', testMatch: /team\.setup\.ts$/, dependencies: ['setup'] },
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, dependencies: ['team'] },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, dependencies: ['team'] },

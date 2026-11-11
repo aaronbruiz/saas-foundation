@@ -8,7 +8,10 @@ import {
   revokeInvitationFn,
   updateMemberRoleFn,
 } from '../modules/organizations/functions'
-import { ErrorText, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { FieldError } from '@/components/ui/field'
 
 // Every member sees the members; pending invitations only with `member:invite` (owner decision
 // 2026-10-29). Owner rows have no actions (owner decision 2026-10-30). The capabilities from the
@@ -69,40 +72,42 @@ function Members() {
   }
 
   return (
-    <section className="space-y-6">
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">Members</h2>
-        <ul className="divide-y rounded border bg-white">
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">Members</h2>
+        <ul className={list}>
           {members.map((m) => {
             const newRole = m.role === 'admin' ? 'member' : 'admin'
             const isOwner = m.role.split(',').some((r) => r.trim() === 'owner')
             return (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-4 p-3">
-                <span>
-                  {m.name} <span className="text-gray-500">{m.email}</span>
+              <li key={m.id} className={row}>
+                <span className="min-w-0 wrap-anywhere">
+                  {m.name} <span className="text-muted-foreground">{m.email}</span>
                 </span>
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-gray-600">{m.role}</span>
+                  <Badge variant="secondary">{m.role}</Badge>
                   {canManage && !isOwner && (
                     <>
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         disabled={!hydrated}
                         onClick={() => onUpdateRole(m.id, newRole)}
                         aria-label={`Make ${m.email} ${newRole}`}
-                        className="rounded border px-3 py-1 text-sm disabled:opacity-50"
                       >
                         Make {newRole}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        variant="destructive"
+                        size="sm"
                         disabled={!hydrated}
                         onClick={() => onRemove(m.id)}
                         aria-label={`Remove ${m.email}`}
-                        className="rounded border border-red-700 px-3 py-1 text-sm text-red-700 disabled:opacity-50"
                       >
                         Remove
-                      </button>
+                      </Button>
                     </>
                   )}
                 </span>
@@ -112,36 +117,42 @@ function Members() {
         </ul>
       </div>
       {invitations && (
-        <div>
-          <h3 className="mb-4 font-medium">Pending invitations</h3>
+        <div className="flex flex-col gap-4">
+          <h3 className="font-medium">Pending invitations</h3>
           {invitations.length === 0 ? (
-            <p className="text-gray-600">No pending invitations.</p>
+            <p className="text-muted-foreground">No pending invitations.</p>
           ) : (
-            <ul className="divide-y rounded border bg-white">
+            <ul className={list}>
               {invitations.map((i) => (
-                <li key={i.id} className="flex items-center justify-between gap-4 p-3">
-                  <span>
-                    {i.email} <span className="text-sm text-gray-600">{i.role ?? 'member'}</span>
-                    <span className="block text-sm text-gray-500">
+                <li key={i.id} className={row}>
+                  <span className="min-w-0 wrap-anywhere">
+                    {i.email}{' '}
+                    <span className="text-sm text-muted-foreground">{i.role ?? 'member'}</span>
+                    <span className="block text-sm text-muted-foreground">
                       Expires {new Date(i.expiresAt).toLocaleDateString()}
                     </span>
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="destructive"
+                    size="sm"
                     disabled={!hydrated}
                     onClick={() => onRevoke(i.id)}
                     aria-label={`Revoke invitation for ${i.email}`}
-                    className="rounded border border-red-700 px-3 py-1 text-sm text-red-700 disabled:opacity-50"
                   >
                     Revoke
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
         </div>
       )}
-      <ErrorText error={error} />
+      <FieldError>{error}</FieldError>
     </section>
   )
 }
+
+const list =
+  'divide-y rounded-xl bg-card text-sm text-card-foreground shadow-xs ring-1 ring-foreground/10'
+const row = 'flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3'

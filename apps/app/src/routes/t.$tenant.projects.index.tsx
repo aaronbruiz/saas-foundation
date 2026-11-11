@@ -2,7 +2,11 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { createProjectFn, listProjectsFn } from '../modules/projects/functions'
-import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
 export const Route = createFileRoute('/t/$tenant/projects/')({
   loader: ({ params }) => listProjectsFn({ data: { tenant: params.tenant } }),
@@ -38,18 +42,18 @@ function Projects() {
   }
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Projects</h2>
+    <section className="flex flex-col gap-6">
+      <h2 className="text-lg font-semibold">Projects</h2>
       {projects.length === 0 ? (
-        <p className="mb-6 text-gray-600">No projects yet.</p>
+        <p className="text-muted-foreground">No projects yet.</p>
       ) : (
-        <ul className="mb-6 divide-y rounded border bg-white">
+        <ul className="divide-y rounded-xl bg-card text-card-foreground shadow-xs ring-1 ring-foreground/10">
           {projects.map((p) => (
-            <li key={p.id} className="p-3">
+            <li key={p.id}>
               <Link
                 to="/t/$tenant/projects/$id"
                 params={{ tenant, id: p.id }}
-                className="underline"
+                className="flex min-h-11 items-center rounded-md px-4 py-2 text-primary underline underline-offset-4 wrap-anywhere hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
               >
                 {p.name}
               </Link>
@@ -57,19 +61,31 @@ function Projects() {
           ))}
         </ul>
       )}
-      <form method="post" onSubmit={onCreate} className="space-y-4 rounded border bg-white p-4">
-        <h3 className="font-medium">New project</h3>
-        <Field label="Project name">
-          <input name="name" required maxLength={120} className={inputClass} />
-        </Field>
-        <Field label="Description">
-          <input name="description" maxLength={2000} className={inputClass} />
-        </Field>
-        <ErrorText error={error} />
-        <button type="submit" disabled={!hydrated} className={buttonClass}>
-          Create project
-        </button>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h3 className="text-base">New project</h3>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form method="post" onSubmit={onCreate} className="flex flex-col gap-4">
+            <Field>
+              <FieldLabel htmlFor="project-name">Project name</FieldLabel>
+              <Input id="project-name" name="name" required maxLength={120} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="project-description">Description</FieldLabel>
+              <Input id="project-description" name="description" maxLength={2000} />
+            </Field>
+            <FieldError>{error}</FieldError>
+            <div>
+              <Button type="submit" disabled={!hydrated}>
+                Create project
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }
