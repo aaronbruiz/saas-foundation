@@ -177,5 +177,7 @@ jobs:
             echo 'TURNSTILE_SITE_KEY=1x00000000000000000000AA'
             echo 'TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA'; } >apps/app/.dev.vars
           pnpm db:migrate
-          pnpm --filter app exec playwright install --with-deps chromium
+          # The runner image has Chromium's libraries; no apt (it depends on Ubuntu's mirrors). Playwright
+          # refuses to launch, naming the library, if one goes missing.
+          pnpm --filter app exec playwright install chromium
           pnpm test:e2e
