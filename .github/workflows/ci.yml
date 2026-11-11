@@ -80,7 +80,8 @@ jobs:
     name: check + test
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'failure' }}
-    runs-on: ubuntu-latest
+    # arm64: $0.005/min against $0.006 for x64 on a private repo; no secrets in this job.
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 25
     env:
       # Anything but an explicit 'false' (a push, a missing output) runs the app suite.
