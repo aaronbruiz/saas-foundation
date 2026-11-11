@@ -5,6 +5,8 @@
 # actual values from apps/app/.dev.vars and of secret env vars (CLOUDFLARE_API_TOKEN, NEON_API_KEY,
 # BETTER_AUTH_SECRET, POLAR_ACCESS_TOKEN, POLAR_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY) when present:
 # what a bad Vite `define` would inline.
+# Also fails if zod reached the browser (its markers `_zod`, `ZodError`, `allowsEval`): schemas stay on
+# the server (invariant 9), and zod's eval probe is refused by the CSP (ADR-0045).
 # Usage: scripts/scan-client-bundle.sh [dist/client dir]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,4 +27,8 @@ for var in ${SCAN_SECRET_VARS:-CLOUDFLARE_API_TOKEN NEON_API_KEY BETTER_AUTH_SEC
   if grep -rIlF -- "$value" "$dir"; then echo "[scan] value of $var found" >&2; found=1; fi
 done
 [ "$found" = 0 ] || { echo "[scan] ERROR: secret material in the client bundle (files above)" >&2; exit 1; }
+if grep -rIlE '_zod|ZodError|allowsEval' "$dir"; then
+  echo "[scan] ERROR: zod in the client bundle (files above): import @saas-foundation/contracts only with \`import type\` in routes and components" >&2
+  exit 1
+fi
 echo "[scan] client bundle clean ($(find "$dir" -type f | wc -l) files)" >&2

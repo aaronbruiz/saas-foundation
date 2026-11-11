@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { createOrg, rand } from './helpers'
 import { sessionFile } from './session'
 

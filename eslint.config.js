@@ -187,6 +187,57 @@ function moduleBoundary(self) {
   }
 }
 
+// ADR-0045: these Base UI components server-render `style` attributes whose values depend on the
+// component's value (a width, a position), which no CSP hash can allow; the browser refuses them.
+const excludedBaseUi = ['slider', 'progress', 'meter', 'scroll-area', 'accordion', 'collapsible']
+const excludedBaseUiRegex = `^@base-ui/react/(${excludedBaseUi.join('|')})(/.*)?$`
+const noExcludedBaseUi = {
+  regex: excludedBaseUiRegex,
+  message:
+    "This Base UI component server-renders value-dependent inline styles the CSP refuses (style-src 'self', ADR-0045); it's excluded (AGENTS.md).",
+}
+const noDynamicExcludedBaseUi = {
+  selector: `ImportExpression[source.value=/${excludedBaseUiRegex.replaceAll('/', '\\x2F')}/]`,
+  message: noExcludedBaseUi.message,
+}
+
+// Schemas stay on the server (AGENTS.md invariant 9): a value import would ship zod to the
+// browser, whose eval probe the CSP refuses (ADR-0045). Types are erased, so they're fine.
+const contractsMessage =
+  "Routes and components import @saas-foundation/contracts only with `import type`: forms use HTML constraint attributes and show the server's errors; zod stays out of the browser (AGENTS.md invariant 9, ADR-0045)."
+const contractsTypesOnly = {
+  group: ['@saas-foundation/contracts', '@saas-foundation/contracts/*'],
+  allowTypeImports: true,
+  message: contractsMessage,
+}
+const noDynamicContracts = {
+  selector: 'ImportExpression[source.value=/^@saas-foundation\\x2Fcontracts(\\x2F|$)/]',
+  message: contractsMessage,
+}
+
+// UI primitives in components/ui take everything through props.
+const uiPrimitivesMessage =
+  'components/ui imports only npm packages, lib/ and other components/ui files: no modules/, server/, routes or @saas-foundation/contracts (AGENTS.md module map).'
+const uiPrimitivesOnly = [
+  { regex: '(^|/)(modules|server|routes)(/|$)', message: uiPrimitivesMessage },
+  {
+    group: ['@saas-foundation/contracts', '@saas-foundation/contracts/*'],
+    message: uiPrimitivesMessage,
+  },
+]
+const noDynamicAppCodeInUi = {
+  selector:
+    ':matches(ImportExpression, TSImportType)[source.value=/(^|\\x2F)(modules|server|routes)(\\x2F|$)|^@saas-foundation\\x2Fcontracts(\\x2F|$)/]',
+  message: uiPrimitivesMessage,
+}
+
+// e2e: tests come from e2e/fixtures.ts, which fails a test on any CSP refusal (ADR-0045).
+const e2eTestFromFixtures = {
+  group: ['@playwright/test'],
+  importNames: ['test'],
+  message: "Import `test` from './fixtures': it fails a test on any CSP refusal (ADR-0045).",
+}
+
 const noInternalPackages = {
   group: ['@saas-foundation/*'],
   message: 'This package must not import other workspace packages (AGENTS.md module map).',
@@ -233,10 +284,16 @@ export default defineConfig([
             noRawDb,
             unnormalizedPaths,
             noFilePathImports,
+            noExcludedBaseUi,
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...sourceSqlGuards, ...noDynamicRawDb],
+      'no-restricted-syntax': [
+        'error',
+        ...sourceSqlGuards,
+        ...noDynamicRawDb,
+        noDynamicExcludedBaseUi,
+      ],
     },
   },
   ...moduleNames.map((name) => ({
@@ -253,6 +310,7 @@ export default defineConfig([
             unnormalizedPaths,
             noFilePathImports,
             moduleBoundary(name).pattern,
+            noExcludedBaseUi,
           ],
         },
       ],
@@ -261,6 +319,7 @@ export default defineConfig([
         ...sourceSqlGuards,
         ...noDynamicRawDb,
         moduleBoundary(name).selector,
+        noDynamicExcludedBaseUi,
       ],
     },
   })),
@@ -276,6 +335,8 @@ export default defineConfig([
             noServerDbInUi,
             unnormalizedPaths,
             noFilePathImports,
+            noExcludedBaseUi,
+            contractsTypesOnly,
           ],
         },
       ],
@@ -284,6 +345,36 @@ export default defineConfig([
         ...sourceSqlGuards,
         ...noDynamicRawDb,
         noDynamicServerDbInUi,
+        noDynamicExcludedBaseUi,
+        noDynamicContracts,
+      ],
+    },
+  },
+  {
+    // UI primitives (shadcn components): props in, markup out.
+    files: ['apps/app/src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            providerSdksOnlyInProviders,
+            uiMustNotTouchDataOrAuth,
+            noServerDbInUi,
+            unnormalizedPaths,
+            noFilePathImports,
+            noExcludedBaseUi,
+            ...uiPrimitivesOnly,
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        ...sourceSqlGuards,
+        ...noDynamicRawDb,
+        noDynamicServerDbInUi,
+        noDynamicExcludedBaseUi,
+        noDynamicAppCodeInUi,
       ],
     },
   },
@@ -302,10 +393,18 @@ export default defineConfig([
               ...uiMustNotTouchDataOrAuth,
               group: uiMustNotTouchDataOrAuth.group.filter((g) => !g.includes('/auth')),
             },
+            noExcludedBaseUi,
+            contractsTypesOnly,
           ],
         },
       ],
-      'no-restricted-syntax': ['error', ...sourceSqlGuards, ...noDynamicRawDb],
+      'no-restricted-syntax': [
+        'error',
+        ...sourceSqlGuards,
+        ...noDynamicRawDb,
+        noDynamicExcludedBaseUi,
+        noDynamicContracts,
+      ],
     },
   },
   {
@@ -321,6 +420,7 @@ export default defineConfig([
             noRawDb,
             unnormalizedPaths,
             noFilePathImports,
+            noExcludedBaseUi,
           ],
         },
       ],
@@ -361,6 +461,16 @@ export default defineConfig([
     files: ['apps/app/test/**', 'apps/app/e2e/**'],
     rules: {
       'no-restricted-syntax': ['error', noSetConfig, noSplitLiterals, noRawSql, noPgImport],
+    },
+  },
+  {
+    files: ['apps/app/e2e/**/*.ts'],
+    ignores: ['apps/app/e2e/fixtures.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [providerSdksOnlyInProviders, e2eTestFromFixtures] },
+      ],
     },
   },
   {

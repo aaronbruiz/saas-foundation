@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 // The uptime monitor's URL (ADR-0031 note): served by the Worker, without the database.
 test('the ping route answers 200 with the running build', async ({ request }) => {

@@ -27,6 +27,7 @@ Worker tests (`apps/app/test/`):
 E2E (`apps/app/e2e/`):
 
 - [`auth.setup.ts`](../apps/app/e2e/auth.setup.ts) and [`session.ts`](../apps/app/e2e/session.ts): one real sign-up per run, saved as a shared session (`sessionFile`).
+- [`fixtures.ts`](../apps/app/e2e/fixtures.ts): the `test` every spec imports (lint enforces it). It fails a test when any of its pages hits a Content-Security-Policy refusal, reported by the browser's `securitypolicyviolation` event or its console, in the `page` context and every `browser.newContext()` (ADR-0045). Only styles rendered on the server are refused; React sets client-side styles through the DOM, which the CSP allows.
 - [`helpers.ts`](../apps/app/e2e/helpers.ts): `createAccount`, `verifyAndSignIn`, `createOrg`.
 - [`mailbox.ts`](../apps/app/e2e/mailbox.ts): builds the verification link the email would carry, from the local `.dev.vars` secret.
 
