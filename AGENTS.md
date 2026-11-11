@@ -8,8 +8,8 @@ Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the cur
 
 ## Module map
 
-- `apps/app/src/routes/t.$tenant*.tsx`: tenant-scoped pages and loaders. May import: `modules/`, `server/`, `@saas-foundation/contracts` types only (`import type`, in every route and component: zod stays out of the browser; forms use HTML constraint attributes and show the server's errors).
-- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages (Base UI by subpath), `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded: their server HTML has value-dependent inline styles the CSP refuses (ADR-0045).
+- `apps/app/src/routes/t.$tenant*.tsx`: tenant-scoped pages and loaders. May import: `modules/`, `server/`, `@saas-foundation/contracts` types only (`import type` in routes and components, ADR-0046 decision 7).
+- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages (Base UI by subpath), `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded (ADR-0046).
 - `apps/app/src/routes/api/auth/$.ts`: Better Auth handler. May import: `@saas-foundation/auth`.
 - `apps/app/src/server/context.ts`: `getTenantContext(db, headers, slug)`: session → slug → org → membership. May import: `@saas-foundation/auth`, `@saas-foundation/db`.
 - `apps/app/src/server/auth.ts`: Better Auth per request (`authFor`): sign-up gate, email verification, Turnstile, owner-change billing hooks. May import: `@saas-foundation/auth`, `@saas-foundation/db`, `modules/billing/{config,policy}`.
@@ -44,7 +44,7 @@ pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, loca
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 pnpm --filter site dev | build   # marketing site (ADR-0033) on http://localhost:4322 | static build to apps/site/dist; CI: site.yml
 pnpm test:visual   # [--baseline|--compare] (ADR-0046; not in CI)
-pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (`pnpm check` fails until you do)
+pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (ADR-0046 decision 4)
 pnpm plans:export  # regenerate apps/site/src/data/plans.json after changing billing/policy.ts (`pnpm check` fails until you do)
 scripts/{preview,backup,sites,release}/   # previews (ADR-0021), backups (ADR-0003, ADR-0023), static sites (ADR-0028, ADR-0033), releases and rollback (ADR-0029); run by CI; manual procedures in docs/runbooks/README.md
 ```
@@ -89,10 +89,11 @@ kill -9 $(lsof -t -i:3000)
 
 ## UI (ADR-0046)
 
-- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`; colours: `packages/brand/brand.css`.
-- A simple single choice is `NativeSelect`; Base UI `Select` only for rich options, groups, search or custom interaction.
-- A style the CSP refuses fails e2e and visual tests; allowing one is a CSP change (ADR-0045).
-- Before UI work: `pnpm test:visual --baseline`. When done: `--compare`; its summary line (baseline commit, N compared, M changed) in Checks.
+- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`.
+- Simple choice: `NativeSelect`; Base UI `Select` only for rich ones (ADR-0046).
+- Auth pages: `AuthLayout`. Invalid input: `Field` gets `data-invalid` and a `FieldError`; other failures: a form-level `role="alert"`; toasts: success only. `destructiveSolid`: only an `AlertDialog`'s final action confirming an irreversible action or ownership transfer. Lone and menu links ≥ 24 px (`min-h-6`).
+- A style the CSP refuses fails e2e and visual tests; allowing it changes the CSP (ADR-0045).
+- `pnpm test:visual --baseline` before, `--compare` after (summary in Checks); procedure: `ui-page` skill.
 
 ## Git workflow (ADR-0030)
 

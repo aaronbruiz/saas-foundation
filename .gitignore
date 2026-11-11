@@ -35,6 +35,7 @@ test-results
 !.claude/skills/product-rules
 !.claude/skills/feature-spec
 !.claude/skills/coordinate
+!.claude/skills/ui-page
 .agents/*
 !.agents/skills/
 .agents/skills/*
@@ -52,6 +53,9 @@ test-results
 !.agents/skills/coordinate/SKILL.md
 !.agents/skills/coordinate/brief-template.md
 !.agents/skills/coordinate/index-template.md
+!.agents/skills/ui-page/
+.agents/skills/ui-page/*
+!.agents/skills/ui-page/SKILL.md
 
 # e2e shared session (written per run)
 apps/app/e2e/.auth/
