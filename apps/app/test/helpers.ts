@@ -101,7 +101,6 @@ export async function joinAs(owner: TestUser, slug: string, role: 'admin' | 'mem
   return user
 }
 
-/** Asserts that `fn` rejects with an HttpError of the given status. */
 export async function expectStatus(fn: () => Promise<unknown>, status: number) {
   try {
     await fn()

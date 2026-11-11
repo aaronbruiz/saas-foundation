@@ -143,7 +143,6 @@ function supersedes(
   return TERMINAL.includes(current.status) || at > current.providerEventAt
 }
 
-/** Tenant-scoped read of the organization's billing state (AGENTS.md invariant 2, ADR-0040). */
 /** The gate's row can't be written once its organization is gone: a refusal, not a fault (ADR-0043). */
 async function falseIfOrganizationGone(write: Promise<boolean>): Promise<boolean> {
   try {
@@ -161,6 +160,7 @@ async function falseIfOrganizationGone(write: Promise<boolean>): Promise<boolean
   }
 }
 
+/** Tenant-scoped billing state and checkout gate (AGENTS.md invariant 2, ADR-0040, ADR-0043). */
 export function billing(db: Db, scope: TenantScope) {
   return {
     /**

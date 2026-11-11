@@ -26,10 +26,10 @@ export type Capability = (typeof CAPABILITIES)[number]
 // owner/admin only (owner decision 2026-09-28). Every member sees the member list; pending
 // invitations and revoking one go with `member:invite` (owner decision 2026-10-29). Removing a
 // non-owner or switching them between member and admin goes with `member:manage`; an admin may do
-// it to themselves, and no one to an owner (owner decisions 2026-10-30). Billing (ADR-0020): owner and admin see the plan
-// and usage; only the owner, who also alone can delete the organization, starts or changes a paid
-// subscription. Owners and admins rename the organization; only an owner transfers ownership or
-// deletes it (owner decisions 2026-10-31). Leaving needs only membership.
+// it to themselves, and no one to an owner (owner decisions 2026-10-30). Billing (ADR-0020): owner
+// and admin see the plan and usage; only the owner, who also alone can delete the organization,
+// starts or changes a paid subscription. Owners and admins rename the organization; only an owner
+// transfers ownership or deletes it (owner decisions 2026-10-31). Leaving needs only membership.
 const MATRIX = {
   owner: CAPABILITIES,
   admin: CAPABILITIES.filter(
