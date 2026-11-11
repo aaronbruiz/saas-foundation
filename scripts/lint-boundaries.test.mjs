@@ -44,7 +44,7 @@ const RAW_SQL = 'No sql.raw'
 const QUERY_TEXT = 'Pass SQL as the sql tag'
 const CLIENT = 'The pg client stays inside packages/db'
 const PG = 'Only packages/db talks to pg'
-const EXCLUDED_UI = 'value-dependent inline styles'
+const EXCLUDED_UI = 'Import Base UI by subpath'
 const CONTRACTS = 'only with `import type`'
 const UI_PRIMITIVES = 'components/ui imports only npm packages'
 const E2E_TEST = "Import `test` from './fixtures'"
@@ -207,7 +207,11 @@ const cases = [
   [provider, `const f = () => import('@base-ui/react/slider')`, EXCLUDED_UI],
   ['apps/app/src/server/db.ts', `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
   [route, `const f = () => import('@base-ui/react/collapsible')`, EXCLUDED_UI],
+  [uiPrimitive, `import { Slider } from '@base-ui/react'`, EXCLUDED_UI],
+  [uiPrimitive, `import * as BaseUi from '@base-ui/react'`, EXCLUDED_UI],
+  [route, `const f = () => import('@base-ui/react')`, EXCLUDED_UI],
   [uiPrimitive, `import { Select } from '@base-ui/react/select'`, null],
+  [uiPrimitive, `import { CSPProvider } from '@base-ui/react/csp-provider'`, null],
   // Contracts stay types-only in the UI (invariant 9, ADR-0045).
   [route, `import { ProjectFields } from '@saas-foundation/contracts'`, CONTRACTS],
   [component, `import { ProjectFields } from '@saas-foundation/contracts'`, CONTRACTS],
@@ -232,6 +236,9 @@ const cases = [
   // e2e tests fail on CSP refusals through e2e/fixtures.ts.
   ['apps/app/e2e/fixture.spec.ts', `import { test } from '@playwright/test'`, E2E_TEST],
   ['apps/app/e2e/fixture.spec.ts', `export { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import test from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import * as pw from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import { default as t } from '@playwright/test'`, E2E_TEST],
   ['apps/app/e2e/fixture.spec.ts', `const { test } = await import('@playwright/test')`, E2E_TEST],
   ['apps/app/e2e/fixture.spec.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   ['apps/app/e2e/fixture.spec.ts', `import { expect, test } from './fixtures'`, null],

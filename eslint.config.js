@@ -190,11 +190,12 @@ function moduleBoundary(self) {
 // ADR-0045: these Base UI components server-render `style` attributes whose values depend on the
 // component's value (a width, a position), which no CSP hash can allow; the browser refuses them.
 const excludedBaseUi = ['slider', 'progress', 'meter', 'scroll-area', 'accordion', 'collapsible']
-const excludedBaseUiRegex = `^@base-ui/react/(${excludedBaseUi.join('|')})(/.*)?$`
+// The package root re-exports every component, so Base UI is imported by subpath only.
+const excludedBaseUiRegex = `^@base-ui/react(/(${excludedBaseUi.join('|')})(/.*)?)?$`
 const noExcludedBaseUi = {
   regex: excludedBaseUiRegex,
   message:
-    "This Base UI component server-renders value-dependent inline styles the CSP refuses (style-src 'self', ADR-0045); it's excluded (AGENTS.md).",
+    "Import Base UI by subpath (@base-ui/react/<component>). Slider, progress, meter, scroll-area, accordion and collapsible are excluded: their server HTML has value-dependent inline styles the CSP refuses (style-src 'self', ADR-0045; AGENTS.md).",
 }
 const noDynamicExcludedBaseUi = {
   selector: `ImportExpression[source.value=/${excludedBaseUiRegex.replaceAll('/', '\\x2F')}/]`,
@@ -234,7 +235,7 @@ const noDynamicAppCodeInUi = {
 // e2e: tests come from e2e/fixtures.ts, which fails a test on any CSP refusal (ADR-0045).
 const e2eTestFromFixtures = {
   group: ['@playwright/test'],
-  importNames: ['test'],
+  importNames: ['test', 'default'],
   message: "Import `test` from './fixtures': it fails a test on any CSP refusal (ADR-0045).",
 }
 

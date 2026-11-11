@@ -9,7 +9,7 @@ Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the cur
 ## Module map
 
 - `apps/app/src/routes/t.$tenant*.tsx`: tenant-scoped pages and loaders. May import: `modules/`, `server/`, `@saas-foundation/contracts` types only (`import type`, in every route and component: zod stays out of the browser; forms use HTML constraint attributes and show the server's errors).
-- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages, `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded: their server HTML has value-dependent inline styles the CSP refuses (ADR-0045).
+- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages (Base UI by subpath), `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded: their server HTML has value-dependent inline styles the CSP refuses (ADR-0045).
 - `apps/app/src/routes/api/auth/$.ts`: Better Auth handler. May import: `@saas-foundation/auth`.
 - `apps/app/src/server/context.ts`: `getTenantContext(db, headers, slug)`: session → slug → org → membership. May import: `@saas-foundation/auth`, `@saas-foundation/db`.
 - `apps/app/src/server/auth.ts`: Better Auth per request (`authFor`): sign-up gate, email verification, Turnstile, owner-change billing hooks. May import: `@saas-foundation/auth`, `@saas-foundation/db`, `modules/billing/{config,policy}`.
