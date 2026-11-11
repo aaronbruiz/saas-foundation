@@ -2,7 +2,11 @@ import { createFileRoute, useLoaderData, useRouter } from '@tanstack/react-route
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { deleteProjectFn, getProjectFn, updateProjectFn } from '../modules/projects/functions'
-import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
 // A project id from another tenant (or unknown) is a 404 here too: the service scopes by tenant.
 export const Route = createFileRoute('/t/$tenant/projects/$id')({
@@ -52,43 +56,44 @@ function ProjectDetail() {
   }
 
   return (
-    <section className="space-y-6">
-      <h2 className="text-lg font-semibold">{project.name}</h2>
-      <form method="post" onSubmit={onSave} className="space-y-4 rounded border bg-white p-4">
-        <Field label="Project name">
-          <input
-            name="name"
-            defaultValue={project.name}
-            required
-            maxLength={120}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Description">
-          <input
-            name="description"
-            defaultValue={project.description ?? ''}
-            maxLength={2000}
-            className={inputClass}
-          />
-        </Field>
-        <ErrorText error={error} />
-        <div className="flex gap-3">
-          <button type="submit" disabled={!hydrated} className={buttonClass}>
-            Save
-          </button>
-          {canDelete && (
-            <button
-              type="button"
-              disabled={!hydrated}
-              onClick={onDelete}
-              className="rounded border border-red-700 px-4 py-2 text-red-700"
-            >
-              Delete project
-            </button>
-          )}
-        </div>
-      </form>
+    <section className="flex flex-col gap-6">
+      <h2 className="text-lg font-semibold wrap-anywhere">{project.name}</h2>
+      <Card>
+        <CardContent>
+          <form method="post" onSubmit={onSave} className="flex flex-col gap-4">
+            <Field>
+              <FieldLabel htmlFor="project-name">Project name</FieldLabel>
+              <Input
+                id="project-name"
+                name="name"
+                defaultValue={project.name}
+                required
+                maxLength={120}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="project-description">Description</FieldLabel>
+              <Input
+                id="project-description"
+                name="description"
+                defaultValue={project.description ?? ''}
+                maxLength={2000}
+              />
+            </Field>
+            <FieldError>{error}</FieldError>
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" disabled={!hydrated}>
+                Save
+              </Button>
+              {canDelete && (
+                <Button type="button" variant="destructive" disabled={!hydrated} onClick={onDelete}>
+                  Delete project
+                </Button>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   )
 }
