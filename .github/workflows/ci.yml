@@ -50,7 +50,7 @@ jobs:
               - '!apps/docs/**'
               - '!apps/site/**'
               - '!*.md'
-      # Every input of two slow check + test steps (any pattern matches); no output → they run.
+      # Every input of two slow Validate steps (any pattern matches); no output → they run.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event.pull_request.changed_files > 0 && github.event.pull_request.changed_files <= 3000
         id: inputs
@@ -76,8 +76,8 @@ jobs:
 
   # GitHub bills every job at least a whole minute on a private repo (e.g. a copy of this template),
   # so the seconds-long bindings check runs here as its first steps instead of in its own job.
-  check:
-    name: check + test
+  validate:
+    name: Validate
     needs: changes
     if: ${{ !cancelled() && needs.changes.result != 'failure' }}
     # arm64: $0.005/min against $0.006 for x64 on a private repo; no secrets in this job.
