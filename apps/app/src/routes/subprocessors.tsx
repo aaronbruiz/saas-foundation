@@ -12,7 +12,8 @@ import {
 
 export const Route = createFileRoute('/subprocessors')({ component: Subprocessors })
 
-/** Cells wrap their text, so the table fits narrow screens instead of scrolling. */
+/** Cells wrap their text; below about 400 px the four columns still scroll sideways inside the
+ * table's own container (as before the migration), never the page. */
 const cell = 'align-top whitespace-normal'
 
 function Subprocessors() {
