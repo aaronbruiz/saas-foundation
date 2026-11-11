@@ -8,8 +8,8 @@ import { readFileSync } from 'node:fs'
 // (`destructive/10`), composited over the pair's background, or, when it is the background itself,
 // over the surface after `@` (`primary/90@card`), `background` when there is none. Text needs 4.5:1 (WCAG 1.4.3); input borders, focus indicators and control
 // fills 3:1 (1.4.11). Disabled controls are exempt; decorative borders (`--border`) aren't listed.
-// Not listed: the secondary button's hover, `color-mix(in oklch, var(--secondary), var(--foreground) 5%)`,
-// which the checker can't parse; its unhovered pair is above 14:1 in both themes.
+// `a+5%b` is `color-mix(in oklch, var(--a), var(--b) 5%)` (the secondary button's hover). Focus
+// indicators drawn in a token's opaque colour are covered by its text pairs (4.5:1 ≥ 3:1).
 export const PAIRS = [
   ['foreground', 'background', 4.5, 'body text'],
   ['card-foreground', 'card', 4.5, 'card text'],
@@ -54,10 +54,10 @@ export const PAIRS = [
     'ghost button and table row text, hovered in dark, in a card',
   ],
   ['foreground', 'input/30@card', 4.5, 'outline button and field text in dark, in a card', 'dark'],
-  ['foreground', 'input/50', 4.5, 'outline button and field text, hovered in dark', 'dark'],
+  ['foreground', 'input/40', 4.5, 'outline button and field text, hovered in dark', 'dark'],
   [
     'foreground',
-    'input/50@card',
+    'input/40@card',
     4.5,
     'outline button and field text, hovered in dark, in a card',
     'dark',
@@ -68,6 +68,24 @@ export const PAIRS = [
     4.5,
     'ghost and linked outline badge text, hovered, in a card',
   ],
+  ['muted-foreground', 'input/30', 4.5, 'field placeholder in dark', 'dark'],
+  ['muted-foreground', 'input/30@card', 4.5, 'field placeholder in dark, in a card', 'dark'],
+  ['muted-foreground', 'input/40', 4.5, 'select placeholder, hovered in dark', 'dark'],
+  [
+    'muted-foreground',
+    'input/40@card',
+    4.5,
+    'select placeholder, hovered in dark, in a card',
+    'dark',
+  ],
+  ['secondary-foreground', 'secondary+5%foreground', 4.5, 'secondary button text, hovered'],
+  [
+    'secondary-foreground',
+    'secondary+5%foreground@card',
+    4.5,
+    'secondary button text, hovered, in a card',
+  ],
+  ['destructive', 'destructive/10', 3, 'destructive button focus border against its tint'],
   ['input', 'background', 3, 'input and select borders'],
   ['ring', 'background', 3, 'focus indicator'],
   ['primary', 'background', 3, 'primary button and checked control fill'],
@@ -112,16 +130,34 @@ export function parseTokens(css) {
   return { light, dark: { ...dark, ...block('.dark') } }
 }
 
-// oklch(L C H [/ A]) → [r, g, b, a], channels gamma-encoded sRGB in 0..1, clipped to the gamut.
-export function oklchToSrgb(value) {
+// oklch(L C H [/ A]) → [L, C, H in degrees, alpha].
+function parseOklch(value) {
   const m = value.match(
     /^oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)(?:deg)?\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/,
   )
   if (!m) throw new Error(`not an oklch() colour: ${value}`)
-  const L = Number(m[1]) / (m[2] ? 100 : 1)
-  const C = Number(m[3])
-  const h = (Number(m[4]) * Math.PI) / 180
-  const alpha = m[5] === undefined ? 1 : Number(m[5]) / (m[6] ? 100 : 1)
+  return [
+    Number(m[1]) / (m[2] ? 100 : 1),
+    Number(m[3]),
+    Number(m[4]),
+    m[5] === undefined ? 1 : Number(m[5]) / (m[6] ? 100 : 1),
+  ]
+}
+
+// color-mix(in oklch, x, y p%): each channel interpolated, the hue along the shorter arc (CSS Color 4).
+function mixOklch(x, y, p) {
+  const [a, b] = [parseOklch(x), parseOklch(y)]
+  let dh = b[2] - a[2]
+  if (dh > 180) dh -= 360
+  if (dh < -180) dh += 360
+  const at = (i) => a[i] + (b[i] - a[i]) * p
+  return `oklch(${at(0)} ${at(1)} ${(a[2] + dh * p + 360) % 360} / ${at(3)})`
+}
+
+// oklch(L C H [/ A]) → [r, g, b, a], channels gamma-encoded sRGB in 0..1, clipped to the gamut.
+export function oklchToSrgb(value) {
+  const [L, C, H, alpha] = parseOklch(value)
+  const h = (H * Math.PI) / 180
   const a = C * Math.cos(h)
   const b = C * Math.sin(h)
   const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
@@ -165,9 +201,15 @@ export function check(css) {
     const colour = (spec, base) => {
       const [own, surface] = spec.split('@')
       if (surface) base = colour(surface, page)
-      const [name, pct] = own.split('/')
-      const value = tokens[name]
-      if (!value) throw new Error(`--${name} is not defined (${theme})`)
+      const [mixed, pct] = own.split('/')
+      const token = (name) => {
+        if (!tokens[name]) throw new Error(`--${name} is not defined (${theme})`)
+        return tokens[name]
+      }
+      const mix = mixed.match(/^([a-z-]+)\+(\d+)%([a-z-]+)$/)
+      const value = mix
+        ? mixOklch(token(mix[1]), token(mix[3]), Number(mix[2]) / 100)
+        : token(mixed)
       let c = oklchToSrgb(value)
       if (pct) c = [c[0], c[1], c[2], c[3] * (Number(pct) / 100)]
       return over(c, base)

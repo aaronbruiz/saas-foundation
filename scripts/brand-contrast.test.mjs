@@ -48,6 +48,16 @@ test('a translucent background after `@` is composited over that surface, not th
   assert.ok(card > page, `${card} over a black card should beat ${page} over the near-white page`)
 })
 
+test('`a+p%b` mixes in oklch: 50% of black into white is the mid-lightness grey', () => {
+  const css = brand
+    .replace(/--secondary: [^;]+;/, '--secondary: oklch(1 0 0);')
+    .replace(/--foreground: [^;]+;/, '--foreground: oklch(0 0 0);')
+    .replace(/--secondary-foreground: [^;]+;/, '--secondary-foreground: oklch(0.5 0 0);')
+  const r = check(css).find((x) => x.bg === 'secondary+5%foreground' && x.theme === 'light')
+  const expected = ratio(oklchToSrgb('oklch(0.5 0 0)'), oklchToSrgb('oklch(0.95 0 0)'))
+  assert.equal(r.ratio, Math.round(expected * 100) / 100)
+})
+
 test('a colour the checker cannot read is an error, not a pass', () => {
   const css = brand.replace(/--ring: [^;]+;/, '--ring: #0f766e;')
   assert.throws(() => check(css), /not an oklch\(\) colour/)
