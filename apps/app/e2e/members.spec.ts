@@ -22,3 +22,31 @@ test('an owner sees the members and revokes a pending invitation', async ({ page
   await expect(page.getByText('No pending invitations.')).toBeVisible()
   await expect(page.getByText(invitee)).toHaveCount(0)
 })
+
+test('the invite form marks the email only when the server rejects the email', async ({ page }) => {
+  await page.goto('/orgs/new')
+  await createOrg(page, 'iv')
+  await page.getByRole('link', { name: 'Invite' }).click()
+  const email = page.getByLabel('Invitee email')
+  const submit = page.getByRole('button', { name: 'Create invitation' })
+
+  // `a@b` passes the browser's email check and fails the server's: a field error.
+  await email.fill('a@b')
+  await submit.click()
+  await expect(page.getByRole('alert')).toHaveText('invalid input')
+  await expect(email).toHaveAttribute('aria-invalid', 'true')
+
+  const invitee = `i-${crypto.randomUUID()}@test.local`
+  await email.fill(invitee)
+  await submit.click()
+  await expect(page.getByTestId('invite-link')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(email).not.toHaveAttribute('aria-invalid')
+
+  // The same address again: Better Auth refuses it as already invited, which isn't about the
+  // email's form: a form-level alert, the field left unmarked.
+  await submit.click()
+  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(page.getByRole('alert')).not.toHaveText('invalid input')
+  await expect(email).not.toHaveAttribute('aria-invalid')
+})
