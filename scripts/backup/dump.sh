@@ -81,9 +81,8 @@ trap 'rm -rf "$WORK"' EXIT
     console.log(`${k}=${v}`)
   }
 ' >"$WORK/pg.env")
-# PostgreSQL 17 client-only image, pinned by digest.
-# The container receives the production database credentials, so the image
-# must not change without an explicit review and digest update
+# PostgreSQL 17 client-only image, pinned by digest. The container receives the production
+# database credentials, so the image must not change without an explicit review and digest update
 # (`docker buildx imagetools inspect gmarrot/postgresql-client:17` → the index Digest).
 PG_IMAGE=gmarrot/postgresql-client:17@sha256:255c025719b5e6cb940910187d4972450a1e430c7e5bd70248a7dc600c4ef74d
 # Neon is reached over the default network; only a database on the host's loopback (local testing) needs the host's.
