@@ -238,6 +238,11 @@ const e2eTestFromFixtures = {
   message: "Import `test` from './fixtures': it fails a test on any CSP refusal (ADR-0045).",
 }
 
+const noDynamicPlaywrightTest = {
+  selector: 'ImportExpression[source.value=/^@playwright\\x2Ftest$/]',
+  message: e2eTestFromFixtures.message,
+}
+
 const noInternalPackages = {
   group: ['@saas-foundation/*'],
   message: 'This package must not import other workspace packages (AGENTS.md module map).',
@@ -471,6 +476,14 @@ export default defineConfig([
         'error',
         { patterns: [providerSdksOnlyInProviders, e2eTestFromFixtures] },
       ],
+      'no-restricted-syntax': [
+        'error',
+        noSetConfig,
+        noSplitLiterals,
+        noRawSql,
+        noPgImport,
+        noDynamicPlaywrightTest,
+      ],
     },
   },
   {
@@ -501,6 +514,7 @@ export default defineConfig([
             unnormalizedPaths,
             noFilePathImports,
             moduleBoundary('billing').pattern,
+            noExcludedBaseUi,
           ],
         },
       ],

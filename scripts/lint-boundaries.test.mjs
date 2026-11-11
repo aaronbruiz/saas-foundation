@@ -202,6 +202,10 @@ const cases = [
   [uiPrimitive, `import { Accordion } from '@base-ui/react/accordion'`, EXCLUDED_UI],
   [lib, `import { ScrollArea } from '@base-ui/react/scroll-area/root'`, EXCLUDED_UI],
   [projects, `import { Meter } from '@base-ui/react/meter'`, EXCLUDED_UI],
+  [provider, `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [provider, `export { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [provider, `const f = () => import('@base-ui/react/slider')`, EXCLUDED_UI],
+  ['apps/app/src/server/db.ts', `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
   [route, `const f = () => import('@base-ui/react/collapsible')`, EXCLUDED_UI],
   [uiPrimitive, `import { Select } from '@base-ui/react/select'`, null],
   // Contracts stay types-only in the UI (invariant 9, ADR-0045).
@@ -227,6 +231,9 @@ const cases = [
   [uiPrimitive, `import { Button } from './button'`, null],
   // e2e tests fail on CSP refusals through e2e/fixtures.ts.
   ['apps/app/e2e/fixture.spec.ts', `import { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `export { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `const { test } = await import('@playwright/test')`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
   ['apps/app/e2e/fixture.spec.ts', `import { expect, test } from './fixtures'`, null],
   ['apps/app/e2e/fixture.spec.ts', `import type { Page } from '@playwright/test'`, null],
   ['apps/app/e2e/fixtures.ts', `import { test } from '@playwright/test'`, null],

@@ -32,19 +32,35 @@ async function watch(context: BrowserContext, refusals: Refusal[]) {
   })
 }
 
+// Waits until every page has handed over the refusals it already reported, then closes it, so none
+// can arrive after the check: a binding call queued before this round trip is delivered before it.
+async function settle(contexts: BrowserContext[]) {
+  const pages = contexts.flatMap((c) => c.pages())
+  await Promise.all(
+    pages.map((p) => p.evaluate(() => new Promise((r) => setTimeout(r, 0))).catch(() => {})),
+  )
+  await Promise.all(pages.map((p) => p.close().catch(() => {})))
+}
+
 export const test = base.extend<{ cspRefusals: Refusal[] }>({
   cspRefusals: [
     async ({ context, browser }, use) => {
       const refusals: Refusal[] = []
+      const watched = [context]
       await watch(context, refusals)
-      const newContext = browser.newContext.bind(browser)
+      const newContext = browser.newContext
       browser.newContext = async (...args) => {
-        const c = await newContext(...args)
+        const c = await newContext.apply(browser, args)
+        watched.push(c)
         await watch(c, refusals)
         return c
       }
-      await use(refusals)
-      browser.newContext = newContext
+      try {
+        await use(refusals)
+      } finally {
+        browser.newContext = newContext
+      }
+      await settle(watched)
       expect(refusals, 'CSP refusals in the browser (ADR-0045)').toEqual([])
     },
     { auto: true },
