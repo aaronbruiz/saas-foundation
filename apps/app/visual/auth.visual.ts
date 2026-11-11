@@ -9,7 +9,9 @@ import { setTheme, tabWalk, themes, views, type Theme } from './pages'
 // page's screenshots are in pilot.visual.ts. Text that changes every run (the signed-in email) and
 // the Turnstile widget are masked.
 
-const turnstile = (page: Page) => [page.locator('iframe[src*="challenges.cloudflare.com"]')]
+// Turnstile's widget renders in a closed shadow root (its iframe can't be selected); its host is the
+// element holding the widget's hidden response input.
+const turnstile = (page: Page) => [page.locator('div:has(> input[name="cf-turnstile-response"])')]
 
 type AuthPage = {
   name: string
