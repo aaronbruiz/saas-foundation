@@ -24,6 +24,12 @@ const mode = args.includes('--baseline')
     ? 'compare'
     : 'check'
 const passThrough = args.filter((a) => a !== '--baseline' && a !== '--compare')
+// The mode alone decides whether screenshots are written: `-u`/`--update-snapshots` would let a
+// compare (or a check) write the baseline and report it unchanged.
+if (passThrough.some((a) => a === '-u' || a.startsWith('--update-snapshots'))) {
+  console.error('[visual] snapshot updates come only from --baseline; drop -u/--update-snapshots')
+  process.exit(2)
+}
 if (args.includes('--baseline') && args.includes('--compare')) {
   console.error('[visual] --baseline or --compare, not both')
   process.exit(2)

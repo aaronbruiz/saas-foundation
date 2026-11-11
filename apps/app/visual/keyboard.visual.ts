@@ -23,7 +23,12 @@ const focused = (page: Page) =>
     const style = (e: HTMLElement) => {
       for (const a of e.getAnimations()) a.finish()
       const s = getComputedStyle(e)
-      return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderColor].join('|')
+      // An outline counts only when it's drawn (a style and a width); its width alone can differ.
+      const outline =
+        s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0
+          ? `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`
+          : 'none'
+      return [outline, s.boxShadow, s.borderColor].join('|')
     }
     if (!el.dataset.kbd) el.dataset.kbd = String(document.querySelectorAll('[data-kbd]').length)
     const label =
@@ -40,13 +45,20 @@ const focused = (page: Page) =>
     }
   })
 
-// The same element's indicator styles once it has lost focus.
+// The same element's indicator styles once it has lost focus (blurred if it still has it).
 const unfocusedStyle = (page: Page, key: string) =>
   page.evaluate((k) => {
     const e = document.querySelector<HTMLElement>(`[data-kbd="${k}"]`)!
+    // Firefox keeps the last stop as the active element when Tab leaves the page for the browser.
+    if (document.activeElement === e) e.blur()
     for (const a of e.getAnimations()) a.finish()
     const s = getComputedStyle(e)
-    return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderColor].join('|')
+    // An outline counts only when it's drawn (a style and a width); its width alone can differ.
+    const outline =
+      s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0
+        ? `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`
+        : 'none'
+    return [outline, s.boxShadow, s.borderColor].join('|')
   }, key)
 
 /** Tabs from the top of the page to its end; every stop must look different while focused. */
@@ -56,7 +68,7 @@ async function tabWalk(page: Page) {
   for (let i = 0; i < 60; i++) {
     await page.keyboard.press('Tab')
     const now = await focused(page)
-    if (!now || stops.some((s) => s.key === now.key)) break
+    // The previous stop has lost focus now, the last one included (focus left the page or wrapped).
     const previous = stops.at(-1)
     if (previous && !previous.frame)
       expect
@@ -65,9 +77,10 @@ async function tabWalk(page: Page) {
           `"${previous.name}" (${previous.tag}) shows no focus indicator`,
         )
         .not.toBe(previous.focusStyle)
+    if (!now || stops.some((s) => s.key === now.key)) return stops
     stops.push(now)
   }
-  return stops
+  throw new Error('the tab walk did not reach the end of the page in 60 stops')
 }
 
 const settingsControls = [
@@ -147,6 +160,7 @@ for (const theme of themes)
       // which the page can't see; its arrow keys are checked above.
       if (browserName === 'chromium') {
         await picker.click()
+        await expect.poll(isOpen).toBe(true)
         await page.keyboard.press('Escape')
         expect(await isOpen()).toBe(false)
         await expect(picker).toBeFocused()
