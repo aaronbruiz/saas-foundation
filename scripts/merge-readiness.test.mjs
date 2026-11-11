@@ -73,7 +73,7 @@ function github({
     [`${R}/actions/runs/41/jobs`]: {
       jobs: [
         { id: 1, name: 'changes', conclusion: 'success' },
-        { id: 2, name: 'check + test', conclusion: 'success' },
+        { id: 2, name: 'Validate', conclusion: 'success' },
       ],
     },
     [`${R}/actions/jobs/1/logs`]: 'no checkout here\n',
