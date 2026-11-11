@@ -38,6 +38,16 @@ test('a pair below its minimum fails, and translucent colours are composited fir
   )
 })
 
+test('a translucent background after `@` is composited over that surface, not the page', () => {
+  const css = brand.replace(/--card: [^;]+;/, '--card: oklch(0 0 0);')
+  const [page, card] = ['primary/90', 'primary/90@card'].map(
+    (bg) =>
+      check(css).find((r) => r.fg === 'primary-foreground' && r.bg === bg && r.theme === 'light')
+        .ratio,
+  )
+  assert.ok(card > page, `${card} over a black card should beat ${page} over the near-white page`)
+})
+
 test('a colour the checker cannot read is an error, not a pass', () => {
   const css = brand.replace(/--ring: [^;]+;/, '--ring: #0f766e;')
   assert.throws(() => check(css), /not an oklch\(\) colour/)

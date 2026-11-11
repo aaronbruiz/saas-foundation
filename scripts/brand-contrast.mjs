@@ -5,9 +5,11 @@
 import { readFileSync } from 'node:fs'
 
 // [foreground, background, minimum ratio, what it is, theme (both when absent)]. A token may carry an alpha
-// (`destructive/10`), composited over the pair's background, or over `background` when it is the
-// background itself. Text needs 4.5:1 (WCAG 1.4.3); input borders, focus indicators and control
+// (`destructive/10`), composited over the pair's background, or, when it is the background itself,
+// over the surface after `@` (`primary/90@card`), `background` when there is none. Text needs 4.5:1 (WCAG 1.4.3); input borders, focus indicators and control
 // fills 3:1 (1.4.11). Disabled controls are exempt; decorative borders (`--border`) aren't listed.
+// Not listed: the secondary button's hover, `color-mix(in oklch, var(--secondary), var(--foreground) 5%)`,
+// which the checker can't parse; its unhovered pair is above 14:1 in both themes.
 export const PAIRS = [
   ['foreground', 'background', 4.5, 'body text'],
   ['card-foreground', 'card', 4.5, 'card text'],
@@ -24,7 +26,48 @@ export const PAIRS = [
   ['destructive', 'background', 4.5, 'error text'],
   ['destructive', 'destructive/10', 4.5, 'destructive button text on its tint'],
   ['destructive', 'destructive/20', 4.5, 'destructive button text, hovered (and its dark tint)'],
-  ['destructive', 'destructive/30', 4.5, 'destructive button text, hovered in dark', 'dark'],
+  ['destructive', 'destructive/25', 4.5, 'destructive button text, hovered in dark', 'dark'],
+  ['destructive', 'destructive/10@card', 4.5, 'destructive button text on its tint, in a card'],
+  ['destructive', 'destructive/20@card', 4.5, 'destructive button text, hovered, in a card'],
+  [
+    'destructive',
+    'destructive/25@card',
+    4.5,
+    'destructive button text, hovered in dark, in a card',
+    'dark',
+  ],
+  ['primary-foreground', 'primary/90', 4.5, 'primary button and linked badge text, hovered'],
+  ['primary-foreground', 'primary/90@card', 4.5, 'primary button text, hovered, in a card'],
+  ['secondary-foreground', 'secondary/80', 4.5, 'linked secondary badge text, hovered'],
+  [
+    'secondary-foreground',
+    'secondary/80@card',
+    4.5,
+    'linked secondary badge text, hovered, in a card',
+  ],
+  ['foreground', 'muted', 4.5, 'outline and ghost button text, hovered'],
+  ['foreground', 'muted@card', 4.5, 'outline and ghost button text, hovered, in a card'],
+  [
+    'foreground',
+    'muted/50@card',
+    4.5,
+    'ghost button and table row text, hovered in dark, in a card',
+  ],
+  ['foreground', 'input/30@card', 4.5, 'outline button and field text in dark, in a card', 'dark'],
+  ['foreground', 'input/50', 4.5, 'outline button and field text, hovered in dark', 'dark'],
+  [
+    'foreground',
+    'input/50@card',
+    4.5,
+    'outline button and field text, hovered in dark, in a card',
+    'dark',
+  ],
+  [
+    'muted-foreground',
+    'muted@card',
+    4.5,
+    'ghost and linked outline badge text, hovered, in a card',
+  ],
   ['input', 'background', 3, 'input and select borders'],
   ['ring', 'background', 3, 'focus indicator'],
   ['primary', 'background', 3, 'primary button and checked control fill'],
@@ -120,7 +163,9 @@ export function check(css) {
   for (const [theme, tokens] of Object.entries(themes)) {
     const page = oklchToSrgb(tokens.background)
     const colour = (spec, base) => {
-      const [name, pct] = spec.split('/')
+      const [own, surface] = spec.split('@')
+      if (surface) base = colour(surface, page)
+      const [name, pct] = own.split('/')
       const value = tokens[name]
       if (!value) throw new Error(`--${name} is not defined (${theme})`)
       let c = oklchToSrgb(value)

@@ -68,10 +68,31 @@ async function settle(contexts: BrowserContext[]) {
 // Two exclusions, both in WebKit visual tests only (owner-approved; docs/testing.md). Chromium,
 // Firefox and the e2e suite allow no refusal at all.
 // 1. Playwright's screenshotter injects <style>body {}</style> in WebKit (playwright-core
-//    screenshotter.ts, syncAnimations): a style-src-elem refusal while `snap` takes a screenshot.
-const isScreenshotterStyle = (r: Refusal) =>
+//    screenshotter.ts, syncAnimations) on each screenshot attempt: exactly one console message and
+//    one `style-src-elem` report from its line 5 (`:5`, no file), while `snap` takes a screenshot.
+//    The report's target is the document, so the element can't be identified; only an exact pair is
+//    removed, and anything unpaired or different still fails. A page's own refused <style> reports
+//    its script's file and line, and Chromium and Firefox refuse it with no exclusion at all.
+const REFUSED_STYLESHEET =
+  "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy."
+const isScreenshotterReport = (r: Refusal) =>
   r.duringScreenshot &&
-  (r.directive === 'style-src-elem' || r.blocked.startsWith('Refused to apply a stylesheet'))
+  r.directive === 'style-src-elem' &&
+  r.blocked === 'inline' &&
+  r.source === ':5'
+const isScreenshotterConsole = (r: Refusal) =>
+  r.duringScreenshot && r.directive === 'console' && r.blocked === REFUSED_STYLESHEET
+
+function withoutScreenshotterStyle(refusals: Refusal[]) {
+  const left = [...refusals]
+  for (;;) {
+    const report = left.findIndex(isScreenshotterReport)
+    const message = left.findIndex(isScreenshotterConsole)
+    if (report < 0 || message < 0) return left
+    left.splice(Math.max(report, message), 1)
+    left.splice(Math.min(report, message), 1)
+  }
+}
 
 // 2. WebKit refuses its own stylesheet for a native <select> under `style-src 'self'`
 //    (visual/webkit-select.canary.visual.ts reproduces it on a bare page and fails once WebKit
@@ -82,8 +103,7 @@ const isScreenshotterStyle = (r: Refusal) =>
 export const WEBKIT_SELECT_REFUSALS: Omit<Refusal, 'url' | 'duringScreenshot'>[] = [
   {
     directive: 'console',
-    blocked:
-      "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.",
+    blocked: REFUSED_STYLESHEET,
     source: '',
   },
   { directive: 'style-src-attr', blocked: 'inline', source: ':1' },
@@ -141,10 +161,7 @@ export const test = base.extend<{
       await settle(watched)
       const refusals =
         visual && browserName === 'webkit'
-          ? withoutWebKitSelect(
-              cspState.refusals.filter((r) => !isScreenshotterStyle(r)),
-              cspState.selectPages,
-            )
+          ? withoutWebKitSelect(withoutScreenshotterStyle(cspState.refusals), cspState.selectPages)
           : cspState.refusals
       expect(refusals, 'CSP refusals in the browser (ADR-0045)').toEqual([])
     },
