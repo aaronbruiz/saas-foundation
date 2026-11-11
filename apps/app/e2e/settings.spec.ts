@@ -11,6 +11,10 @@ test('an owner renames, cannot leave as the only owner, and deletes with the typ
   const slug = await createOrg(page, 'st')
   await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/settings$`))
+  await expect(page.getByRole('heading', { name: 'Settings', level: 2 })).toBeVisible()
+  const danger = page.getByRole('region', { name: 'Danger zone' })
+  await expect(danger.getByRole('heading', { name: 'Leave' })).toBeVisible()
+  await expect(danger.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
 
   const name = `Renamed ${rand()}`
   await page.getByLabel('Organization name', { exact: true }).fill(name)

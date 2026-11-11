@@ -36,6 +36,13 @@ export const PAIRS = [
     'destructive button text, hovered in dark, in a card',
     'dark',
   ],
+  ['background', 'destructive', 4.5, 'solid destructive button text (a confirm dialog)'],
+  [
+    'background',
+    'destructive/90@popover',
+    4.5,
+    'solid destructive button text, hovered, in a dialog',
+  ],
   ['primary-foreground', 'primary/90', 4.5, 'primary button and linked badge text, hovered'],
   ['primary-foreground', 'primary/90@card', 4.5, 'primary button text, hovered, in a card'],
   ['secondary-foreground', 'secondary/80', 4.5, 'linked secondary badge text, hovered'],
