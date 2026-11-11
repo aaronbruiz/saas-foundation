@@ -89,11 +89,11 @@ kill -9 $(lsof -t -i:3000)
 
 ## UI (ADR-0046)
 
-- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`.
-- A simple choice is `NativeSelect`; Base UI `Select` only for rich ones (ADR-0046).
-- Auth pages use `AuthLayout`. A field error (invalid input) marks its field; other failures go in a form-level `role="alert"`; toasts only for success. `destructiveSolid` only as an `AlertDialog`'s final action. Lone and menu links ≥ 24 px (`min-h-6`).
-- A style the CSP refuses fails e2e and visual tests; allowing it is a CSP change (ADR-0045).
-- `pnpm test:visual --baseline` before UI work, `--compare` after (its summary line in Checks); procedure: `ui-page` skill.
+- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`.
+- Simple choice: `NativeSelect`; Base UI `Select` only for rich ones (ADR-0046).
+- Auth pages: `AuthLayout`. Invalid input: `Field` gets `data-invalid` and a `FieldError`; other failures: a form-level `role="alert"`; toasts: success only. `destructiveSolid`: only an `AlertDialog`'s final action confirming an irreversible action or ownership transfer. Lone and menu links ≥ 24 px (`min-h-6`).
+- A style the CSP refuses fails e2e and visual tests; allowing it changes the CSP (ADR-0045).
+- `pnpm test:visual --baseline` before, `--compare` after (summary in Checks); procedure: `ui-page` skill.
 
 ## Git workflow (ADR-0030)
 

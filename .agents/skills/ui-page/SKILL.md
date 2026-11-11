@@ -17,7 +17,7 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 - Pick the page's frame: `AuthLayout` for sign-in and onboarding, the tenant shell (`t.$tenant.tsx`) for tenant pages, the account or legal page's frame otherwise. Don't copy a frame's classes into the page.
 - Use `components/ui` and the brand tokens; `NativeSelect` for a simple choice; contract types only (`import type`).
 - Forms: `method="post"`, submit disabled until hydrated (`useHydrated`), the server's errors placed as `AGENTS.md` "UI" says (a field error at its field, any other failure in a form-level alert, toasts for success only).
-- A destructive action that needs confirming: an `AlertDialog` whose final action is `destructiveSolid`; the page's own button stays tinted.
+- An action that can't be undone, or an ownership transfer: confirm it in an `AlertDialog` whose final action is `destructiveSolid`; the page's own button stays tinted (`AGENTS.md` "UI").
 - A new colour pair (a new variant or surface): add it to `scripts/brand-contrast.mjs`.
 
 ## 3. Visual and keyboard tests
@@ -41,7 +41,7 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 
 ## 6. When a run fails
 
-- e2e and visual runs time out under load from other work on the machine (hydration waits, the 60 s test timeout). Read the load average and rerun once before diagnosing; report both runs.
+- e2e and visual runs time out under load from other work on the machine (hydration waits; the per-test timeout, 60 s in e2e and 120 s in visual). Read the load average and rerun once before diagnosing; report both runs.
 - The first run after a new dependency can hit a stale Vite cache; `vite.config.ts` pre-bundles every Base UI subpath the source imports.
 
 ## 7. Checks
