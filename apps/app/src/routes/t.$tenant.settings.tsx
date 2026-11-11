@@ -72,8 +72,12 @@ function Settings() {
   )
 }
 
-/** Runs one action at a time and keeps its error; the action decides what happens on success. */
-function useAction() {
+/**
+ * Runs one action at a time and keeps its error; the action decides what happens on success.
+ * `fieldErrors` are the server's answers that mean the typed value was invalid: those mark the
+ * form's field; any other failure is a form-level alert (AGENTS.md "UI").
+ */
+function useAction(fieldErrors: string[] = []) {
   const hydrated = useHydrated()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,7 +93,8 @@ function useAction() {
       setBusy(false)
     }
   }
-  return { run, error, disabled: !hydrated || busy }
+  const fieldError = error !== null && fieldErrors.includes(error)
+  return { run, error, fieldError, disabled: !hydrated || busy }
 }
 
 /**
@@ -127,7 +132,7 @@ function RenameForm({ name }: { name: string }) {
   const { tenant } = Route.useParams()
   const router = useRouter()
   const rename = useServerFn(renameOrganizationFn)
-  const { run, error, disabled } = useAction()
+  const { run, error, fieldError, disabled } = useAction(['invalid input'])
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -145,7 +150,7 @@ function RenameForm({ name }: { name: string }) {
       description="This changes the display name only. The organization's URL stays the same."
     >
       <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-        <Field data-invalid={error ? true : undefined}>
+        <Field data-invalid={fieldError || undefined}>
           <FieldLabel htmlFor="organization-name">Organization name</FieldLabel>
           <Input
             id="organization-name"
@@ -153,10 +158,11 @@ function RenameForm({ name }: { name: string }) {
             required
             maxLength={120}
             defaultValue={name}
-            aria-invalid={error ? true : undefined}
+            aria-invalid={fieldError || undefined}
           />
-          <FieldError>{error}</FieldError>
+          {fieldError && <FieldError>{error}</FieldError>}
         </Field>
+        {!fieldError && <FieldError>{error}</FieldError>}
         <div>
           <Button type="submit" disabled={disabled}>
             Save name
@@ -175,7 +181,7 @@ function TransferForm({
   const { tenant } = Route.useParams()
   const router = useRouter()
   const transfer = useServerFn(transferOwnershipFn)
-  const { run, error, disabled } = useAction()
+  const { run, error, fieldError, disabled } = useAction(['invalid input', 'Choose another member'])
   const [selectedId, setSelectedId] = useState(candidates[0]?.id ?? '')
   const selected = candidates.find((m) => m.id === selectedId) ?? candidates[0]
   // The member the open dialog asks about, fixed when it opens.
@@ -214,7 +220,7 @@ function TransferForm({
         <p className="text-sm">Invite someone first: there&apos;s no other member to choose.</p>
       ) : (
         <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Field data-invalid={error ? true : undefined}>
+          <Field data-invalid={fieldError || undefined}>
             <FieldLabel htmlFor="new-owner">New owner</FieldLabel>
             {/* A native select (AGENTS.md "UI"): a simple single choice, submitted with the form. */}
             <NativeSelect
@@ -225,6 +231,7 @@ function TransferForm({
               value={selected?.id ?? ''}
               onChange={(e) => setSelectedId(e.currentTarget.value)}
               aria-describedby="new-owner-selected"
+              aria-invalid={fieldError || undefined}
             >
               {candidates.map((m) => (
                 <NativeSelectOption key={m.id} value={m.id}>
@@ -238,8 +245,9 @@ function TransferForm({
                 Selected: {selected.email} ({selected.role})
               </p>
             )}
-            <FieldError>{error}</FieldError>
+            {fieldError && <FieldError>{error}</FieldError>}
           </Field>
+          {!fieldError && <FieldError>{error}</FieldError>}
           <div>
             <Button ref={submitRef} type="submit" disabled={disabled}>
               Transfer ownership
@@ -312,7 +320,10 @@ function DeleteForm({ name }: { name: string }) {
   const { tenant } = Route.useParams()
   const router = useRouter()
   const remove = useServerFn(deleteOrganizationFn)
-  const { run, error, disabled } = useAction()
+  const { run, error, fieldError, disabled } = useAction([
+    'invalid input',
+    "That doesn't match the organization's name",
+  ])
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -336,17 +347,18 @@ function DeleteForm({ name }: { name: string }) {
       }
     >
       <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-        <Field data-invalid={error ? true : undefined}>
+        <Field data-invalid={fieldError || undefined}>
           <FieldLabel htmlFor="confirm-name">Organization name to confirm</FieldLabel>
           <Input
             id="confirm-name"
             name="confirmName"
             required
             autoComplete="off"
-            aria-invalid={error ? true : undefined}
+            aria-invalid={fieldError || undefined}
           />
-          <FieldError>{error}</FieldError>
+          {fieldError && <FieldError>{error}</FieldError>}
         </Field>
+        {!fieldError && <FieldError>{error}</FieldError>}
         <div>
           <Button type="submit" variant="destructive" disabled={disabled}>
             Delete organization
