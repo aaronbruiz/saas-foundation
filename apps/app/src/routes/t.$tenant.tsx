@@ -3,7 +3,8 @@ import { useServerFn } from '@tanstack/react-start'
 import { useState, type SyntheticEvent } from 'react'
 import { getTenantFn, getViewerFn } from '../modules/organizations/functions'
 import { authClient } from '../lib/auth-client'
-import { ErrorText, messageOf } from '../lib/ui'
+import { messageOf } from '../lib/ui'
+import { FieldError } from '@/components/ui/field'
 
 // Tenant layout (ADR-0010). The loader re-verifies membership; unknown or foreign tenants get
 // the root not-found page (404). This is UX: every server function re-checks on its own.
@@ -140,7 +141,7 @@ function OrganizationMenu({ slug, name }: { slug: string; name: string }) {
             </Link>
           </li>
         </ul>
-        <ErrorText error={error} />
+        <FieldError>{error}</FieldError>
       </div>
     </details>
   )

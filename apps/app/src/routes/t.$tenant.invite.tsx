@@ -2,7 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { inviteMemberFn } from '../modules/organizations/functions'
-import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
 // The invitee is also emailed when delivery is configured (ADR-0016); the link stays shareable here.
 export const Route = createFileRoute('/t/$tenant/invite')({ component: Invite })
@@ -29,24 +33,45 @@ function Invite() {
   }
 
   return (
-    <section className="space-y-4">
+    <section className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">Invite a member</h2>
-      <form method="post" onSubmit={onSubmit} className="space-y-4 rounded border bg-white p-4">
-        <Field label="Invitee email">
-          <input name="email" type="email" required className={inputClass} />
-        </Field>
-        <ErrorText error={error} />
-        <button type="submit" disabled={!hydrated} className={buttonClass}>
-          Create invitation
-        </button>
-      </form>
+      <Card>
+        <CardContent>
+          <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+            <Field data-invalid={error ? true : undefined}>
+              <FieldLabel htmlFor="invitee-email">Invitee email</FieldLabel>
+              <Input
+                id="invitee-email"
+                name="email"
+                type="email"
+                required
+                aria-invalid={error ? true : undefined}
+              />
+              <FieldError>{error}</FieldError>
+            </Field>
+            <div>
+              <Button type="submit" disabled={!hydrated}>
+                Create invitation
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
       {link && (
-        <p className="rounded border bg-white p-4 text-sm">
-          Share this link with the invitee:{' '}
-          <a href={link} data-testid="invite-link" className="break-all underline">
-            {link}
-          </a>
-        </p>
+        <Card>
+          <CardContent>
+            <p>
+              Share this link with the invitee:{' '}
+              <a
+                href={link}
+                data-testid="invite-link"
+                className="break-all text-primary underline underline-offset-4"
+              >
+                {link}
+              </a>
+            </p>
+          </CardContent>
+        </Card>
       )}
     </section>
   )

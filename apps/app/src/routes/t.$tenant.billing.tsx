@@ -2,7 +2,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState } from 'react'
 import { getBillingFn, openBillingPortalFn, startCheckoutFn } from '../modules/billing/functions'
-import { ErrorText, buttonClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { FieldError } from '@/components/ui/field'
 
 // Plan, usage and the paid-plan actions (ADR-0020). What's shown and allowed comes from the server
 // (policy + capability matrix); the page only renders it.
@@ -32,54 +35,65 @@ function Billing() {
 
   const sub = billing.subscription
   return (
-    <section className="space-y-6">
+    <section className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">Billing</h2>
-      <div className="rounded border bg-white p-4">
-        <p>
-          Plan: <strong data-testid="plan-name">{billing.plan.name}</strong>
-          {sub && ` (${sub.status.replace('_', ' ')})`}
-        </p>
-        {sub?.currentPeriodEnd && (
-          <p className="text-sm text-gray-600">
-            {sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'} on{' '}
-            {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+      <Card>
+        <CardContent>
+          <p className="text-base">
+            Plan: <strong data-testid="plan-name">{billing.plan.name}</strong>
+            {sub && ` (${sub.status.replace('_', ' ')})`}
           </p>
-        )}
-        <ul className="mt-3 text-sm">
-          <li>Projects: {limitText(billing.usage.projects, billing.limits.projects)}</li>
-          <li>Members: {limitText(billing.usage.members, billing.limits.members)}</li>
-        </ul>
-      </div>
+          {sub?.currentPeriodEnd && (
+            <p className="text-muted-foreground">
+              {sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'} on{' '}
+              {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+            </p>
+          )}
+          <ul className="flex flex-col gap-1">
+            <li>Projects: {limitText(billing.usage.projects, billing.limits.projects)}</li>
+            <li>Members: {limitText(billing.usage.members, billing.limits.members)}</li>
+          </ul>
+        </CardContent>
+      </Card>
       {billing.canManage ? (
-        <div className="space-y-3">
-          {billing.prices.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              disabled={!hydrated}
-              className={`${buttonClass} mr-3`}
-              onClick={() => go(() => checkout({ data: { tenant, price: p.key } }))}
-            >
-              Upgrade to {p.planName} ({p.interval === 'year' ? 'yearly' : 'monthly'})
-            </button>
-          ))}
+        <div className="flex flex-col gap-3">
+          {billing.prices.length > 0 && (
+            <div className="flex flex-wrap gap-3">
+              {billing.prices.map((p) => (
+                <Button
+                  key={p.key}
+                  type="button"
+                  disabled={!hydrated}
+                  onClick={() => go(() => checkout({ data: { tenant, price: p.key } }))}
+                >
+                  Upgrade to {p.planName} ({p.interval === 'year' ? 'yearly' : 'monthly'})
+                </Button>
+              ))}
+            </div>
+          )}
           {billing.prices.length > 0 && billing.trialDays > 0 && (
-            <p className="text-sm text-gray-600">Includes a {billing.trialDays}-day free trial.</p>
+            <p className="text-sm text-muted-foreground">
+              Includes a {billing.trialDays}-day free trial.
+            </p>
           )}
           {billing.hasPortal && (
-            <button
-              type="button"
-              disabled={!hydrated}
-              className={buttonClass}
-              onClick={() => go(() => portal({ data: { tenant } }))}
-            >
-              Manage billing
-            </button>
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!hydrated}
+                onClick={() => go(() => portal({ data: { tenant } }))}
+              >
+                Manage billing
+              </Button>
+            </div>
           )}
-          <ErrorText error={error} />
+          <FieldError>{error}</FieldError>
         </div>
       ) : (
-        <p className="text-sm text-gray-600">Only the organization owner can change the plan.</p>
+        <p className="text-sm text-muted-foreground">
+          Only the organization owner can change the plan.
+        </p>
       )}
     </section>
   )
