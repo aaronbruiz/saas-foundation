@@ -1,22 +1,10 @@
-import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
-import { readFileSync } from 'node:fs'
 import { sessionFile } from '../e2e/session'
-import { teamFile } from './team'
+import { hydrated, setTheme, team, themes, views } from './pages'
 
-// The pilot pages on the UI foundation (ADR-0046) at both widths and in both themes. Dark is the
-// `.dark` class, which nothing in the app sets yet; the tests set it once the page has hydrated.
-// Names that change every run (the organization) are masked.
-const views = [
-  { name: 'narrow', width: 320, height: 800 },
-  { name: 'wide', width: 1280, height: 900 },
-] as const
-const themes = ['light', 'dark'] as const
-
-// After the page has hydrated: a class set before load doesn't survive React's hydration of <html>.
-async function setTheme(page: Page, theme: (typeof themes)[number]) {
-  if (theme === 'dark') await page.evaluate(() => document.documentElement.classList.add('dark'))
-}
+// The pilot pages on the UI foundation (ADR-0046) at both widths and in both themes (the system
+// theme, emulated before the page loads). Names that change every run (the organization) are
+// masked.
 
 for (const view of views)
   for (const theme of themes) {
@@ -24,10 +12,10 @@ for (const view of views)
       test.use({ viewport: { width: view.width, height: view.height } })
 
       test('sign-in page', async ({ page, snap }) => {
+        await setTheme(page, theme)
         await page.goto('/login')
         // Enabled once hydrated and Turnstile's test key has answered (slower from the image).
         await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled({ timeout: 30_000 })
-        await setTheme(page, theme)
         await snap(`login-${view.name}-${theme}.png`, {
           fullPage: true,
           // Turnstile's widget renders in a closed shadow root: mask its host, which holds the
@@ -40,10 +28,9 @@ for (const view of views)
         test.use({ storageState: sessionFile })
 
         test('organization settings', async ({ page, snap, browserName }) => {
-          const { slug } = JSON.parse(readFileSync(teamFile, 'utf8')) as { slug: string }
-          await page.goto(`/t/${slug}/settings`)
-          await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
           await setTheme(page, theme)
+          await page.goto(`/t/${team().slug}/settings`)
+          await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled(hydrated)
           const mask = [
             page.getByRole('banner').getByRole('heading', { level: 1 }),
             page.getByLabel('Organization name', { exact: true }),

@@ -1,7 +1,7 @@
 /* @saas-foundation/brand: the template's colour tokens (ADR-0046; preset "Stone and teal", owner
    2026-11-11). A product replaces the values in this one file with its brand. Each colour is
-   light-dark(<light>, <dark>), picked by `color-scheme`: the app sets `light` and switches with the
-   `.dark` class; the marketing site uses `light dark`, so it follows the visitor's system.
+   light-dark(<light>, <dark>), picked by `color-scheme`: light by default here; the app and the
+   marketing site set `light dark`, so both follow the visitor's system (no class, no script).
    Every pair the components use is contrast-tested in both themes: scripts/brand-contrast.test.mjs
    (pnpm lint). Values are oklch(); the test reads nothing else. */
 :root {
@@ -33,9 +33,4 @@
   --sidebar-accent-foreground: light-dark(oklch(0.17 0.01 60), oklch(0.975 0.004 75));
   --sidebar-border: light-dark(oklch(0.91 0.006 75), oklch(1 0 0 / 10%));
   --sidebar-ring: light-dark(oklch(0.55 0.09 195), oklch(0.68 0.1 190));
-}
-
-:root.dark,
-.dark {
-  color-scheme: dark;
 }

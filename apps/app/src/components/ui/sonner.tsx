@@ -10,7 +10,9 @@ import {
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      // Colours come from the brand tokens below, which follow `color-scheme` (light-dark()).
+      // Colours come from the brand tokens below, which follow `color-scheme` (light-dark()); the
+      // theme, for sonner's own details, follows the system like the app.
+      theme="system"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

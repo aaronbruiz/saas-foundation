@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, tabWalk, themes, views, type Theme } from './pages'
+import { hydrated, setTheme, tabWalk, themes, views, type Theme } from './pages'
 
 // The account page and the legal pages (UI migration PR 3a, ADR-0046) at both widths and in both
 // themes, and a keyboard pass on each: every stop shows a visible focus indicator, and the account
@@ -50,11 +50,11 @@ const mask = (page: Page) => [
 ]
 
 async function open(page: Page, p: AccountPage, theme: Theme) {
+  await setTheme(page, theme)
   await page.goto(p.path)
   const ready = p.ready(page)
   await expect(ready).toBeVisible()
-  if (p.controls) await expect(ready).toBeEnabled()
-  await setTheme(page, theme)
+  if (p.controls) await expect(ready).toBeEnabled(hydrated)
 }
 
 for (const p of pages)

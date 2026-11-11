@@ -10,7 +10,7 @@ export function ErrorPage({ reset }: ErrorComponentProps) {
   return (
     <main className="mx-auto max-w-xl p-8">
       <h1 className="text-2xl font-semibold">Something went wrong</h1>
-      <p className="mt-2 text-gray-600">
+      <p className="mt-2 text-muted-foreground">
         This page couldn&apos;t be loaded. Try again, or go home.
       </p>
       <div className="mt-4 flex gap-4">

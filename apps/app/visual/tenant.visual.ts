@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, tabWalk, team, themes, views, type Theme } from './pages'
+import { hydrated, setTheme, tabWalk, team, themes, views, type Theme } from './pages'
 
 // The tenant pages: projects list and detail, members, invite, billing, and the shell's
 // organization switcher (UI migration PR 2, ADR-0046) at both widths and in both themes, as the
@@ -60,9 +60,9 @@ const mask = (page: Page) => {
 }
 
 async function open(page: Page, p: TenantPage, theme: Theme) {
-  await page.goto(p.path(team()))
-  await expect(p.ready(page)).toBeEnabled()
   await setTheme(page, theme)
+  await page.goto(p.path(team()))
+  await expect(p.ready(page)).toBeEnabled(hydrated)
 }
 
 test.use({ storageState: sessionFile })

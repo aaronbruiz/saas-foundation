@@ -1,15 +1,13 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { tabWalk, team } from './pages'
+import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 
 // Keyboard pass on the pilot page (ADR-0046, docs/testing.md), in every browser and both themes:
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
 // indicator, the transfer picker answers arrow keys and Escape without losing focus, and the
 // rename toast doesn't take focus. Runs in every `pnpm test:visual` mode; it takes no screenshots.
 // No page uses a dialog or a menu yet: their Escape checks come with the first page that does.
-
-const themes = ['light', 'dark'] as const
 
 const settingsControls = [
   'Organization name',
@@ -26,10 +24,9 @@ for (const theme of themes)
     test.use({ storageState: sessionFile, viewport: { width: 1280, height: 900 } })
 
     async function openSettings(page: Page) {
+      await setTheme(page, theme)
       await page.goto(`/t/${team().slug}/settings`)
-      await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
-      if (theme === 'dark')
-        await page.evaluate(() => document.documentElement.classList.add('dark'))
+      await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled(hydrated)
     }
 
     test('settings: tab order follows the page and every stop shows focus', async ({

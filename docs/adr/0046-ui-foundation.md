@@ -13,7 +13,7 @@ The app's CSP (ADR-0045) has `style-src 'self'`: no inline style attribute or `<
 ## Decision
 
 1. **Base:** shadcn (style `base-vega`, `components.json`) on Base UI (`@base-ui/react`, pinned exactly), components copied into `apps/app/src/components/ui/`. They take data through props only: no `modules/`, `server/`, routes or contracts (lint). The app's pages move onto them one PR at a time; this PR moves the shell and organization settings.
-2. **Tokens:** `packages/brand` (`@saas-foundation/brand`, the package ADR-0028 deferred), one CSS file, `brand.css`, with every colour as `light-dark(<light>, <dark>)` in oklch. `color-scheme` picks the side: the app is `light` and switches with the `.dark` class (nothing sets it until every page is on tokens); the marketing site uses `light dark`, so it follows the visitor's system with no script. A product replaces the values in that file. The preset is "Stone and teal" (warm grey neutrals, a deep teal primary, 0.75rem radius).
+2. **Tokens:** `packages/brand` (`@saas-foundation/brand`, the package ADR-0028 deferred), one CSS file, `brand.css`, with every colour as `light-dark(<light>, <dark>)` in oklch. `color-scheme` picks the side: the app and the marketing site use `light dark`, so both follow the visitor's system with no class and no script, and Tailwind's `dark:` variant is its default, `prefers-color-scheme` (the app switched once every page was on tokens, UI migration PR 3b; no toggle, owner 2026-11-11). A product replaces the values in that file. The preset is "Stone and teal" (warm grey neutrals, a deep teal primary, 0.75rem radius).
 3. **Contrast is tested:** `scripts/brand-contrast.test.mjs` (in `pnpm lint`) checks every listed token pair in both themes, translucent colours composited over their background: 4.5:1 for text (WCAG 1.4.3), 3:1 for input borders, focus indicators and control fills (1.4.11). shadcn's own default tokens fail five of these pairs.
 4. **CSP, no loosening of `style-src`:** two directives, each by exact hash, generated from the installed packages into `apps/app/src/server/csp-hashes.gen.ts` (`pnpm csp:hashes`; `pnpm check` fails when it drifts):
    - `style-src-elem 'self'` plus sonner's two hashes: it appends an empty `<style>`, then its CSS;
@@ -35,16 +35,16 @@ The app's CSP (ADR-0045) has `style-src 'self'`: no inline style attribute or `<
 
 ## Deferred
 
-| Decision                                      | Options                                                     | Trigger                                   |
-| --------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------- |
-| Shared React components package `packages/ui` | move `components/ui` into a package                         | a second React consumer of the components |
-| Dark mode in the app                          | system preference, then a toggle                            | every page on tokens                      |
-| The excluded Base UI components               | a CSS-only equivalent, or a nonce/hash design per component | a page that needs one                     |
-| Visual tests in CI                            | a scheduled job in the pinned image                         | Actions budget                            |
+| Decision                                      | Options                                                                                             | Trigger                                   |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Shared React components package `packages/ui` | move `components/ui` into a package                                                                 | a second React consumer of the components |
+| A theme toggle in the app                     | a stored preference over the system theme (needs a class set before paint without an inline script) | a product asking for it                   |
+| The excluded Base UI components               | a CSS-only equivalent, or a nonce/hash design per component                                         | a page that needs one                     |
+| Visual tests in CI                            | a scheduled job in the pinned image                                                                 | Actions budget                            |
 
 ## Consequences
 
 - A sonner, React or Base UI bump that changes an injected style fails `pnpm check` until the hash file is regenerated; the diff is a CSP change and is reviewed as one.
-- Pages not yet migrated keep their `gray-*` classes; they look as before in light, and dark stays off.
+- Every page is on the tokens (UI migration, PRs 1–3b); `lib/ui.tsx` keeps only `useHydrated` and `messageOf`. The app follows the system theme, so a page that hard-codes a colour breaks in dark: the visual tests take every page in both.
 - The marketing site depends on `packages/brand` (its CI path filter includes it); it still ships no scripts and no inline styles.
 - WebKit (Playwright's build) refuses its own stylesheet for a native `<select>` under `style-src 'self'`; a canary test fails when that stops, so the exclusion can be removed.

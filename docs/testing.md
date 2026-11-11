@@ -32,7 +32,7 @@ E2E (`apps/app/e2e/`):
 
 Visual (`apps/app/visual/`, ADR-0046): `pnpm test:visual`, always through `scripts/test-lock.sh visual` (like every dev server and test run here; it also takes port 3001 for the browser server).
 
-- It starts the Playwright browser server from `mcr.microsoft.com/playwright:v<installed version>-noble` and runs Chromium, Firefox and WebKit against the local dev server at 320 and 1280 px, light and dark (the `.dark` class, set once the page has hydrated). Not run in CI.
+- It starts the Playwright browser server from `mcr.microsoft.com/playwright:v<installed version>-noble` and runs Chromium, Firefox and WebKit against the local dev server at 320 and 1280 px, light and dark (the system theme, emulated with `page.emulateMedia({ colorScheme })` before the page loads). Not run in CI.
 - Three modes ([`scripts/test-visual.mjs`](../scripts/test-visual.mjs)); every mode runs the checks: the strict CSP check below, the WebKit `<select>` canary and the keyboard pass.
   - no flag: the checks only. Takes no screenshot and never needs a baseline.
   - `--baseline`: the checks, and screenshots saved to the git-ignored `apps/app/visual/.baseline/` (replacing it), with the commit they were taken at in `.baseline/COMMIT` ("with uncommitted changes" when the tree was dirty).

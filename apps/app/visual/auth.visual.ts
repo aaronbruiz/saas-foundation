@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, tabWalk, themes, views, type Theme } from './pages'
+import { hydrated, setTheme, tabWalk, themes, views, type Theme } from './pages'
 
 // The sign-in, sign-up, password reset, invitation and new-organization pages (UI migration PR 1,
 // ADR-0046) at both widths and in both themes, and a keyboard pass on each form: the tab order
@@ -71,9 +71,9 @@ const pages: AuthPage[] = [
 ]
 
 async function open(page: Page, p: AuthPage, theme: Theme) {
+  await setTheme(page, theme)
   await page.goto(p.path)
   await expect(page.getByRole('button', { name: p.ready })).toBeEnabled({ timeout: 30_000 })
-  await setTheme(page, theme)
 }
 
 for (const p of pages) {
@@ -118,15 +118,15 @@ for (const view of views)
       test.use({ viewport: { width: view.width, height: view.height } })
 
       test('page', async ({ page, snap }) => {
+        await setTheme(page, theme)
         await page.goto('/reset-password')
         const submit = page.getByRole('button', { name: 'Change password' })
-        await expect(submit).toBeEnabled()
+        await expect(submit).toBeEnabled(hydrated)
         await page.getByLabel('New password').fill('correct-horse-battery-staple')
         await submit.click()
         await expect(page.getByRole('alert')).toHaveText(
           'This reset link is invalid or has expired.',
         )
-        await setTheme(page, theme)
         await snap(`reset-password-error-${view.name}-${theme}.png`, { fullPage: true })
       })
     })
