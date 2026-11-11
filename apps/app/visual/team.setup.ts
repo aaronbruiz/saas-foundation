@@ -8,7 +8,7 @@ import { teamFile } from './team'
 // Visual tests need an organization with two more members, so the settings page shows the
 // transfer picker with a choice (the keyboard pass moves between its options). The candidates are
 // fixed accounts, so the picker's text (and the baseline) is the same on every run: each signs up
-// the first time and signs in afterwards.
+// the first time and signs in afterwards. One project with a fixed name, for the projects pages.
 const candidates = ['visual-candidate@e2e.test', 'visual-candidate-2@e2e.test']
 
 async function join(browser: Browser, owner: Page, slug: string, candidate: string) {
@@ -38,10 +38,19 @@ async function join(browser: Browser, owner: Page, slug: string, candidate: stri
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/projects$`))
 }
 
-setup('an organization with two more members', async ({ browser }) => {
+setup('an organization with two more members and a project', async ({ browser }) => {
   const owner = await (await browser.newContext({ storageState: sessionFile })).newPage()
   await owner.goto('/orgs/new')
   const slug = await createOrg(owner, 'vis')
   for (const candidate of candidates) await join(browser, owner, slug, candidate)
-  writeFileSync(teamFile, JSON.stringify({ slug }))
+  await owner.goto(`/t/${slug}/projects`)
+  await owner.getByLabel('Project name').fill('Visual project')
+  await owner.getByLabel('Description').fill('A project for the visual tests.')
+  const create = owner.getByRole('button', { name: 'Create project' })
+  await expect(create).toBeEnabled()
+  await create.click()
+  const link = owner.getByRole('link', { name: 'Visual project' })
+  const projectId = (await link.getAttribute('href'))?.split('/').at(-1)
+  if (!projectId) throw new Error('the new project has no link')
+  writeFileSync(teamFile, JSON.stringify({ slug, projectId }))
 })
