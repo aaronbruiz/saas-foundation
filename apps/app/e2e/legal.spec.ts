@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 // Legal pages are public: reachable signed out from the footer on every page, and from sign-up.
 test('footer links reach each legal page', async ({ page }) => {

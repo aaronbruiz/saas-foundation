@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 // ADR-0018, ADR-0022: the billing webhook route is wired and fails closed where billing isn't
 // configured (local dev and every preview).

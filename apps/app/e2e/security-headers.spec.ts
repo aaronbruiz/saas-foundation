@@ -1,4 +1,5 @@
-import { expect, test, type APIResponse } from '@playwright/test'
+import type { APIResponse } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 // ADR-0045: the Worker's entry (src/server.ts) sets these on every response Start produces.
 function expectSecurityHeaders(res: APIResponse) {

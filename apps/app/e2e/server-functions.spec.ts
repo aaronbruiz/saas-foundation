@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 // ADR-0031 follow-up: anyone can request a made-up server-function id; it's a 404 like any unknown
 // path, not a 500 that raises an alert. Ids named like Object.prototype members included.

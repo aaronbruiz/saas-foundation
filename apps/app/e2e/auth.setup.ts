@@ -1,4 +1,4 @@
-import { expect, test as setup } from '@playwright/test'
+import { expect, test as setup } from './fixtures'
 import { createAccount, PASSWORD, rand, verifyAndSignIn } from './helpers'
 import { sessionFile } from './session'
 

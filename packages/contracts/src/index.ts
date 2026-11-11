@@ -2,6 +2,12 @@
 // field: the tenant comes from the `tenant` slug, verified server-side (invariant 1).
 import { z } from 'zod'
 
+// First, before any schema: zod's JIT probe (`new Function`) runs when the first object schema is
+// built and reads `jitless` then. The app's CSP has no 'unsafe-eval', so a browser would report the
+// probe as a violation (ADR-0045); Workers refuse eval anyway. scripts/contracts-jitless.test.mjs
+// fails if anything moves above this line.
+z.config({ jitless: true })
+
 export const TenantSlug = z
   .string()
   .min(2)

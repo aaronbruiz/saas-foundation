@@ -44,6 +44,11 @@ const RAW_SQL = 'No sql.raw'
 const QUERY_TEXT = 'Pass SQL as the sql tag'
 const CLIENT = 'The pg client stays inside packages/db'
 const PG = 'Only packages/db talks to pg'
+const EXCLUDED_UI = 'Import Base UI by subpath'
+const CONTRACTS = 'only with `import type`'
+const UI_PRIMITIVES = 'components/ui imports only npm packages'
+const E2E_TEST = "Import `test` from './fixtures'"
+const uiPrimitive = 'apps/app/src/components/ui/fixture.tsx'
 
 /** [file, code, fragment of the expected message, or null when the import is allowed] */
 const cases = [
@@ -191,6 +196,54 @@ const cases = [
   ['packages/contracts/src/fixture.ts', `import { x } from '@saas-foundation/db'`, NO_PACKAGES],
   ['packages/auth/src/fixture.ts', `import { x } from '@saas-foundation/contracts'`, ONLY_DB],
   ['packages/auth/src/fixture.ts', `import { rawDb } from '@saas-foundation/db/internal'`, null],
+  // Base UI components whose server HTML the CSP refuses (ADR-0045).
+  [route, `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [component, `import { Progress } from '@base-ui/react/progress'`, EXCLUDED_UI],
+  [uiPrimitive, `import { Accordion } from '@base-ui/react/accordion'`, EXCLUDED_UI],
+  [lib, `import { ScrollArea } from '@base-ui/react/scroll-area/root'`, EXCLUDED_UI],
+  [projects, `import { Meter } from '@base-ui/react/meter'`, EXCLUDED_UI],
+  [provider, `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [provider, `export { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [provider, `const f = () => import('@base-ui/react/slider')`, EXCLUDED_UI],
+  ['apps/app/src/server/db.ts', `import { Slider } from '@base-ui/react/slider'`, EXCLUDED_UI],
+  [route, `const f = () => import('@base-ui/react/collapsible')`, EXCLUDED_UI],
+  [uiPrimitive, `import { Slider } from '@base-ui/react'`, EXCLUDED_UI],
+  [uiPrimitive, `import * as BaseUi from '@base-ui/react'`, EXCLUDED_UI],
+  [route, `const f = () => import('@base-ui/react')`, EXCLUDED_UI],
+  [uiPrimitive, `import { Select } from '@base-ui/react/select'`, null],
+  [uiPrimitive, `import { CSPProvider } from '@base-ui/react/csp-provider'`, null],
+  // Contracts stay types-only in the UI (invariant 9, ADR-0045).
+  [route, `import { ProjectFields } from '@saas-foundation/contracts'`, CONTRACTS],
+  [component, `import { ProjectFields } from '@saas-foundation/contracts'`, CONTRACTS],
+  [route, `export { ProjectFields } from '@saas-foundation/contracts'`, CONTRACTS],
+  [route, `const f = () => import('@saas-foundation/contracts')`, CONTRACTS],
+  [
+    'apps/app/src/routes/api/auth/fixture.ts',
+    `import { X } from '@saas-foundation/contracts'`,
+    CONTRACTS,
+  ],
+  [route, `import type { ProjectFields } from '@saas-foundation/contracts'`, null],
+  [route, `import { type ProjectFields } from '@saas-foundation/contracts'`, null],
+  [projects, `import { ProjectFields } from '@saas-foundation/contracts'`, null],
+  // UI primitives take data through props.
+  [uiPrimitive, `import { listProjectsFn } from '../../modules/projects/functions'`, UI_PRIMITIVES],
+  [uiPrimitive, `import { withDb } from '@/server/context'`, UI_PRIMITIVES],
+  [uiPrimitive, `import { Route } from '../../routes/__root'`, UI_PRIMITIVES],
+  [uiPrimitive, `import type { ProjectFields } from '@saas-foundation/contracts'`, UI_PRIMITIVES],
+  [uiPrimitive, `const f = () => import('../../modules/projects/functions')`, UI_PRIMITIVES],
+  [uiPrimitive, `import { cn } from '@/lib/utils'`, null],
+  [uiPrimitive, `import { Button } from './button'`, null],
+  // e2e tests fail on CSP refusals through e2e/fixtures.ts.
+  ['apps/app/e2e/fixture.spec.ts', `import { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `export { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import test from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import * as pw from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `import { default as t } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `const { test } = await import('@playwright/test')`, E2E_TEST],
+  ['apps/app/e2e/fixture.spec.ts', `const q = 'select set_config($1, $2, false)'`, SET_CONFIG],
+  ['apps/app/e2e/fixture.spec.ts', `import { expect, test } from './fixtures'`, null],
+  ['apps/app/e2e/fixture.spec.ts', `import type { Page } from '@playwright/test'`, null],
+  ['apps/app/e2e/fixtures.ts', `import { test } from '@playwright/test'`, null],
 ]
 
 for (const [file, code, expected] of cases) {
