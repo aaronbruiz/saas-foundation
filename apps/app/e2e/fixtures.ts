@@ -1,16 +1,38 @@
-import { test as base, expect, type BrowserContext } from '@playwright/test'
+import {
+  test as base,
+  expect,
+  type BrowserContext,
+  type Page,
+  type PageAssertionsToHaveScreenshotOptions,
+} from '@playwright/test'
 
 export { expect }
 
-type Refusal = { url: string; directive: string; blocked: string; source: string }
+type Refusal = {
+  url: string
+  directive: string
+  blocked: string
+  source: string
+  /** Reported while `snap` took a screenshot (visual tests only). */
+  duringScreenshot: boolean
+}
+type CspState = {
+  refusals: Refusal[]
+  screenshot: boolean
+  /** URLs a visual test showed with a <select> on them (`allowWebKitSelect`). */
+  selectPages: Set<string>
+}
 
 // Fails any test whose pages hit a Content-Security-Policy refusal (ADR-0045): the browser reports
 // it, and nothing else would fail. Covers the `page` fixture's context and every context a test
 // opens with `browser.newContext()`. Specs import `test` from here, not from @playwright/test.
-async function watch(context: BrowserContext, refusals: Refusal[]) {
-  await context.exposeBinding('__cspRefusal', ({ page }, v: Omit<Refusal, 'url'>) => {
-    refusals.push({ url: page.url(), ...v })
-  })
+async function watch(context: BrowserContext, state: CspState) {
+  await context.exposeBinding(
+    '__cspRefusal',
+    ({ page }, v: Omit<Refusal, 'url' | 'duringScreenshot'>) => {
+      state.refusals.push({ url: page.url(), ...v, duringScreenshot: state.screenshot })
+    },
+  )
   await context.addInitScript(() => {
     document.addEventListener('securitypolicyviolation', (e) => {
       const report = (window as unknown as { __cspRefusal: (v: object) => void }).__cspRefusal
@@ -23,11 +45,12 @@ async function watch(context: BrowserContext, refusals: Refusal[]) {
   })
   context.on('console', (m) => {
     if (/Content.Security.Policy|Refused to (apply|load|execute|frame|connect)/i.test(m.text()))
-      refusals.push({
+      state.refusals.push({
         url: m.page()?.url() ?? '',
         directive: 'console',
         blocked: m.text(),
         source: '',
+        duringScreenshot: state.screenshot,
       })
   })
 }
@@ -42,27 +65,107 @@ async function settle(contexts: BrowserContext[]) {
   await Promise.all(pages.map((p) => p.close().catch(() => {})))
 }
 
-export const test = base.extend<{ cspRefusals: Refusal[] }>({
+// Two exclusions, both in WebKit visual tests only (owner-approved; docs/testing.md). Chromium,
+// Firefox and the e2e suite allow no refusal at all.
+// 1. Playwright's screenshotter injects <style>body {}</style> in WebKit (playwright-core
+//    screenshotter.ts, syncAnimations): a style-src-elem refusal while `snap` takes a screenshot.
+const isScreenshotterStyle = (r: Refusal) =>
+  r.duringScreenshot &&
+  (r.directive === 'style-src-elem' || r.blocked.startsWith('Refused to apply a stylesheet'))
+
+// 2. WebKit refuses its own stylesheet for a native <select> under `style-src 'self'`
+//    (visual/webkit-select.canary.visual.ts reproduces it on a bare page and fails once WebKit
+//    stops; then delete this). Exactly these refusals, at most once per page that has a <select>.
+//    A page's own inline style is refused with the same `style-src-attr` report, so only one of
+//    each is allowed per page: a second one (the page's) still fails, and Chromium and Firefox
+//    refuse it on their own.
+export const WEBKIT_SELECT_REFUSALS: Omit<Refusal, 'url' | 'duringScreenshot'>[] = [
+  {
+    directive: 'console',
+    blocked:
+      "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.",
+    source: '',
+  },
+  { directive: 'style-src-attr', blocked: 'inline', source: ':1' },
+]
+
+function withoutWebKitSelect(refusals: Refusal[], selectPages: Set<string>) {
+  const left = [...refusals]
+  for (const url of selectPages)
+    for (const expected of WEBKIT_SELECT_REFUSALS) {
+      const i = left.findIndex(
+        (r) =>
+          r.url === url &&
+          r.directive === expected.directive &&
+          r.blocked === expected.blocked &&
+          r.source === expected.source,
+      )
+      if (i >= 0) left.splice(i, 1)
+    }
+  return left
+}
+
+const roundTrip = (page: Page) =>
+  page.evaluate(() => new Promise((r) => setTimeout(r, 0))).catch(() => {})
+
+export const test = base.extend<{
+  cspState: CspState
+  cspRefusals: Refusal[]
+  /** Set by playwright.visual.config.ts; enables the two WebKit exclusions above. */
+  visual: boolean
+  /** Visual tests: compare the page with its committed screenshot (ADR-0046). */
+  snap: (name: string, options?: PageAssertionsToHaveScreenshotOptions) => Promise<void>
+  /** Visual tests: record that the current page has a <select> (exclusion 2). */
+  allowWebKitSelect: (page: Page) => Promise<void>
+}>({
+  visual: [false, { option: true }],
+  // Playwright requires the destructured fixtures argument, even when empty.
+  // eslint-disable-next-line no-empty-pattern
+  cspState: async ({}, use) => use({ refusals: [], screenshot: false, selectPages: new Set() }),
   cspRefusals: [
-    async ({ context, browser }, use) => {
-      const refusals: Refusal[] = []
+    async ({ context, browser, browserName, visual, cspState }, use) => {
       const watched = [context]
-      await watch(context, refusals)
+      await watch(context, cspState)
       const newContext = browser.newContext
       browser.newContext = async (...args) => {
         const c = await newContext.apply(browser, args)
         watched.push(c)
-        await watch(c, refusals)
+        await watch(c, cspState)
         return c
       }
       try {
-        await use(refusals)
+        await use(cspState.refusals)
       } finally {
         browser.newContext = newContext
       }
       await settle(watched)
+      const refusals =
+        visual && browserName === 'webkit'
+          ? withoutWebKitSelect(
+              cspState.refusals.filter((r) => !isScreenshotterStyle(r)),
+              cspState.selectPages,
+            )
+          : cspState.refusals
       expect(refusals, 'CSP refusals in the browser (ADR-0045)').toEqual([])
     },
     { auto: true },
   ],
+  allowWebKitSelect: async ({ cspState }, use) => {
+    await use(async (page) => {
+      if ((await page.locator('select').count()) > 0) cspState.selectPages.add(page.url())
+    })
+  },
+  snap: async ({ page, cspState, allowWebKitSelect }, use) => {
+    await use(async (name, options) => {
+      await allowWebKitSelect(page)
+      await roundTrip(page)
+      cspState.screenshot = true
+      try {
+        await expect(page).toHaveScreenshot(name, options)
+      } finally {
+        await roundTrip(page)
+        cspState.screenshot = false
+      }
+    })
+  },
 })

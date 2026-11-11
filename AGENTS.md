@@ -19,8 +19,9 @@ Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the cur
 - `packages/db`: Drizzle schema, migrations, client factory, **tenant-scoped repositories**. May import nothing internal.
 - `packages/auth`: Better Auth config (server only). May import: `@saas-foundation/db`.
 - `packages/contracts`: Zod schemas shared by UI and server. May import nothing internal.
+- `packages/brand`: colour tokens (`brand.css`, ADR-0046) for `apps/app` and `apps/site`. May import nothing.
 - `apps/docs`: public product docs (Astro + Starlight, static; ADR-0028): pages in `src/content/docs/`, `llms.txt` and `.md` twins in `src/pages/`; no bindings, secrets or tenant data. May import nothing internal.
-- `apps/site`: public marketing site on the apex (Astro, static; ADR-0033): landing, pricing from `src/data/plans.json` (generated from `billing/policy.ts`, `pnpm plans:export`) and `prices.json` (display amounts); links to the app; no bindings, secrets, scripts or tenant data. May import nothing internal (JSON data only).
+- `apps/site`: public marketing site on the apex (Astro, static; ADR-0033): landing, pricing from `src/data/plans.json` (generated from `billing/policy.ts`, `pnpm plans:export`) and `prices.json` (display amounts); links to the app; no bindings, secrets, scripts or tenant data. May import nothing internal but JSON data and `@saas-foundation/brand` CSS.
 
 A `Db` is an opaque handle: only `packages/db` repositories can query through it. The raw Drizzle client (`rawDb(db)`) and `schema` come from `@saas-foundation/db/internal`, for `packages/auth` (Better Auth's adapter) and tests only.
 
@@ -42,11 +43,13 @@ pnpm auth:generate # regenerate packages/db/src/schema/auth.ts from the Better A
 pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, locally and in CI; preview.yml also runs `main`'s suite against the PR preview)
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 pnpm --filter site dev | build   # marketing site (ADR-0033) on http://localhost:4322 | static build to apps/site/dist; CI: site.yml
+pnpm test:visual   # visual tests in the pinned Playwright image (ADR-0046; not in CI)
+pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (`pnpm check` fails until you do)
 pnpm plans:export  # regenerate apps/site/src/data/plans.json after changing billing/policy.ts (`pnpm check` fails until you do)
 scripts/{preview,backup,sites,release}/   # previews (ADR-0021), backups (ADR-0003, ADR-0023), static sites (ADR-0028, ADR-0033), releases and rollback (ADR-0029); run by CI; manual procedures in docs/runbooks/README.md
 ```
 
-Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs and site: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group, with `@astrojs/*`); `astro check` is their typecheck. Oxfmt (the formatter, ADR-0006) pinned exactly while it's 0.x (own Dependabot group). Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
+Toolchain: Node 24, pnpm (version pinned in `package.json`), TypeScript `~6.0` (TS 7 isn't supported by typescript-eslint), Vitest `^4.1` (`@cloudflare/vitest-plugin` doesn't support Vitest 5 yet). Docs and site: Astro 7 and Starlight pinned exactly while it's 0.x (own Dependabot group, with `@astrojs/*`); `astro check` is their typecheck. Oxfmt (the formatter, ADR-0006) pinned exactly while it's 0.x (own Dependabot group). `@base-ui/react` and `sonner` (own group) pinned exactly: the CSP allows their styles by hash. Dependabot (`.github/dependabot.yml`) skips these majors and `@types/node` above 24; change its `ignore` list when a pin changes.
 
 **Port 3000 busy:** `pnpm dev` uses `--strictPort` and fails if port 3000 is taken (auth origins depend on it). Don't switch ports and don't kill processes yourself. Stop and tell the user that port 3000 is in use, and recommend they free it with:
 
@@ -84,6 +87,12 @@ kill -9 $(lsof -t -i:3000)
 
 **Add a deployable or another runtime (ADR-0027):** write its ADR against ADR-0027's criteria and checklist → `apps/<name>/` with its native manifest → no tenant database access unless that ADR chooses and reviews a boundary.
 
+## UI (ADR-0046)
+
+- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`; colours: `packages/brand/brand.css` (contrast-tested).
+- A simple single choice is `NativeSelect`; Base UI `Select` only for rich options, groups, search or custom interaction. Six Base UI components are excluded (module map).
+- A style the CSP refuses fails e2e and visual tests; allowing one is a CSP change (ADR-0045).
+
 ## Git workflow (ADR-0030)
 
 - Trunk-based: short-lived branches named `<type>/<scope>-<description>` off `main`, merged within about two days. No release branches; fix forward (in an emergency, roll back first, ADR-0029).
@@ -97,7 +106,7 @@ kill -9 $(lsof -t -i:3000)
 
 - `packages/db/src/schema/auth.ts`: generated by the Better Auth CLI (`pnpm auth:generate`, the `auth` CLI pinned in `packages/auth`); regenerate instead
 - migrations that have already been applied
-- generated files: `routeTree.gen.ts` (regenerate with `pnpm build`), `worker-configuration.d.ts` (`pnpm --filter app cf-typegen`).
+- generated files: `routeTree.gen.ts` (regenerate with `pnpm build`), `csp-hashes.gen.ts` (`pnpm csp:hashes`; a CSP change), `worker-configuration.d.ts` (`pnpm --filter app cf-typegen`).
 
 ## Working rules
 
@@ -129,7 +138,7 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Code or configuration contradicting an Accepted ADR, flagged with the relevant `ADR-NNNN`. Significant architectural decisions without an ADR, flagged for documentation and approval before the change is accepted.
 - New bindings in `wrangler.jsonc` without an ADR, or without a `previews` override.
 - Reads that need freshness routed through any cached path; secrets reachable from client code.
-- A change to the app's security headers (ADR-0045): a third-party script, frame or connection origin used without being added to the CSP, `unsafe-inline` or `unsafe-eval` for scripts, a relaxed `frame-ancestors`, or a response path that skips the Worker entry in `src/server.ts`.
+- A change to the app's security headers (ADR-0045): a third-party script, frame or connection origin used without being added to the CSP, `unsafe-inline` or `unsafe-eval` for scripts, a style hash or style source added outside `csp-hashes.gen.ts`, `unsafe-inline` for styles, a relaxed `frame-ancestors`, or a response path that skips the Worker entry in `src/server.ts`.
 - A plan name, price id, limit number or subscription status checked outside `modules/billing/policy.ts` (product assumptions spread through the app, ADR-0020); a limit enforced only in our service when Better Auth's own endpoints can bypass it.
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent; a billing webhook that works without its secret configured, or that lets an older or duplicate event change state (ADR-0018).
 - A Polar subscription event applied from its payload alone (instead of the re-read subscription), or linked to an organization unless its `metadata.organization_id` equals the customer's `external_id`; Polar mode inferred from a token instead of `BILLING_PROVIDER=polar` (ADR-0022).

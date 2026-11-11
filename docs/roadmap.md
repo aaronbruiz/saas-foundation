@@ -102,6 +102,19 @@ Owner-approved 2026-10-30. M3 stays deferred; this prepares the foundation for t
   - Organization settings: rename, delete, leave and ownership transfer.
   - Account deletion, after the owner's decisions on sole owners, live subscriptions and retention.
 
+### Parallel track: UI foundation
+
+Owner-approved 2026-11-11. M3 stays deferred; this gives the template a deliberate visual system before the first product builds on it.
+
+- **Outcome:** pages written in a product repo, mostly by agents, use shared components and tokens and come out consistent, accessible and checkable under the app's strict CSP.
+- **Why:** pages are hand-rolled Tailwind with no tokens, no dark theme and no guidance; the experiment (2026-11-10) showed an agent guessing spacing, colour, states and copy.
+- **Done when:**
+  1. Client hardening is merged: contracts type-only in routes and components, zod `jitless`, zod markers in the client-bundle scan, the strict e2e console check.
+  2. The UI foundation is merged: shadcn on Base UI, `packages/brand` tokens (light + dark, contrast-tested), the two CSP hash directives (ADR-0045), the settings pilot, the `AGENTS.md` UI section, local visual tests.
+  3. The remaining pages are on tokens and components, and the app follows the system theme.
+  4. A tracked UI skill in `.agents/skills/`, written from the pilot and the migrations.
+- **Deferred:** a theme toggle, `packages/ui`, the six excluded Base UI components, visual tests in CI.
+
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)
 
 - **Outcome:** production's Hyperdrive config connects as `app_runtime`, so ADR-0038's grants apply in production.
@@ -168,7 +181,7 @@ These items wait here until a milestone needs them. Each one is pulled in by a r
 
 ## Engineering rules while this roadmap holds
 
-- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope. Exception (owner, 2026-10-31): ADR-0043, for the proven race that left organizations with no owner, and its deletion gate on that ADR's conditions; ADR-0044, for account deletion, for the smoke-test-only environment.
+- **Frozen:** new RLS implementation, new security ADRs, `GuardedClient` hardening, and expansion of the schema gate. An exception needs a finding that is proven and within the current milestone's scope. Exception (owner, 2026-10-31): ADR-0043, for the proven race that left organizations with no owner, and its deletion gate on that ADR's conditions; ADR-0044, for account deletion, for the smoke-test-only environment. Exception (owner, 2026-11-11): ADR-0045's amendment adding exactly two directives, `style-src-elem 'self'` with sonner's two hashes and `style-src-attr 'unsafe-hashes'` with Base UI's two hidden-input hashes, each from a generated file with a drift check; `style-src 'self'` and every other directive unchanged.
 - **No rework during stabilization:** `GuardedClient` and the other merged controls stay as they are during M1–M2. Fix only proven defects.
 - **When a review is done:**
   - By default, one review, then one review of the corrections.

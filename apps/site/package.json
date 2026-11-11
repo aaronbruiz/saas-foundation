@@ -14,5 +14,8 @@
     "astro": "^7.4.5",
     "typescript": "~6.0.3",
     "wrangler": "^4.156.2"
+  },
+  "dependencies": {
+    "@saas-foundation/brand": "workspace:*"
   }
 }

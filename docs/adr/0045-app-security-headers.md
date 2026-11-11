@@ -1,6 +1,6 @@
 # ADR-0045: Security headers and a nonce-based Content Security Policy on the app
 
-Status: Accepted (owner 2026-11-05: a short ADR under the freeze exception; HSTS one year without subdomains) · Date: 2026-11-05
+Status: Accepted (owner 2026-11-05: a short ADR under the freeze exception; HSTS one year without subdomains) · Date: 2026-11-05 · Amended 2026-11-11 (owner: two style hash directives for the UI foundation, ADR-0046)
 
 Owner 2026-11-05: this is a new security ADR during the roadmap's freeze, accepted as an exception. The finding is proven and within M3's pre-pilot scope.
 
@@ -13,12 +13,13 @@ TanStack Start renders inline hydration scripts. A CSP that allows them without 
 ## Decision
 
 1. **The Worker's entry sets the headers** (`src/server.ts`, `main` in `wrangler.jsonc`, replacing [ADR-0002](0002-single-tanstack-start-worker.md)'s `@tanstack/react-start/server-entry`, which it wraps; owner 2026-11-05). It wraps Start's default entry (a plain `{ fetch }`, not `createServerEntry`, which validates the path before calling it), so every response Start produces gets them, including the CSRF 403, the unknown-server-function 404, and the 400 and 500 answers Start generates without running request middleware. (A malformed path such as `/%ZZ` is refused by Cloudflare's edge before the Worker in production and on previews, and by Vite locally; `wrangler dev` on the built Worker showed Start's 400 with the headers.) A response with immutable headers (`Response.redirect`) is copied first. The headers are built in `src/server/security-headers.ts`:
-   - `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-<n>' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`. The dev server's policy adds `ws: wss:` to `connect-src` for Vite's client, and nothing else.
+   - `Content-Security-Policy`: `default-src 'self'; script-src 'self' 'nonce-<n>' https://challenges.cloudflare.com; style-src 'self'; style-src-elem 'self' <sonner's two hashes>; style-src-attr 'unsafe-hashes' <Base UI's two hidden-input hashes>; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`. The dev server's policy adds `ws: wss:` to `connect-src` for Vite's client, and nothing else.
    - `Strict-Transport-Security: max-age=31536000`, without `includeSubDomains` or `preload` (owner 2026-11-05: the header covers the app host only, and nothing changes for the apex or other subdomains).
    - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` (for browsers without `frame-ancestors`).
 2. **A new nonce per request**, 128 random bits, passed to the router through Start's request context (`handler.fetch(request, { context })`, read with `getGlobalStartContext()` in `src/router.tsx`). On the client the router reads it back from the `<meta property="csp-nonce">` that `HeadContent` renders.
 3. **Static assets get their headers from `apps/app/public/_headers`** (HSTS, nosniff, Referrer-Policy). Workers Static Assets serves them without the Worker. A CSP does nothing on JS and CSS files, so they get none, with no `run_worker_first`.
 4. **Convention:** a new third-party script, frame or connection origin is added to this policy in the same PR that needs it. Allowing `unsafe-inline` or `unsafe-eval` for scripts, or relaxing `frame-ancestors`, needs a new ADR.
+5. **Styles (amended 2026-11-11, owner-approved: sonner hashes 2026-11-11T01:17:25Z, hidden-input hashes 2026-11-11T01:38:21Z):** `style-src 'self'` stays. Exactly two inline-style sources are allowed, each by hash: sonner's injected `<style>` (`style-src-elem`, an empty element and then its CSS) and the `style` attributes on the hidden inputs Base UI's form controls render on the server (`style-src-attr 'unsafe-hashes'`). The hashes come from `apps/app/src/server/csp-hashes.gen.ts`, generated from the installed packages by `scripts/csp-hashes.mjs`; `pnpm check` fails when it drifts. Any other style hash, a style nonce or `unsafe-inline` for styles is a CSP change and needs the owner (ADR-0046).
 
 ## Alternatives
 
@@ -31,5 +32,5 @@ TanStack Start renders inline hydration scripts. A CSP that allows them without 
 
 - Only a failure of the entry itself (an exception in `src/server.ts` or the runtime) would answer without these headers; Start turns errors inside its handler into responses that the entry still covers.
 - CSP violations aren't reported anywhere. A `report-to` endpoint waits for an error tracker (ADR-0015).
-- `e2e/security-headers.spec.ts` checks the headers on real responses and that the sign-in page with Turnstile loads without a violation. The full e2e suite proves hydration still works: forms stay disabled until it does.
+- `e2e/security-headers.spec.ts` checks the headers on real responses, including that the two style directives carry exactly the generated hashes, and every e2e test fails on a CSP refusal (`e2e/fixtures.ts`). The full e2e suite proves hydration still works: forms stay disabled until it does.
 - Raising HSTS to `includeSubDomains` or `preload` affects other hosts on `aaronlabr.dev` and needs the owner.

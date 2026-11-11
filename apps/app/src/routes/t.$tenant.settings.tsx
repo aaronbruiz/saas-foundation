@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   deleteOrganizationFn,
   getViewerFn,
@@ -9,7 +9,13 @@ import {
   renameOrganizationFn,
   transferOwnershipFn,
 } from '../modules/organizations/functions'
-import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { toast } from 'sonner'
 
 // Organization settings (owner decisions 2026-10-31). The capabilities from the layout only pick
 // the sections shown; every server function checks them again.
@@ -41,7 +47,7 @@ async function transferCandidates(tenant: string) {
 function Settings() {
   const { name, canRename, canTransfer, canDelete, candidates } = Route.useLoaderData()
   return (
-    <div className="space-y-10">
+    <div className="flex flex-col gap-6">
       {canRename && <RenameForm name={name} />}
       {canTransfer && <TransferForm candidates={candidates} />}
       <LeaveSection />
@@ -70,45 +76,72 @@ function useAction() {
   return { run, error, disabled: !hydrated || busy }
 }
 
+/** A settings section: its heading is an h2, so the page keeps one outline. */
+function Section({
+  title,
+  description,
+  danger = false,
+  children,
+}: {
+  title: string
+  description?: ReactNode
+  danger?: boolean
+  children: ReactNode
+}) {
+  return (
+    <Card className={danger ? 'ring-destructive/40' : undefined}>
+      <CardHeader>
+        <CardTitle>
+          <h2 className={danger ? 'text-base text-destructive' : 'text-base'}>{title}</h2>
+        </CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
+
 function RenameForm({ name }: { name: string }) {
   const { tenant } = Route.useParams()
   const router = useRouter()
   const rename = useServerFn(renameOrganizationFn)
   const { run, error, disabled } = useAction()
-  const [saved, setSaved] = useState(false)
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setSaved(false)
     const next = String(new FormData(e.currentTarget).get('name'))
     void run(async () => {
       await rename({ data: { tenant, name: next } })
-      setSaved(true)
+      toast.success('Name saved.')
       await router.invalidate()
     })
   }
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Name</h2>
-      <p className="mb-4 text-sm text-gray-600">
-        This changes the display name only. The organization&apos;s URL stays the same.
-      </p>
-      <form method="post" onSubmit={onSubmit} className="space-y-4">
-        <Field label="Organization name">
-          <input name="name" required maxLength={120} defaultValue={name} className={inputClass} />
+    <Section
+      title="Name"
+      description="This changes the display name only. The organization's URL stays the same."
+    >
+      <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+        <Field data-invalid={error ? true : undefined}>
+          <FieldLabel htmlFor="organization-name">Organization name</FieldLabel>
+          <Input
+            id="organization-name"
+            name="name"
+            required
+            maxLength={120}
+            defaultValue={name}
+            aria-invalid={error ? true : undefined}
+          />
+          <FieldError>{error}</FieldError>
         </Field>
-        <ErrorText error={error} />
-        {saved && (
-          <p role="status" className="text-sm">
-            Name saved.
-          </p>
-        )}
-        <button type="submit" disabled={disabled} className={buttonClass}>
-          Save name
-        </button>
+        <div>
+          <Button type="submit" disabled={disabled}>
+            Save name
+          </Button>
+        </div>
       </form>
-    </section>
+    </Section>
   )
 }
 
@@ -132,31 +165,34 @@ function TransferForm({
   }
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Transfer ownership</h2>
-      <p className="mb-4 text-sm text-gray-600">
-        The member you choose becomes an owner, and you become an admin.
-      </p>
+    <Section
+      title="Transfer ownership"
+      description="The member you choose becomes an owner, and you become an admin."
+    >
       {candidates.length === 0 ? (
         <p className="text-sm">Invite someone first: there&apos;s no other member to choose.</p>
       ) : (
-        <form method="post" onSubmit={onSubmit} className="space-y-4">
-          <Field label="New owner">
-            <select name="memberId" required className={inputClass}>
+        <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+          <Field data-invalid={error ? true : undefined}>
+            <FieldLabel htmlFor="new-owner">New owner</FieldLabel>
+            {/* A native select (AGENTS.md "UI"): a simple single choice, submitted with the form. */}
+            <NativeSelect id="new-owner" name="memberId" required className="w-full sm:w-96">
               {candidates.map((m) => (
-                <option key={m.id} value={m.id}>
+                <NativeSelectOption key={m.id} value={m.id}>
                   {m.email} ({m.role})
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
+            </NativeSelect>
+            <FieldError>{error}</FieldError>
           </Field>
-          <ErrorText error={error} />
-          <button type="submit" disabled={disabled} className={buttonClass}>
-            Transfer ownership
-          </button>
+          <div>
+            <Button type="submit" disabled={disabled}>
+              Transfer ownership
+            </Button>
+          </div>
         </form>
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -167,23 +203,26 @@ function LeaveSection() {
   const { run, error, disabled } = useAction()
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Leave</h2>
-      <ErrorText error={error} />
-      <button
-        type="button"
-        disabled={disabled}
-        className={`mt-2 ${buttonClass}`}
-        onClick={() =>
-          void run(async () => {
-            await leave({ data: { tenant } })
-            await router.navigate({ to: '/' })
-          })
-        }
-      >
-        Leave organization
-      </button>
-    </section>
+    <Section title="Leave" description="You lose access to this organization and its projects.">
+      <div className="flex flex-col gap-3">
+        <FieldError>{error}</FieldError>
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            onClick={() =>
+              void run(async () => {
+                await leave({ data: { tenant } })
+                await router.navigate({ to: '/' })
+              })
+            }
+          >
+            Leave organization
+          </Button>
+        </div>
+      </div>
+    </Section>
   )
 }
 
@@ -203,21 +242,34 @@ function DeleteForm({ name }: { name: string }) {
   }
 
   return (
-    <section>
-      <h2 className="mb-4 text-lg font-semibold">Delete organization</h2>
-      <p className="mb-4 text-sm text-gray-600">
-        This deletes its members, invitations, projects and billing record. Type{' '}
-        <strong>{name}</strong> to confirm.
-      </p>
-      <form method="post" onSubmit={onSubmit} className="space-y-4">
-        <Field label="Organization name to confirm">
-          <input name="confirmName" required autoComplete="off" className={inputClass} />
+    <Section
+      title="Delete organization"
+      danger
+      description={
+        <>
+          This deletes its members, invitations, projects and billing record. Type{' '}
+          <strong className="text-foreground">{name}</strong> to confirm.
+        </>
+      }
+    >
+      <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+        <Field data-invalid={error ? true : undefined}>
+          <FieldLabel htmlFor="confirm-name">Organization name to confirm</FieldLabel>
+          <Input
+            id="confirm-name"
+            name="confirmName"
+            required
+            autoComplete="off"
+            aria-invalid={error ? true : undefined}
+          />
+          <FieldError>{error}</FieldError>
         </Field>
-        <ErrorText error={error} />
-        <button type="submit" disabled={disabled} className={buttonClass}>
-          Delete organization
-        </button>
+        <div>
+          <Button type="submit" variant="destructive" disabled={disabled}>
+            Delete organization
+          </Button>
+        </div>
       </form>
-    </section>
+    </Section>
   )
 }

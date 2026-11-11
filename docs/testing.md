@@ -29,6 +29,17 @@ E2E (`apps/app/e2e/`):
 - [`auth.setup.ts`](../apps/app/e2e/auth.setup.ts) and [`session.ts`](../apps/app/e2e/session.ts): one real sign-up per run, saved as a shared session (`sessionFile`).
 - [`fixtures.ts`](../apps/app/e2e/fixtures.ts): the `test` every spec imports (lint enforces it). It fails a test when any of its pages hits a Content-Security-Policy refusal, reported by the browser's `securitypolicyviolation` event or its console, in the `page` context and every `browser.newContext()` (ADR-0045). Only styles rendered on the server are refused; React sets client-side styles through the DOM, which the CSP allows.
 - [`helpers.ts`](../apps/app/e2e/helpers.ts): `createAccount`, `verifyAndSignIn`, `createOrg`.
+
+Visual (`apps/app/visual/`, ADR-0046): `pnpm test:visual`, always through `scripts/test-lock.sh visual` (like every dev server and test run here; it also takes port 3001 for the browser server).
+
+- It starts the Playwright browser server from `mcr.microsoft.com/playwright:v<installed version>-noble` and runs Chromium, Firefox and WebKit against the local dev server at 320 and 1280 px, light and dark (the `.dark` class, set once the page has hydrated). Baselines are committed under `visual/__screenshots__/`; after an intended change, `scripts/test-lock.sh visual --update-snapshots` and review the images in the PR. Not run in CI.
+- [`team.setup.ts`](../apps/app/visual/team.setup.ts): an organization with a second member (a fixed account, so the transfer picker reads the same every run).
+- The same strict CSP check as e2e, with two exclusions, both in WebKit visual tests only (owner-approved 2026-11-11). Chromium, Firefox and the e2e suite allow none:
+  1. Playwright's screenshotter injects `<style>body {}</style>` in WebKit: a `style-src-elem` refusal while `snap` takes a screenshot.
+  2. WebKit refuses its own stylesheet for a native `<select>` under `style-src 'self'`: exactly the two refusals in `WEBKIT_SELECT_REFUSALS` (`e2e/fixtures.ts`), once each per page that has a `<select>`. Any other or extra refusal fails. [`webkit-select.canary.visual.ts`](../apps/app/visual/webkit-select.canary.visual.ts) reproduces it on a bare page and fails when WebKit stops refusing; then delete the exclusion and the canary.
+
+Contrast: [`scripts/brand-contrast.test.mjs`](../scripts/brand-contrast.test.mjs) (in `pnpm lint`) checks every token pair of `packages/brand/brand.css` in both themes (WCAG 1.4.3 and 1.4.11); `node scripts/brand-contrast.mjs` prints each ratio.
+
 - [`mailbox.ts`](../apps/app/e2e/mailbox.ts): builds the verification link the email would carry, from the local `.dev.vars` secret.
 
 ## Tenant isolation
