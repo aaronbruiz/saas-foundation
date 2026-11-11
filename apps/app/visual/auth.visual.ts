@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, tabWalk, themes, views, type Theme } from './pages'
+import { hydrated, setTheme, tabWalk, themes, views, type Theme } from './pages'
 
 // The sign-in, sign-up, password reset, invitation and new-organization pages (UI migration PR 1,
 // ADR-0046) at both widths and in both themes, and a keyboard pass on each form: the tab order
@@ -121,7 +121,7 @@ for (const view of views)
         await setTheme(page, theme)
         await page.goto('/reset-password')
         const submit = page.getByRole('button', { name: 'Change password' })
-        await expect(submit).toBeEnabled()
+        await expect(submit).toBeEnabled(hydrated)
         await page.getByLabel('New password').fill('correct-horse-battery-staple')
         await submit.click()
         await expect(page.getByRole('alert')).toHaveText(

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, tabWalk, team, themes } from './pages'
+import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 
 // Keyboard pass on the pilot page (ADR-0046, docs/testing.md), in every browser and both themes:
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
@@ -26,7 +26,7 @@ for (const theme of themes)
     async function openSettings(page: Page) {
       await setTheme(page, theme)
       await page.goto(`/t/${team().slug}/settings`)
-      await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
+      await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled(hydrated)
     }
 
     test('settings: tab order follows the page and every stop shows focus', async ({

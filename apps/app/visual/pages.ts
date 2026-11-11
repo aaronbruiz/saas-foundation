@@ -19,6 +19,11 @@ export async function setTheme(page: Page, theme: Theme) {
   await page.emulateMedia({ colorScheme: theme })
 }
 
+/** How long a page may take to hydrate (its submit buttons enable then). The suite runs three
+ * browsers in parallel against one dev server, and under that load Chromium took over the 5 s
+ * default (UI migration 3b, 2 of 3 runs at main). A wait, not a check. */
+export const hydrated = { timeout: 15_000 }
+
 /** The organization visual/team.setup.ts made: its slug and the id of its one project. */
 export const team = () =>
   JSON.parse(readFileSync(teamFile, 'utf8')) as { slug: string; projectId: string }

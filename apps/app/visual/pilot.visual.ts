@@ -1,6 +1,6 @@
 import { expect, test } from '../e2e/fixtures'
 import { sessionFile } from '../e2e/session'
-import { setTheme, team, themes, views } from './pages'
+import { hydrated, setTheme, team, themes, views } from './pages'
 
 // The pilot pages on the UI foundation (ADR-0046) at both widths and in both themes (the system
 // theme, emulated before the page loads). Names that change every run (the organization) are
@@ -30,7 +30,7 @@ for (const view of views)
         test('organization settings', async ({ page, snap, browserName }) => {
           await setTheme(page, theme)
           await page.goto(`/t/${team().slug}/settings`)
-          await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
+          await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled(hydrated)
           const mask = [
             page.getByRole('banner').getByRole('heading', { level: 1 }),
             page.getByLabel('Organization name', { exact: true }),
