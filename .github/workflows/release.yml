@@ -38,7 +38,8 @@ permissions: {}
 jobs:
   release-please:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    # GITHUB_TOKEN only (no Cloudflare/Neon token): 1-vCPU runner.
+    runs-on: ubuntu-slim
     timeout-minutes: 10
     # GITHUB_TOKEN: the release PR's CI then waits for the owner's "Approve workflows to run"
     # (decision 2); no PAT or App.
@@ -61,7 +62,8 @@ jobs:
     # Runs for dispatch too (release-please skipped); on a push, only when a release was created
     # (no runner for the ordinary push to main).
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true') }}
-    runs-on: ubuntu-latest
+    # No token: 1-vCPU runner.
+    runs-on: ubuntu-slim
     timeout-minutes: 2
     permissions: {}
     outputs:
