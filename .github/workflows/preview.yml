@@ -29,9 +29,9 @@ permissions: {}
 
 jobs:
   resolve:
-    # Same-repo PRs only, and only once check + test passed. Not the release PR (ADR-0029): it's
+    # Same-repo PRs only, and only once Validate passed. Not the release PR (ADR-0029): it's
     # open most of the time and would hold a preview Neon branch for a version-bump diff. Not
-    # Dependabot's PRs either (ADR-0021 Notes 2026-10-14): CI's check + test is their gate.
+    # Dependabot's PRs either (ADR-0021 Notes 2026-10-14): CI's Validate is their gate.
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
@@ -172,7 +172,9 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.url }}
         run: |
           [[ "$BASE_URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
-          pnpm --filter app exec playwright install --with-deps chromium
+          # The runner image has Chromium's libraries; no apt (it depends on Ubuntu's mirrors). Playwright
+          # refuses to launch, naming the library, if one goes missing.
+          pnpm --filter app exec playwright install chromium
           pnpm test:e2e
       - name: Comment preview URL on the PR
         if: always() && needs.deploy.outputs.url != ''

@@ -140,9 +140,12 @@ jobs:
           scripts/preview/comment.sh
 
   cleanup:
+    # Only PRs `resolve` could have deployed: not forks, release-please or Dependabot.
     if: >-
       github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+      !startsWith(github.event.pull_request.head.ref, 'dependabot/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: ${{ inputs.site }}-preview

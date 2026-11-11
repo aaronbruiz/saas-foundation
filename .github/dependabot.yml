@@ -1,19 +1,20 @@
-# Dependabot version updates. Its PRs get no preview (ADR-0021 Notes 2026-10-14): CI's check +
-# test is their gate. Few, grouped PRs keep the review load low. Pins that AGENTS.md "Toolchain"
+# Dependabot version updates. Its PRs get no preview (ADR-0021 Notes 2026-10-14): CI's Validate
+# job is their gate. Few, grouped PRs keep the review load low. Pins that AGENTS.md "Toolchain"
 # explains are kept by the ignore rules.
 version: 2
 updates:
   - package-ecosystem: npm # pnpm workspace; one root lockfile
     directory: /
+    # Monthly (owner decision 2026-11-11): fewer PRs and CI runs; security updates ignore the
+    # schedule. The limit lets one run open a PR per group (six) instead of queueing them a month.
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     # Owner decision 2026-10-29: version updates wait 7 days after a release (time for a
     # compromised publish to be caught). Cooldown never applies to security updates, which stay
     # immediate.
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 6
     # ADR-0029: PR titles become release inputs. Production bumps are `fix(deps): …` (they cut a
     # release), development bumps `chore(deps-dev): …` (they don't).
     commit-message:

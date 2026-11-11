@@ -24,8 +24,12 @@ permissions: {}
 
 jobs:
   cleanup-preview:
-    # Fork PRs never get previews.
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork, release-please and Dependabot PRs never get previews (preview.yml `resolve`).
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+      !startsWith(github.event.pull_request.head.ref, 'dependabot/'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: preview
@@ -58,7 +62,10 @@ jobs:
     # Runs even if the Preview deletion failed: revoking the data is what matters.
     if: >-
       !cancelled() &&
-      (github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'release-please--') &&
+      !startsWith(github.event.pull_request.head.ref, 'dependabot/')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: preview-infra
