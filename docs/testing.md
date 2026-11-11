@@ -60,7 +60,7 @@ These must pass unchanged in every product: they're the tenancy guarantees.
 - [`archive.test.ts`](../apps/app/test/archive.test.ts): every tenant table has its `archive_delete` trigger, and the runtime role can't reach the archive (ADR-0039).
 - The E2E slice ([`e2e/slice.spec.ts`](../apps/app/e2e/slice.spec.ts)): cross-tenant isolation through real URLs (404 page, never data).
 
-What new code adds (the AGENTS.md recipes are the authority): every tenant-owned table gets cross-tenant tests by URL **and** by server-function input, a `GRANTS` entry and its archive trigger; every tenant-scoped server function gets a case per role in `roles.test.ts` for its capability; a plan limit gets tests for the cap, upgrade, downgrade and concurrency.
+What new code adds (the recipes in [`architecture/recipes.md`](architecture/recipes.md) are the authority): every tenant-owned table gets cross-tenant tests by URL **and** by server-function input, a `GRANTS` entry and its archive trigger; every tenant-scoped server function gets a case per role in `roles.test.ts` for its capability; a plan limit gets tests for the cap, upgrade, downgrade and concurrency.
 
 ## Testing a product feature
 
