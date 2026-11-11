@@ -46,7 +46,6 @@ test('the invite form marks the email only when the server rejects the email', a
   // The same address again: Better Auth refuses it as already invited, which isn't about the
   // email's form: a form-level alert, the field left unmarked.
   await submit.click()
-  await expect(page.getByRole('alert')).toBeVisible()
-  await expect(page.getByRole('alert')).not.toHaveText('invalid input')
+  await expect(page.getByRole('alert')).toHaveText('User is already invited to this organization')
   await expect(email).not.toHaveAttribute('aria-invalid')
 })
