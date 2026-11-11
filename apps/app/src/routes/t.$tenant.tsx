@@ -7,6 +7,12 @@ import { ErrorText, messageOf } from '../lib/ui'
 
 // Tenant layout (ADR-0010). The loader re-verifies membership; unknown or foreign tenants get
 // the root not-found page (404). This is UX: every server function re-checks on its own.
+// App nav on the brand's --sidebar-* tokens; the current page's item is filled (aria-current from the router).
+const navItem =
+  'rounded-md px-3 py-1.5 font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring'
+const navActive =
+  'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground'
+
 export const Route = createFileRoute('/t/$tenant')({
   loader: ({ params }) => getTenantFn({ data: { tenant: params.tenant } }),
   component: TenantLayout,
@@ -26,36 +32,61 @@ function TenantLayout() {
 
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <header className="mb-8 flex items-center justify-between border-b pb-4">
+      <header className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b pb-4">
         <div>
-          <p className="text-sm text-gray-500">Organization</p>
+          <p className="text-sm text-muted-foreground">Organization</p>
           {/* The key closes the menu when the tenant changes. */}
           <OrganizationMenu key={tenant.slug} slug={tenant.slug} name={tenant.name} />
         </div>
-        <nav className="flex gap-4 text-sm">
-          <Link to="/t/$tenant/projects" params={{ tenant: tenant.slug }} className="underline">
+        <nav className="flex flex-wrap gap-1 rounded-lg bg-sidebar p-1 text-sm text-sidebar-foreground">
+          <Link
+            to="/t/$tenant/projects"
+            params={{ tenant: tenant.slug }}
+            className={navItem}
+            activeProps={{ className: navActive }}
+          >
             Projects
           </Link>
-          <Link to="/t/$tenant/members" params={{ tenant: tenant.slug }} className="underline">
+          <Link
+            to="/t/$tenant/members"
+            params={{ tenant: tenant.slug }}
+            className={navItem}
+            activeProps={{ className: navActive }}
+          >
             Members
           </Link>
           {canInvite && (
-            <Link to="/t/$tenant/invite" params={{ tenant: tenant.slug }} className="underline">
+            <Link
+              to="/t/$tenant/invite"
+              params={{ tenant: tenant.slug }}
+              className={navItem}
+              activeProps={{ className: navActive }}
+            >
               Invite
             </Link>
           )}
           {canSeeBilling && (
-            <Link to="/t/$tenant/billing" params={{ tenant: tenant.slug }} className="underline">
+            <Link
+              to="/t/$tenant/billing"
+              params={{ tenant: tenant.slug }}
+              className={navItem}
+              activeProps={{ className: navActive }}
+            >
               Billing
             </Link>
           )}
-          <Link to="/t/$tenant/settings" params={{ tenant: tenant.slug }} className="underline">
+          <Link
+            to="/t/$tenant/settings"
+            params={{ tenant: tenant.slug }}
+            className={navItem}
+            activeProps={{ className: navActive }}
+          >
             Settings
           </Link>
-          <Link to="/account" className="underline">
+          <Link to="/account" className={navItem} activeProps={{ className: navActive }}>
             Account
           </Link>
-          <button type="button" onClick={signOut} className="underline">
+          <button type="button" onClick={signOut} className={navItem}>
             Sign out
           </button>
         </nav>
@@ -90,17 +121,21 @@ function OrganizationMenu({ slug, name }: { slug: string; name: string }) {
       <summary className="cursor-pointer">
         <h1 className="inline text-xl font-semibold">{name}</h1>
       </summary>
-      <div className="absolute z-10 mt-2 w-64 space-y-2 rounded border bg-white p-3 text-sm shadow">
+      <div className="absolute z-10 mt-2 w-64 space-y-2 rounded-md border bg-popover p-3 text-sm text-popover-foreground shadow">
         <ul className="space-y-2">
           {others.map((o) => (
             <li key={o.slug}>
-              <Link to="/t/$tenant/projects" params={{ tenant: o.slug }} className="underline">
+              <Link
+                to="/t/$tenant/projects"
+                params={{ tenant: o.slug }}
+                className="text-primary underline underline-offset-4"
+              >
                 {o.name}
               </Link>
             </li>
           ))}
           <li>
-            <Link to="/orgs/new" className="underline">
+            <Link to="/orgs/new" className="text-primary underline underline-offset-4">
               New organization
             </Link>
           </li>

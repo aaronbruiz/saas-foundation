@@ -2,6 +2,8 @@
 // origin, Turnstile's (ADR-0025) or with the request's nonce, which TanStack Start puts on its own
 // tags (`ssr.nonce` in router.tsx). Applied in the Worker's entry, src/server.ts. A new third-party origin is added here in the same PR.
 
+import { STYLE_ATTR_HASHES, STYLE_ELEM_HASHES } from './csp-hashes.gen'
+
 const TURNSTILE = 'https://challenges.cloudflare.com'
 
 /** 128 random bits, base64: a new one for every request. */
@@ -14,6 +16,10 @@ export function contentSecurityPolicy(nonce: string, dev = false): string {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' ${TURNSTILE}`,
     "style-src 'self'",
+    // Owner-approved 2026-11-11 (ADR-0045 as amended): sonner's injected <style> and the hidden
+    // inputs Base UI renders on the server, by exact hash only; everything else stays refused.
+    `style-src-elem 'self' ${STYLE_ELEM_HASHES.join(' ')}`,
+    `style-src-attr 'unsafe-hashes' ${STYLE_ATTR_HASHES.join(' ')}`,
     "img-src 'self' data:",
     "font-src 'self'",
     // Vite's dev client talks to its server over a WebSocket on the same host.

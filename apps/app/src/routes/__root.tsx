@@ -1,6 +1,9 @@
 import { HeadContent, Scripts, createRootRoute, Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import appCss from '../styles.css?url'
+import { CSPProvider } from '@base-ui/react/csp-provider'
+import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -20,10 +23,10 @@ function NotFound() {
   return (
     <main className="mx-auto max-w-xl p-8">
       <h1 className="text-2xl font-semibold">Not found</h1>
-      <p className="mt-2 text-gray-600">
+      <p className="mt-2 text-muted-foreground">
         This page doesn&apos;t exist or you don&apos;t have access to it.
       </p>
-      <Link to="/" className="mt-4 inline-block underline">
+      <Link to="/" className="mt-4 inline-block text-primary underline underline-offset-4">
         Go home
       </Link>
     </main>
@@ -36,17 +39,21 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen bg-gray-50 text-gray-900">
-        {children}
-        <footer className="mx-auto max-w-3xl p-8 text-sm text-gray-600">
+      <body className="min-h-screen bg-background text-foreground">
+        {/* Base UI injects no <style> elements (the CSP refuses them, ADR-0045); styles.css has the rule. */}
+        <CSPProvider disableStyleElements>
+          <TooltipProvider>{children}</TooltipProvider>
+        </CSPProvider>
+        <Toaster />
+        <footer className="mx-auto max-w-3xl p-8 text-sm text-muted-foreground">
           <nav aria-label="Legal" className="flex gap-4">
-            <Link to="/privacy" className="underline">
+            <Link to="/privacy" className="text-primary underline underline-offset-4">
               Privacy
             </Link>
-            <Link to="/terms" className="underline">
+            <Link to="/terms" className="text-primary underline underline-offset-4">
               Terms
             </Link>
-            <Link to="/subprocessors" className="underline">
+            <Link to="/subprocessors" className="text-primary underline underline-offset-4">
               Subprocessors
             </Link>
           </nav>

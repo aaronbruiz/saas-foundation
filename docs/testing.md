@@ -29,6 +29,24 @@ E2E (`apps/app/e2e/`):
 - [`auth.setup.ts`](../apps/app/e2e/auth.setup.ts) and [`session.ts`](../apps/app/e2e/session.ts): one real sign-up per run, saved as a shared session (`sessionFile`).
 - [`fixtures.ts`](../apps/app/e2e/fixtures.ts): the `test` every spec imports (lint enforces it). It fails a test when any of its pages hits a Content-Security-Policy refusal, reported by the browser's `securitypolicyviolation` event or its console, in the `page` context and every `browser.newContext()` (ADR-0045). Only styles rendered on the server are refused; React sets client-side styles through the DOM, which the CSP allows.
 - [`helpers.ts`](../apps/app/e2e/helpers.ts): `createAccount`, `verifyAndSignIn`, `createOrg`.
+
+Visual (`apps/app/visual/`, ADR-0046): `pnpm test:visual`, always through `scripts/test-lock.sh visual` (like every dev server and test run here; it also takes port 3001 for the browser server).
+
+- It starts the Playwright browser server from `mcr.microsoft.com/playwright:v<installed version>-noble` and runs Chromium, Firefox and WebKit against the local dev server at 320 and 1280 px, light and dark (the `.dark` class, set once the page has hydrated). Not run in CI.
+- Three modes ([`scripts/test-visual.mjs`](../scripts/test-visual.mjs)); every mode runs the checks: the strict CSP check below, the WebKit `<select>` canary and the keyboard pass.
+  - no flag: the checks only. Takes no screenshot and never needs a baseline.
+  - `--baseline`: the checks, and screenshots saved to the git-ignored `apps/app/visual/.baseline/` (replacing it), with the commit they were taken at in `.baseline/COMMIT` ("with uncommitted changes" when the tree was dirty).
+  - `--compare`: the checks, and each screenshot compared with the baseline. It prints the baseline's commit, each changed screenshot and a summary line (`baseline <commit>, N compared, M changed`), and fails without a baseline (it never creates one).
+  - Workflow: `--baseline` before UI work, `--compare` when done; the summary line goes in the PR's Checks. Baselines are local on purpose: if visual tests ever run in CI, committed baselines (reviewed in the PR) replace this.
+- Names that change every run (the organization, its name field, the shared user) are masked, so a baseline and a compare of the same commit match (0 changed).
+- [`keyboard.visual.ts`](../apps/app/visual/keyboard.visual.ts): on the settings page, in both themes, Tab reaches the page's controls in reading order and each stop shows a focus indicator (its outline, ring or border differs from its unfocused state); the transfer picker moves between options with the arrow keys and Escape closes it with focus kept (Chromium; arrow keys also Firefox; Playwright's WebKit can't drive its native popup, so that test skips in WebKit); the rename toast appears without taking focus. No page has a dialog or menu yet: their Escape and focus-return checks come with the first page that does.
+- [`team.setup.ts`](../apps/app/visual/team.setup.ts): an organization with two more members (fixed accounts, so the transfer picker reads the same every run and has a choice for the arrow keys).
+- The same strict CSP check as e2e, with two exclusions, both in WebKit visual tests only (owner-approved 2026-11-11). Chromium, Firefox and the e2e suite allow none:
+  1. Playwright's screenshotter injects `<style>body {}</style>` in WebKit on each screenshot attempt: exactly one console message and one `style-src-elem` report from `:5`, removed only as a pair, and only while `snap` takes a screenshot.
+  2. WebKit refuses its own stylesheet for a native `<select>` under `style-src 'self'`: exactly the two refusals in `WEBKIT_SELECT_REFUSALS` (`e2e/fixtures.ts`), once each per page that has a `<select>`. Any other or extra refusal fails. [`webkit-select.canary.visual.ts`](../apps/app/visual/webkit-select.canary.visual.ts) reproduces it on a bare page and fails when WebKit stops refusing; then delete the exclusion and the canary.
+
+Contrast: [`scripts/brand-contrast.test.mjs`](../scripts/brand-contrast.test.mjs) (in `pnpm lint`) checks every token pair of `packages/brand/brand.css` in both themes (WCAG 1.4.3 and 1.4.11); `node scripts/brand-contrast.mjs` prints each ratio.
+
 - [`mailbox.ts`](../apps/app/e2e/mailbox.ts): builds the verification link the email would carry, from the local `.dev.vars` secret.
 
 ## Tenant isolation

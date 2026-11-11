@@ -470,7 +470,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['apps/app/e2e/**/*.ts'],
+    files: ['apps/app/e2e/**/*.ts', 'apps/app/visual/**/*.ts'],
     ignores: ['apps/app/e2e/fixtures.ts'],
     rules: {
       'no-restricted-imports': [

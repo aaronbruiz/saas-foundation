@@ -1,0 +1,11 @@
+{
+  "name": "@saas-foundation/brand",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./brand.css": "./brand.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

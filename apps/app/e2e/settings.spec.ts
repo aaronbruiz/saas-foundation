@@ -15,7 +15,10 @@ test('an owner renames, cannot leave as the only owner, and deletes with the typ
   const name = `Renamed ${rand()}`
   await page.getByLabel('Organization name', { exact: true }).fill(name)
   await page.getByRole('button', { name: 'Save name' }).click()
-  await expect(page.getByRole('status')).toHaveText('Name saved.')
+  // The confirmation is a toast now (ADR-0046 pilot); same text, in the notifications region.
+  await expect(
+    page.getByRole('region', { name: /Notifications/ }).getByText('Name saved.'),
+  ).toBeVisible()
   await expect(page.getByRole('heading', { name })).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`/t/${slug}/settings$`))
 

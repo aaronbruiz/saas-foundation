@@ -1,6 +1,8 @@
 ---
 // Every page's head (title, description, canonical, Open Graph; ADR-0033 decision 7), header and
 // footer. No client scripts: the site's CSP allows none.
+// Brand tokens first (packages/brand, ADR-0046); site.css maps them onto its own names.
+import '@saas-foundation/brand/brand.css'
 import '../styles/site.css'
 import { legalLinks, primaryAction, signIn, site } from '../config'
 

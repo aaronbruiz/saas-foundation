@@ -1,0 +1,41 @@
+/* @saas-foundation/brand: the template's colour tokens (ADR-0046; preset "Stone and teal", owner
+   2026-11-11). A product replaces the values in this one file with its brand. Each colour is
+   light-dark(<light>, <dark>), picked by `color-scheme`: the app sets `light` and switches with the
+   `.dark` class; the marketing site uses `light dark`, so it follows the visitor's system.
+   Every pair the components use is contrast-tested in both themes: scripts/brand-contrast.test.mjs
+   (pnpm lint). Values are oklch(); the test reads nothing else. */
+:root {
+  color-scheme: light;
+  --background: light-dark(oklch(0.995 0.002 75), oklch(0.16 0.008 60));
+  --foreground: light-dark(oklch(0.17 0.01 60), oklch(0.975 0.004 75));
+  --card: light-dark(oklch(1 0 0), oklch(0.2 0.01 60));
+  --card-foreground: light-dark(oklch(0.17 0.01 60), oklch(0.975 0.004 75));
+  --popover: light-dark(oklch(1 0 0), oklch(0.2 0.01 60));
+  --popover-foreground: light-dark(oklch(0.17 0.01 60), oklch(0.975 0.004 75));
+  --primary: light-dark(oklch(0.45 0.08 195), oklch(0.74 0.1 190));
+  --primary-foreground: light-dark(oklch(0.985 0.01 190), oklch(0.18 0.03 195));
+  --secondary: light-dark(oklch(0.96 0.006 75), oklch(0.27 0.01 60));
+  --secondary-foreground: light-dark(oklch(0.25 0.015 60), oklch(0.975 0.004 75));
+  --muted: light-dark(oklch(0.96 0.006 75), oklch(0.27 0.01 60));
+  --muted-foreground: light-dark(oklch(0.5 0.015 60), oklch(0.72 0.012 70));
+  --accent: light-dark(oklch(0.95 0.02 190), oklch(0.3 0.03 190));
+  --accent-foreground: light-dark(oklch(0.3 0.06 195), oklch(0.95 0.03 190));
+  --destructive: light-dark(oklch(0.5 0.2 27), oklch(0.76 0.16 22));
+  --border: light-dark(oklch(0.91 0.006 75), oklch(1 0 0 / 10%));
+  --input: light-dark(oklch(0.64 0.012 60), oklch(0.5 0.012 60));
+  --ring: light-dark(oklch(0.55 0.09 195), oklch(0.68 0.1 190));
+  --radius: 0.75rem;
+  --sidebar: light-dark(oklch(0.96 0.006 75), oklch(0.2 0.01 60));
+  --sidebar-foreground: light-dark(oklch(0.25 0.015 60), oklch(0.9 0.005 75));
+  --sidebar-primary: light-dark(oklch(0.45 0.08 195), oklch(0.74 0.1 190));
+  --sidebar-primary-foreground: light-dark(oklch(0.985 0.01 190), oklch(0.18 0.03 195));
+  --sidebar-accent: light-dark(oklch(0.92 0.008 75), oklch(0.3 0.01 60));
+  --sidebar-accent-foreground: light-dark(oklch(0.17 0.01 60), oklch(0.975 0.004 75));
+  --sidebar-border: light-dark(oklch(0.91 0.006 75), oklch(1 0 0 / 10%));
+  --sidebar-ring: light-dark(oklch(0.55 0.09 195), oklch(0.68 0.1 190));
+}
+
+:root.dark,
+.dark {
+  color-scheme: dark;
+}

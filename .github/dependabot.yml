@@ -34,6 +34,11 @@ updates:
       # PR (`chore(deps-dev)`) whose reformatting diff is reviewed.
       oxfmt:
         patterns: [oxfmt]
+      # ADR-0045, ADR-0046: sonner is pinned exactly and its injected CSS is allowed by hash
+      # (apps/app/src/server/csp-hashes.gen.ts). A bump arrives alone and fails `pnpm check` until
+      # the hash is regenerated (`pnpm csp:hashes`) and the CSP change reviewed.
+      sonner:
+        patterns: [sonner]
       # Every other minor and patch update, one PR per dependency type so each title is either
       # `fix(deps)` or `chore(deps-dev)`; majors stay separate PRs.
       production-minor-and-patch:

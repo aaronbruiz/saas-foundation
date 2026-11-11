@@ -1,29 +1,17 @@
-/* ADR-0033: the site's own styles (no shared brand package yet, ADR-0028 Deferred). Placeholder
-   accent, the docs' indigo; a product sets its own. Light and dark follow the visitor's system. */
+/* ADR-0033: the site's own styles. Colours come from the shared brand tokens (packages/brand,
+   ADR-0046; imported first in layouts/Base.astro), mapped onto the names this file uses. Light and
+   dark follow the visitor's system: `color-scheme: light dark` picks each token's light-dark() side. */
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --bg-soft: #f6f7fb;
-  --text: #111827;
-  --muted: #4b5563;
-  --border: #e5e7eb;
-  --accent: #4338ca;
-  --accent-text: #ffffff;
-  --radius: 12px;
+  --bg: var(--background);
+  --bg-soft: var(--secondary);
+  --text: var(--foreground);
+  --accent-text: var(--primary-foreground);
+  /* Here --muted is text and --accent the link colour (in the brand they're surfaces). */
+  --muted: var(--muted-foreground);
+  --accent: var(--primary);
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.6;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0d17;
-    --bg-soft: #141729;
-    --text: #f3f4f6;
-    --muted: #a1a7b8;
-    --border: #262b45;
-    --accent: #818cf8;
-    --accent-text: #0b0d17;
-  }
 }
 
 * {

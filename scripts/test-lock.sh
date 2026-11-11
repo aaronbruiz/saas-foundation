@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# One `pnpm test` or `pnpm test:e2e` at a time on this machine: every clone and worktree shares the
+# One `pnpm test`, `pnpm test:e2e` or `pnpm test:visual` at a time on this machine: every clone and worktree shares the
 # local `app_test` database and port 3000, so the lock is named from the database, not the checkout.
 # One lock for all local test resources: it's named after `app_test`, and also guards E2E's dev
 # database and port 3000. Don't split it.
-# It takes only these two commands, because agents may run it without a prompt
+# It takes only these three commands, because agents may run it without a prompt
 # (.claude/settings.json), so it mustn't become a way to run anything else.
 set -euo pipefail
-usage() { echo "usage: scripts/test-lock.sh test|e2e [args...]" >&2; exit 2; }
+usage() { echo "usage: scripts/test-lock.sh test|e2e|visual [args...]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 command -v flock >/dev/null || { echo "test-lock: flock is required (util-linux)." >&2; exit 1; }
 case "$1" in
   test) script=test ;;
   e2e) script=test:e2e ;;
+  visual) script=test:visual ;;
   *) usage ;;
 esac
 kind=$1

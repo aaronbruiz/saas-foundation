@@ -244,6 +244,8 @@ const cases = [
   ['apps/app/e2e/fixture.spec.ts', `import { expect, test } from './fixtures'`, null],
   ['apps/app/e2e/fixture.spec.ts', `import type { Page } from '@playwright/test'`, null],
   ['apps/app/e2e/fixtures.ts', `import { test } from '@playwright/test'`, null],
+  ['apps/app/visual/fixture.visual.ts', `import { test } from '@playwright/test'`, E2E_TEST],
+  ['apps/app/visual/fixture.visual.ts', `import { test } from '../e2e/fixtures'`, null],
 ]
 
 for (const [file, code, expected] of cases) {

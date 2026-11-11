@@ -1,4 +1,5 @@
 import type { APIResponse } from '@playwright/test'
+import { STYLE_ATTR_HASHES, STYLE_ELEM_HASHES } from '../src/server/csp-hashes.gen'
 import { expect, test } from './fixtures'
 
 // ADR-0045: the Worker's entry (src/server.ts) sets these on every response Start produces.
@@ -82,4 +83,23 @@ test('the sign-in page hydrates and loads Turnstile without a CSP violation', as
     await page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations),
   ).toEqual([])
   expect(hydrationErrors).toEqual([])
+})
+
+test('the CSP keeps style-src self and allows only the generated style hashes', async ({
+  request,
+}) => {
+  const csp = (await request.get('/login')).headers()['content-security-policy'] ?? ''
+  const directives = Object.fromEntries(
+    csp.split(';').map((d) => {
+      const [name, ...values] = d.trim().split(/\s+/)
+      return [name, values]
+    }),
+  )
+  expect(directives['style-src']).toEqual(["'self'"])
+  expect(directives['style-src-elem']).toEqual(["'self'", ...STYLE_ELEM_HASHES])
+  expect(directives['style-src-attr']).toEqual(["'unsafe-hashes'", ...STYLE_ATTR_HASHES])
+  // ADR-0045 as amended: exactly sonner's two <style> contents and Base UI's two hidden-input styles.
+  expect(STYLE_ELEM_HASHES).toHaveLength(2)
+  expect(STYLE_ATTR_HASHES).toHaveLength(2)
+  expect(csp).not.toContain('unsafe-inline')
 })
