@@ -19,7 +19,7 @@ jobs:
   # job and run everything.
   changes:
     if: github.event_name == 'pull_request'
-    # GITHUB_TOKEN only, no checkout: the 1-vCPU runner ($0.002/min against $0.006 on a private repo).
+    # GITHUB_TOKEN only (no Cloudflare/Neon token): 1-vCPU runner.
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -50,11 +50,7 @@ jobs:
               - '!apps/docs/**'
               - '!apps/site/**'
               - '!*.md'
-      # The files two slow check + test steps read (a file matches when it matches any pattern;
-      # the filter above needs every). Same 1..3000 guard: no output → both steps run.
-      #   db: the migrations check (history, drizzle-kit, schema/auth.ts from packages/auth's
-      #       Better Auth config, the migrations' SQL), with the tool versions from the lockfile.
-      #   backup: dump.test.mjs (its Postgres server image is pinned to this file's service).
+      # Every input of two slow check + test steps (any pattern matches); no output → they run.
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event.pull_request.changed_files > 0 && github.event.pull_request.changed_files <= 3000
         id: inputs
@@ -63,6 +59,7 @@ jobs:
             ci: &ci
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
+              - '.node-version'
             db:
               - *ci
               - 'packages/db/**'
@@ -72,6 +69,7 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'scripts/check-migrations.mjs'
               - 'scripts/check-schema-sql.*'
+              - 'scripts/compare-catalogs.mjs'
             backup:
               - *ci
               - 'scripts/backup/**'
@@ -87,7 +85,6 @@ jobs:
     env:
       # Anything but an explicit 'false' (a push, a missing output) runs the app suite.
       APP: ${{ github.event_name != 'pull_request' || needs.changes.outputs.app != 'false' }}
-      # The same rule for the two steps whose inputs few PRs change (the `changes` job's db/backup).
       DB: ${{ github.event_name != 'pull_request' || needs.changes.outputs.db != 'false' }}
       BACKUP: ${{ github.event_name != 'pull_request' || needs.changes.outputs.backup != 'false' }}
     services:
