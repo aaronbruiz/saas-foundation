@@ -1,8 +1,12 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { authClient } from '../lib/auth-client'
 import { getViewerFn } from '../modules/organizations/functions'
-import { ErrorText, Field, buttonClass, inputClass, messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated } from '../lib/ui'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
 // The signed-in user's own account: Better Auth's endpoints through the HTTP client, which rate
 // limit password guesses (ADR-0005). Email changes aren't offered (they touch verification, ADR-0016).
@@ -18,38 +22,72 @@ export const Route = createFileRoute('/account')({
 function Account() {
   const viewer = Route.useLoaderData()
   return (
-    <main className="mx-auto max-w-sm space-y-10 p-8">
-      <section>
-        <h1 className="mb-6 text-2xl font-semibold">Account</h1>
-        <p className="mb-4 text-sm text-gray-600">Signed in as {viewer.email}</p>
-        <NameForm name={viewer.name} />
+    <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4 sm:p-8">
+      <section className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold">Account</h1>
+          <p className="text-sm break-words text-muted-foreground">Signed in as {viewer.email}</p>
+        </div>
+        <Card>
+          <CardContent>
+            <NameForm name={viewer.name} />
+          </CardContent>
+        </Card>
       </section>
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">Password</h2>
+      <Section title="Password">
         <PasswordForm />
-      </section>
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">Organizations</h2>
-        <ul className="space-y-2 text-sm">
+      </Section>
+      <Section title="Organizations">
+        <ul className="flex flex-col gap-1 text-sm">
           {viewer.organizations.map((o) => (
             <li key={o.slug}>
-              <Link to="/t/$tenant/projects" params={{ tenant: o.slug }} className="underline">
+              <Link
+                to="/t/$tenant/projects"
+                params={{ tenant: o.slug }}
+                className="inline-flex min-h-6 items-center break-all text-primary underline underline-offset-4"
+              >
                 {o.name}
               </Link>
             </li>
           ))}
           <li>
-            <Link to="/orgs/new" className="underline">
+            <Link
+              to="/orgs/new"
+              className="inline-flex min-h-6 items-center text-primary underline underline-offset-4"
+            >
               New organization
             </Link>
           </li>
         </ul>
-      </section>
-      <section>
-        <h2 className="mb-4 text-lg font-semibold">Danger zone</h2>
+      </Section>
+      <Section title="Danger zone" danger>
         <DeleteAccountForm />
-      </section>
+      </Section>
     </main>
+  )
+}
+
+/** An account section: its heading is an h2, so the page keeps one outline. */
+function Section({
+  title,
+  danger = false,
+  children,
+}: {
+  title: string
+  danger?: boolean
+  children: ReactNode
+}) {
+  return (
+    <section>
+      <Card className={danger ? 'ring-destructive/40' : undefined}>
+        <CardHeader>
+          <CardTitle>
+            <h2 className={danger ? 'text-base text-destructive' : 'text-base'}>{title}</h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+      </Card>
+    </section>
   )
 }
 
@@ -84,19 +122,28 @@ function NameForm({ name }: { name: string }) {
   }
 
   return (
-    <form method="post" onSubmit={onSubmit} className="space-y-4">
-      <Field label="Name">
-        <input name="name" required defaultValue={name} className={inputClass} />
+    <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor="account-name">Name</FieldLabel>
+        <Input
+          id="account-name"
+          name="name"
+          required
+          defaultValue={name}
+          aria-invalid={error ? true : undefined}
+        />
+        <FieldError>{error}</FieldError>
       </Field>
-      <ErrorText error={error} />
       {saved && (
         <p role="status" className="text-sm">
           Name saved.
         </p>
       )}
-      <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
-        Save name
-      </button>
+      <div>
+        <Button type="submit" disabled={!hydrated || busy}>
+          Save name
+        </Button>
+      </div>
     </form>
   )
 }
@@ -149,8 +196,8 @@ function DeleteAccountForm() {
   }
 
   return (
-    <form method="post" onSubmit={onSubmit} className="space-y-4">
-      <p className="text-sm text-gray-600">
+    <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">
         Your account stops working at once, and you leave your organizations. If you solely own one,
         transfer or delete it first. Your data is removed later, as the{' '}
         <Link to="/privacy" className="underline">
@@ -158,19 +205,23 @@ function DeleteAccountForm() {
         </Link>{' '}
         describes. You can sign up again with the same email, as a new, empty account.
       </p>
-      <Field label="Password to delete your account">
-        <input
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor="delete-password">Password to delete your account</FieldLabel>
+        <Input
+          id="delete-password"
           name="password"
           type="password"
           required
           autoComplete="current-password"
-          className={inputClass}
+          aria-invalid={error ? true : undefined}
         />
+        <FieldError>{error}</FieldError>
       </Field>
-      <ErrorText error={error} />
-      <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
-        Delete account
-      </button>
+      <div>
+        <Button type="submit" variant="destructive" disabled={!hydrated || busy}>
+          Delete account
+        </Button>
+      </div>
     </form>
   )
 }
@@ -215,35 +266,40 @@ function PasswordForm() {
   }
 
   return (
-    <form method="post" onSubmit={onSubmit} className="space-y-4">
-      <Field label="Current password">
-        <input
+    <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
+      <Field>
+        <FieldLabel htmlFor="current-password">Current password</FieldLabel>
+        <Input
+          id="current-password"
           name="currentPassword"
           type="password"
           required
           autoComplete="current-password"
-          className={inputClass}
         />
       </Field>
-      <Field label="New password">
-        <input
+      <Field>
+        <FieldLabel htmlFor="new-password">New password</FieldLabel>
+        <Input
+          id="new-password"
           name="newPassword"
           type="password"
           required
           minLength={8}
           autoComplete="new-password"
-          className={inputClass}
         />
       </Field>
-      <ErrorText error={error} />
+      {/* One error for the form: it may be about either password. */}
+      <FieldError>{error}</FieldError>
       {changed && (
         <p role="status" className="text-sm">
           Password changed. Other sessions were signed out.
         </p>
       )}
-      <button type="submit" disabled={!hydrated || busy} className={buttonClass}>
-        Change password
-      </button>
+      <div>
+        <Button type="submit" disabled={!hydrated || busy}>
+          Change password
+        </Button>
+      </div>
     </form>
   )
 }
