@@ -30,7 +30,9 @@ for (const view of views)
         await setTheme(page, theme)
         await snap(`login-${view.name}-${theme}.png`, {
           fullPage: true,
-          mask: [page.locator('iframe[src*="challenges.cloudflare.com"]')],
+          // Turnstile's widget renders in a closed shadow root: mask its host, which holds the
+          // widget's hidden response input (an iframe selector matches nothing).
+          mask: [page.locator('div:has(> input[name="cf-turnstile-response"])')],
         })
       })
 
