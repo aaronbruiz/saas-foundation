@@ -46,7 +46,7 @@ execFileSync(
 )
 const stop = () => spawnSync('docker', ['stop', name], { stdio: 'ignore' })
 
-let code = 1
+let code
 try {
   const deadline = Date.now() + 180_000
   while (!(await listening())) {
