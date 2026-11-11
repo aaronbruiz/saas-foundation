@@ -6,12 +6,15 @@ export function LegalPage({ doc, children }: { doc: LegalDocument; children: Rea
   return (
     <main className="mx-auto max-w-3xl p-8">
       <h1 className="text-2xl font-semibold">{doc.title}</h1>
-      <p className="mt-1 text-sm text-gray-600">
+      <p className="mt-1 text-sm text-muted-foreground">
         Version {doc.version} ·{' '}
         {doc.effectiveDate ? `Effective ${doc.effectiveDate}` : 'Draft, not yet in effect'}
       </p>
       {!doc.effectiveDate && (
-        <p role="note" className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+        <p
+          role="note"
+          className="mt-4 rounded-md border border-border bg-muted p-3 text-sm text-foreground"
+        >
           Draft: this document is incomplete and not in effect.
         </p>
       )}
@@ -32,7 +35,7 @@ export function Section({ title, children }: { title: string; children: ReactNod
 /** Marks text the owner (or their lawyer) must write. Never filled in by the codebase. */
 export function Placeholder({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded border border-dashed border-gray-400 bg-white p-3 text-sm text-gray-600">
+    <p className="rounded-md border border-dashed border-border bg-card p-3 text-sm text-muted-foreground">
       <strong>Placeholder (owner/lawyer text required):</strong> {children}
     </p>
   )
