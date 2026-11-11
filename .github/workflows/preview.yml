@@ -38,7 +38,8 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !startsWith(github.event.workflow_run.head_branch, 'release-please--') &&
       !startsWith(github.event.workflow_run.head_branch, 'dependabot/')
-    runs-on: ubuntu-latest
+    # GITHUB_TOKEN only (no Cloudflare/Neon token): 1-vCPU runner.
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read # the default branch's scripts
