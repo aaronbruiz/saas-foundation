@@ -30,7 +30,7 @@ E2E (`apps/app/e2e/`):
 - [`fixtures.ts`](../apps/app/e2e/fixtures.ts): the `test` every spec imports (lint enforces it). It fails a test when any of its pages hits a Content-Security-Policy refusal, reported by the browser's `securitypolicyviolation` event or its console, in the `page` context and every `browser.newContext()` (ADR-0045). Only styles rendered on the server are refused; React sets client-side styles through the DOM, which the CSP allows.
 - [`helpers.ts`](../apps/app/e2e/helpers.ts): `createAccount`, `verifyAndSignIn`, `createOrg`.
 
-Visual (`apps/app/visual/`, ADR-0046): `pnpm test:visual`, always through `scripts/test-lock.sh visual` (like every dev server and test run here; it also takes port 3001 for the browser server).
+Visual (`apps/app/visual/`, ADR-0046): `pnpm test:visual`, always through `scripts/test-lock.sh visual` (like every dev server and test run here; it also takes port 3001 for the browser server). Adding a page to them: the `ui-page` skill.
 
 - It starts the Playwright browser server from `mcr.microsoft.com/playwright:v<installed version>-noble` and runs Chromium, Firefox and WebKit against the local dev server at 320 and 1280 px, light and dark (the system theme, emulated with `page.emulateMedia({ colorScheme })` before the page loads). Not run in CI.
 - Three modes ([`scripts/test-visual.mjs`](../scripts/test-visual.mjs)); every mode runs the checks: the strict CSP check below, the WebKit `<select>` canary and the keyboard pass.
