@@ -95,6 +95,9 @@ test('a password reset request shows the same confirmation for any address', asy
 test('sign-up, organization, projects, invitation, managing members and tenant isolation', async ({
   browser,
 }) => {
+  // About a minute on a quiet machine before the transfer dialog's two confirms: 180 s, not 60
+  // (owner decision 2026-11-11, UI polish B1).
+  test.slow()
   // Alice: account → org A → project Alpha.
   const { page: alice, email: aliceEmail } = await signUp(browser, 'Alice')
   const orgA = await createOrg(alice, 'a')
@@ -180,15 +183,47 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   // Ownership moves to Carol in settings and back: each time the giver becomes an admin. Here,
   // since it needs two real users and the login limit leaves no sign-in for a test of its own.
   await alice.getByRole('link', { name: 'Settings' }).click()
+  // A second tab, loaded while Alice is still the owner: it tries the same transfer afterwards.
+  const aliceLate = await alice.context().newPage()
+  await aliceLate.goto(`/t/${orgA}/settings`)
+  await expect(aliceLate.getByRole('button', { name: 'Transfer ownership' })).toBeEnabled()
   await alice.getByLabel('New owner').selectOption({ label: `${carolEmail} (member)` })
   await alice.getByRole('button', { name: 'Transfer ownership' }).click()
+  // Nothing is sent until the dialog's own button confirms it.
+  await alice
+    .getByRole('alertdialog', { name: `Transfer ownership to ${carolEmail}?` })
+    .getByRole('button', { name: 'Transfer ownership' })
+    .click()
+  await expect(
+    alice
+      .getByRole('region', { name: /Notifications/ })
+      .getByText(`Ownership transferred to ${carolEmail}.`),
+  ).toBeVisible()
   await expect(alice.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
+  // The stale tab: the server refuses (Alice is an admin now), the error shows under the picker,
+  // and no success toast appears.
+  await aliceLate.getByLabel('New owner').selectOption({ label: `${carolEmail} (member)` })
+  await aliceLate.getByRole('button', { name: 'Transfer ownership' }).click()
+  await aliceLate
+    .getByRole('alertdialog', { name: `Transfer ownership to ${carolEmail}?` })
+    .getByRole('button', { name: 'Transfer ownership' })
+    .click()
+  await expect(aliceLate.getByRole('alert')).toHaveText('forbidden')
+  await expect(aliceLate.getByLabel('New owner')).toHaveAttribute('aria-invalid', 'true')
+  await expect(
+    aliceLate.getByRole('region', { name: /Notifications/ }).getByText(/^Ownership transferred/),
+  ).toHaveCount(0)
+  await aliceLate.close()
   await carol.goto(`/t/${orgA}/settings`)
   await expect(carol.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
   await expect(carol.getByLabel('New owner').getByRole('option')).toHaveText([
     `${aliceEmail} (admin)`,
   ])
   await carol.getByRole('button', { name: 'Transfer ownership' }).click()
+  await carol
+    .getByRole('alertdialog', { name: `Transfer ownership to ${aliceEmail}?` })
+    .getByRole('button', { name: 'Transfer ownership' })
+    .click()
   await expect(carol.getByRole('heading', { name: 'Transfer ownership' })).toHaveCount(0)
   await alice.getByRole('link', { name: 'Members' }).click()
   await alice.getByRole('button', { name: `Make ${carolEmail} member` }).click()

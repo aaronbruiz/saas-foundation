@@ -7,7 +7,8 @@ import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
 // indicator, the transfer picker answers arrow keys and Escape without losing focus, and the
 // rename toast doesn't take focus. Runs in every `pnpm test:visual` mode; it takes no screenshots.
-// No page uses a dialog or a menu yet: their Escape checks come with the first page that does.
+// The settings page's transfer dialog keeps Tab inside it, and Cancel and Escape close it, return
+// focus to the page's button and send nothing. No page uses a menu yet.
 
 const settingsControls = [
   'Organization name',
@@ -39,6 +40,35 @@ for (const theme of themes)
       // The page's own controls, in reading order (the nav and footer links around them vary by
       // browser: WebKit skips links on Tab by default).
       expect(names.filter((n) => settingsControls.includes(n))).toEqual(settingsControls)
+    })
+
+    test('settings: the transfer dialog keeps focus inside, and Cancel and Escape send nothing', async ({
+      page,
+      allowWebKitSelect,
+    }) => {
+      await openSettings(page)
+      await allowWebKitSelect(page)
+      const transfer = page.getByRole('button', { name: 'Transfer ownership' })
+      const dialog = page.getByRole('alertdialog')
+      for (const close of ['Escape', 'Cancel'] as const) {
+        await transfer.click()
+        await expect(dialog).toBeVisible()
+        // More presses than the dialog has buttons: Tab wraps around inside it.
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press('Tab')
+          expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true)
+        }
+        if (close === 'Escape') await page.keyboard.press('Escape')
+        else await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect(transfer).toBeFocused()
+      }
+      // Nothing was sent: both candidates are still members.
+      await page.reload()
+      await expect(page.getByLabel('New owner').getByRole('option')).toHaveText([
+        /\(member\)$/,
+        /\(member\)$/,
+      ])
     })
 
     test('settings: the transfer picker answers arrow keys and Escape, and keeps focus', async ({
