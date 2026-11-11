@@ -50,11 +50,11 @@ const mask = (page: Page) => [
 ]
 
 async function open(page: Page, p: AccountPage, theme: Theme) {
+  await setTheme(page, theme)
   await page.goto(p.path)
   const ready = p.ready(page)
   await expect(ready).toBeVisible()
   if (p.controls) await expect(ready).toBeEnabled()
-  await setTheme(page, theme)
 }
 
 for (const p of pages)

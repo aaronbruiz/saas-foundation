@@ -131,7 +131,7 @@ export function useTurnstile({ siteKey, actions }: TurnstileConfig, path: string
         />
       )}
       {unavailable && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-destructive">
           Bot check unavailable. Reload the page or try again later.
         </p>
       )}

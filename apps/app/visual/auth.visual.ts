@@ -71,9 +71,9 @@ const pages: AuthPage[] = [
 ]
 
 async function open(page: Page, p: AuthPage, theme: Theme) {
+  await setTheme(page, theme)
   await page.goto(p.path)
   await expect(page.getByRole('button', { name: p.ready })).toBeEnabled({ timeout: 30_000 })
-  await setTheme(page, theme)
 }
 
 for (const p of pages) {
@@ -118,6 +118,7 @@ for (const view of views)
       test.use({ viewport: { width: view.width, height: view.height } })
 
       test('page', async ({ page, snap }) => {
+        await setTheme(page, theme)
         await page.goto('/reset-password')
         const submit = page.getByRole('button', { name: 'Change password' })
         await expect(submit).toBeEnabled()
@@ -126,7 +127,6 @@ for (const view of views)
         await expect(page.getByRole('alert')).toHaveText(
           'This reset link is invalid or has expired.',
         )
-        await setTheme(page, theme)
         await snap(`reset-password-error-${view.name}-${theme}.png`, { fullPage: true })
       })
     })

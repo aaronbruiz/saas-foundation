@@ -60,9 +60,9 @@ const mask = (page: Page) => {
 }
 
 async function open(page: Page, p: TenantPage, theme: Theme) {
+  await setTheme(page, theme)
   await page.goto(p.path(team()))
   await expect(p.ready(page)).toBeEnabled()
-  await setTheme(page, theme)
 }
 
 test.use({ storageState: sessionFile })

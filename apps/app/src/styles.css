@@ -5,7 +5,12 @@
 /* Colour tokens: packages/brand (ADR-0046). A product changes them there, not here. */
 @import '@saas-foundation/brand/brand.css';
 
-@custom-variant dark (&:is(.dark *));
+/* The app follows the visitor's system theme (ADR-0046): `color-scheme` picks each brand token's
+   light-dark() side, and Tailwind's `dark:` variant is its default, `prefers-color-scheme`. No class
+   and no script, so the CSP needs nothing. */
+:root {
+  color-scheme: light dark;
+}
 
 * {
   box-sizing: border-box;

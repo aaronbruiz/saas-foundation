@@ -13,10 +13,10 @@ export const views = [
 export const themes = ['light', 'dark'] as const
 export type Theme = (typeof themes)[number]
 
-/** Dark is the `.dark` class, which nothing in the app sets yet. Call it after the page has
- * hydrated: a class set before load doesn't survive React's hydration of <html>. */
+/** The app follows the system theme (`prefers-color-scheme`): emulate the visitor's setting.
+ * Call it before the page loads, as a visitor's system would have it. */
 export async function setTheme(page: Page, theme: Theme) {
-  if (theme === 'dark') await page.evaluate(() => document.documentElement.classList.add('dark'))
+  await page.emulateMedia({ colorScheme: theme })
 }
 
 /** The organization visual/team.setup.ts made: its slug and the id of its one project. */
