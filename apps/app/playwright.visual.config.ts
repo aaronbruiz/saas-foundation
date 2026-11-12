@@ -18,6 +18,10 @@ export default defineConfig<{ visual: boolean }>({
   testMatch: /\.visual\.ts$/,
   globalSetup: './e2e/global-setup.ts',
   timeout: 120_000,
+  // Two workers, not Playwright's default (half the CPUs): on 8 CPUs, 2 workers took 12.5 min at a
+  // mean 1-minute load of 7.3 (peak 10.3), the default 9.8 min at 11.9 (peak 16.9), and that load
+  // made other test runs on the machine time out (UI polish A3, 2026-11-11). `--workers=N` overrides.
+  workers: 2,
   reporter: 'list',
   snapshotPathTemplate: '{testDir}/.baseline/{projectName}/{arg}{ext}',
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled' } },

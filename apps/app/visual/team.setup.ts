@@ -9,7 +9,12 @@ import { teamFile } from './team'
 // transfer picker with a choice (the keyboard pass moves between its options). The candidates are
 // fixed accounts, so the picker's text (and the baseline) is the same on every run: each signs up
 // the first time and signs in afterwards. One project with a fixed name, for the projects pages.
-const candidates = ['visual-candidate@e2e.test', 'visual-candidate-2@e2e.test']
+// The second one's email is long on purpose: the settings page shows it in full under the picker,
+// where the closed select cuts it off at 320 px.
+const candidates = [
+  'visual-candidate@e2e.test',
+  'visual-candidate-2-with-a-long-address-for-the-picker@e2e.test',
+]
 
 async function join(browser: Browser, owner: Page, slug: string, candidate: string) {
   await owner.goto(`/t/${slug}/invite`)

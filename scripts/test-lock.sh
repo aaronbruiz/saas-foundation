@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# One `pnpm test`, `pnpm test:e2e` or `pnpm test:visual` at a time on this machine: every clone and worktree shares the
-# local `app_test` database and port 3000, so the lock is named from the database, not the checkout.
-# One lock for all local test resources: it's named after `app_test`, and also guards E2E's dev
-# database and port 3000. Don't split it.
+# One `pnpm test`, `test:e2e` or `test:visual` at a time on this machine: every clone and worktree
+# shares `app_test`, E2E's dev database and port 3000, so one lock, named after `app_test` (not the
+# checkout), guards them all. Don't split it.
 # It takes only these three commands, because agents may run it without a prompt
 # (.claude/settings.json), so it mustn't become a way to run anything else.
 set -euo pipefail

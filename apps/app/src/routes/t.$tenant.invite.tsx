@@ -17,6 +17,8 @@ function Invite() {
   const invite = useServerFn(inviteMemberFn)
   const [link, setLink] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Only the server's input-validation 400 is about the email field (apps/app/src/server/errors.ts).
+  const fieldError = error === 'invalid input'
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -38,17 +40,22 @@ function Invite() {
       <Card>
         <CardContent>
           <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-            <Field data-invalid={error ? true : undefined}>
+            <Field data-invalid={fieldError ? true : undefined}>
               <FieldLabel htmlFor="invitee-email">Invitee email</FieldLabel>
               <Input
                 id="invitee-email"
                 name="email"
                 type="email"
                 required
-                aria-invalid={error ? true : undefined}
+                aria-invalid={fieldError ? true : undefined}
               />
-              <FieldError>{error}</FieldError>
+              {fieldError && <FieldError>{error}</FieldError>}
             </Field>
+            {error && !fieldError && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <div>
               <Button type="submit" disabled={!hydrated}>
                 Create invitation

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type SyntheticEvent } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { getTenantFn, getViewerFn } from '../modules/organizations/functions'
 import { authClient } from '../lib/auth-client'
 import { messageOf } from '../lib/ui'
@@ -11,6 +12,12 @@ import { FieldError } from '@/components/ui/field'
 // App nav on the brand's --sidebar-* tokens; the current page's item is filled (aria-current from the router).
 const navItem =
   'rounded-md px-3 py-1.5 font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-sidebar-ring'
+// Page links and the account links are two groups, each wrapping on its own, so at 320 px no
+// row mixes them.
+const navGroup = 'flex flex-wrap gap-1 rounded-lg bg-sidebar p-1'
+// A popover link on its own line: at least 24 px tall (WCAG 2.5.8), with Button's focus ring.
+const menuLink =
+  'inline-flex min-h-6 items-center rounded-sm text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
 const navActive =
   'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground'
 
@@ -39,57 +46,61 @@ function TenantLayout() {
           {/* The key closes the menu when the tenant changes. */}
           <OrganizationMenu key={tenant.slug} slug={tenant.slug} name={tenant.name} />
         </div>
-        <nav className="flex flex-wrap gap-1 rounded-lg bg-sidebar p-1 text-sm text-sidebar-foreground">
-          <Link
-            to="/t/$tenant/projects"
-            params={{ tenant: tenant.slug }}
-            className={navItem}
-            activeProps={{ className: navActive }}
-          >
-            Projects
-          </Link>
-          <Link
-            to="/t/$tenant/members"
-            params={{ tenant: tenant.slug }}
-            className={navItem}
-            activeProps={{ className: navActive }}
-          >
-            Members
-          </Link>
-          {canInvite && (
+        <nav className="flex flex-wrap gap-2 text-sm text-sidebar-foreground">
+          <div className={navGroup}>
             <Link
-              to="/t/$tenant/invite"
+              to="/t/$tenant/projects"
               params={{ tenant: tenant.slug }}
               className={navItem}
               activeProps={{ className: navActive }}
             >
-              Invite
+              Projects
             </Link>
-          )}
-          {canSeeBilling && (
             <Link
-              to="/t/$tenant/billing"
+              to="/t/$tenant/members"
               params={{ tenant: tenant.slug }}
               className={navItem}
               activeProps={{ className: navActive }}
             >
-              Billing
+              Members
             </Link>
-          )}
-          <Link
-            to="/t/$tenant/settings"
-            params={{ tenant: tenant.slug }}
-            className={navItem}
-            activeProps={{ className: navActive }}
-          >
-            Settings
-          </Link>
-          <Link to="/account" className={navItem} activeProps={{ className: navActive }}>
-            Account
-          </Link>
-          <button type="button" onClick={signOut} className={navItem}>
-            Sign out
-          </button>
+            {canInvite && (
+              <Link
+                to="/t/$tenant/invite"
+                params={{ tenant: tenant.slug }}
+                className={navItem}
+                activeProps={{ className: navActive }}
+              >
+                Invite
+              </Link>
+            )}
+            {canSeeBilling && (
+              <Link
+                to="/t/$tenant/billing"
+                params={{ tenant: tenant.slug }}
+                className={navItem}
+                activeProps={{ className: navActive }}
+              >
+                Billing
+              </Link>
+            )}
+            <Link
+              to="/t/$tenant/settings"
+              params={{ tenant: tenant.slug }}
+              className={navItem}
+              activeProps={{ className: navActive }}
+            >
+              Settings
+            </Link>
+          </div>
+          <div className={navGroup}>
+            <Link to="/account" className={navItem} activeProps={{ className: navActive }}>
+              Account
+            </Link>
+            <button type="button" onClick={signOut} className={navItem}>
+              Sign out
+            </button>
+          </div>
         </nav>
       </header>
       <Outlet />
@@ -118,25 +129,25 @@ function OrganizationMenu({ slug, name }: { slug: string; name: string }) {
   }
 
   return (
-    <details onToggle={onToggle} className="relative">
-      <summary className="cursor-pointer">
+    <details onToggle={onToggle} className="group relative">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden">
         <h1 className="inline text-xl font-semibold">{name}</h1>
+        <ChevronDown
+          aria-hidden="true"
+          className="size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+        />
       </summary>
       <div className="absolute z-10 mt-2 w-64 space-y-2 rounded-md border bg-popover p-3 text-sm text-popover-foreground shadow">
         <ul className="space-y-2">
           {others.map((o) => (
             <li key={o.slug}>
-              <Link
-                to="/t/$tenant/projects"
-                params={{ tenant: o.slug }}
-                className="text-primary underline underline-offset-4"
-              >
+              <Link to="/t/$tenant/projects" params={{ tenant: o.slug }} className={menuLink}>
                 {o.name}
               </Link>
             </li>
           ))}
           <li>
-            <Link to="/orgs/new" className="text-primary underline underline-offset-4">
+            <Link to="/orgs/new" className={menuLink}>
               New organization
             </Link>
           </li>

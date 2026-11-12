@@ -21,7 +21,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "typecheck": "pnpm -r --parallel typecheck",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check && node scripts/csp-hashes.mjs --check && pnpm --filter app types:check",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm plans:check && node scripts/csp-hashes.mjs --check",
     "plans:export": "node apps/app/scripts/export-plans.ts",
     "plans:check": "node apps/app/scripts/export-plans.ts --check",
     "auth:generate": "pnpm --filter @saas-foundation/auth auth:generate",
@@ -35,8 +35,8 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.14.0",
-    "neon": "8.16.1",
-    "oxfmt": "0.75.0",
+    "neon": "8.18.0",
+    "oxfmt": "0.76.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1"
   }

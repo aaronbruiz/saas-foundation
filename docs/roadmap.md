@@ -112,7 +112,8 @@ Owner-approved 2026-11-11. M3 stays deferred; this gives the template a delibera
   1. Client hardening is merged: contracts type-only in routes and components, zod `jitless`, zod markers in the client-bundle scan, the strict e2e console check (done: #252).
   2. The UI foundation is merged: shadcn on Base UI, `packages/brand` tokens (light + dark, contrast-tested), the two CSP hash directives (ADR-0045), the settings pilot, the `AGENTS.md` UI section, local visual tests (done: #253).
   3. The remaining pages are on tokens and components, and the app follows the system theme (done 2026-11-11: #257, #258, #259, #261).
-  4. A tracked UI skill in `.agents/skills/`, written from the pilot and the migrations.
+  4. A tracked UI skill in `.agents/skills/`, written from the pilot and the migrations (done 2026-11-11: `ui-page`, #276, written from the migrations and the UI polish PRs #265, #270, #271, #274, #275).
+- **Result (2026-11-11):** items 1–4 are merged. The six UI polish PRs (#265, #270, #271, #274, #275, #276) are merged but unreleased: production still runs app-v0.5.0, and release preparation stays paused.
 - **Deferred:** a theme toggle, `packages/ui`, the six excluded Base UI components, visual tests in CI.
 
 ### M2: Production on the least-privilege runtime role (done 2026-10-29)

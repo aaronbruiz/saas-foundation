@@ -27,22 +27,20 @@
 # login. Trusted test input for scripts/check-schema-sql.test.mjs only (it could also repair drift):
 # ci.yml and `pnpm db:check` clear it for the gate itself.
 #
-# Objects that custom migrations create on purpose and the Drizzle schema can't express (the
-# archive schema, triggers, functions: ADR-0039, ADR-0040) are listed one by one, with a hash of
-# their definition, in packages/db/sql-only-objects.tsv. scripts/compare-catalogs.mjs checks each
-# registered object exists exactly as registered and compares everything else exactly.
+# SQL-only objects (the archive schema, triggers, functions: ADR-0039, ADR-0040) are registered with
+# a hash in packages/db/sql-only-objects.tsv; scripts/compare-catalogs.mjs checks them (its header).
 #
 # Migrations run as `schema_check_owner`, a login without superuser that mirrors production's
 # `app_owner` on Neon (ADR-0038; R06 role inspection 2026-10-15): BYPASSRLS, CREATEROLE, CREATEDB,
-# REPLICATION, owner of both databases, and a member (inherit, no SET) of a NOLOGIN stand-in for
-# `neon_superuser` holding pg_read_all_data and pg_write_all_data, both created fresh for each run.
-# It logs in itself (no SET ROLE
-# from a superuser that RESET ROLE could undo), and its identity, attributes and memberships are
-# checked before migrating. So the gate covers what the production migration role can do: DDL only
-# a superuser may run (changing PostgreSQL's built-in objects, creating in pg_catalog) fails here,
-# as it would in production (proven by scripts/check-schema-sql.test.mjs). Not reproduced locally:
-# Neon's other neon_superuser rights (e.g. its extension allowlist) and the default privileges its
-# `cloud_admin` sets in `public` (ADR-0038 G3 verifies those on production).
+# REPLICATION, owner of both databases, and a member (inherit, no SET) of a NOLOGIN stand-in
+# for `neon_superuser` holding pg_read_all_data and pg_write_all_data, both created fresh for
+# each run. It logs in itself (no SET ROLE from a superuser that RESET ROLE could undo), and
+# its identity, attributes and memberships are checked before migrating. So the gate covers what
+# the production migration role can do: DDL only a superuser may run (changing PostgreSQL's
+# built-in objects, creating in pg_catalog) fails here, as it would in production (proven by
+# scripts/check-schema-sql.test.mjs). Not reproduced locally: Neon's other neon_superuser rights
+# (e.g. its extension allowlist) and the default privileges its `cloud_admin` sets in `public`
+# (ADR-0038 G3 verifies those on production).
 #
 # Uses the Postgres container serving localhost:5432 (POSTGRES_PORT; POSTGRES_CONTAINER, default:
 # the one publishing that port, which also works from a worktree), creates and drops two databases in it,

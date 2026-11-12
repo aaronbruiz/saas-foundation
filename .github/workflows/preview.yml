@@ -62,13 +62,11 @@ jobs:
         run: |
           pr="$(scripts/preview/resolve-pr.sh)"
           [ -n "$pr" ] || exit 0
-          # ADR-0028, ADR-0033: a PR that changes only the static sites (apps/docs/**, apps/site/**)
-          # gets no app preview (it would hold one of
-          # the preview project's 10 Neon branches for nothing). Neither does one that changes only
-          # documentation the app doesn't build from: docs/** and root-level *.md (ADR-0021 Notes
-          # 2026-10-15). A rename counts at both paths, and a list that isn't complete (the files
-          # API stops at 3,000) keeps the preview. Same rules as ci.yml's `changes` filter; change
-          # both together.
+          # Same rules as ci.yml's `changes` filter (rationale there; change both together): a PR
+          # that changes only apps/docs/**, apps/site/**, docs/** or root-level *.md gets no app
+          # preview (it would hold one of the preview project's 10 Neon branches for nothing). A
+          # rename counts at both paths, and an incomplete file list (the API stops at 3,000) keeps
+          # the preview.
           changed="$(gh api "repos/$REPO/pulls/$pr" --jq '.changed_files')"
           files="$(gh api --paginate "repos/$REPO/pulls/$pr/files" \
             --jq '.[] | [.filename, .previous_filename // empty] | join("\t")')"
@@ -172,8 +170,7 @@ jobs:
           BASE_URL: ${{ needs.deploy.outputs.url }}
         run: |
           [[ "$BASE_URL" =~ ^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.workers\.dev$ ]] || { echo "unexpected URL shape"; exit 1; }
-          # The runner image has Chromium's libraries; no apt (it depends on Ubuntu's mirrors). Playwright
-          # refuses to launch, naming the library, if one goes missing.
+          # No apt: see ci.yml's E2E step.
           pnpm --filter app exec playwright install chromium
           pnpm test:e2e
       - name: Comment preview URL on the PR

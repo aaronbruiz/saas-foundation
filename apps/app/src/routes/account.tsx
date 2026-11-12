@@ -95,7 +95,9 @@ function NameForm({ name }: { name: string }) {
   const hydrated = useHydrated()
   const router = useRouter()
   const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // `field`: the typed value was invalid, so the error marks the field; any other failure is a
+  // form-level alert (AGENTS.md "UI").
+  const [error, setError] = useState<{ text: string; field: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
 
@@ -104,17 +106,18 @@ function NameForm({ name }: { name: string }) {
     if (pending.current) return
     setSaved(false)
     const next = String(new FormData(e.currentTarget).get('name')).trim()
-    if (!next) return setError('Enter a name.')
+    if (!next) return setError({ text: 'Enter a name.', field: true })
     setError(null)
     pending.current = true
     setBusy(true)
     try {
       const { error } = await authClient.updateUser({ name: next })
-      if (error) return setError(error.message ?? "Your name couldn't be saved.")
+      if (error)
+        return setError({ text: error.message ?? "Your name couldn't be saved.", field: false })
       setSaved(true)
       await router.invalidate()
     } catch (err) {
-      setError(messageOf(err))
+      setError({ text: messageOf(err), field: false })
     } finally {
       pending.current = false
       setBusy(false)
@@ -123,17 +126,18 @@ function NameForm({ name }: { name: string }) {
 
   return (
     <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-      <Field data-invalid={error ? true : undefined}>
+      <Field data-invalid={error?.field || undefined}>
         <FieldLabel htmlFor="account-name">Name</FieldLabel>
         <Input
           id="account-name"
           name="name"
           required
           defaultValue={name}
-          aria-invalid={error ? true : undefined}
+          aria-invalid={error?.field || undefined}
         />
-        <FieldError>{error}</FieldError>
+        {error?.field && <FieldError>{error.text}</FieldError>}
       </Field>
+      {error && !error.field && <FieldError>{error.text}</FieldError>}
       {saved && (
         <p role="status" className="text-sm">
           Name saved.
@@ -169,7 +173,9 @@ function deleteRefusalText({ code, message, left = [] }: DeleteRefusal) {
 
 function DeleteAccountForm() {
   const hydrated = useHydrated()
-  const [error, setError] = useState<string | null>(null)
+  // `field`: a wrong password, the one answer about the typed value; any other refusal is a
+  // form-level alert (AGENTS.md "UI").
+  const [error, setError] = useState<{ text: string; field: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
 
@@ -185,10 +191,16 @@ function DeleteAccountForm() {
         method: 'POST',
         body: { password },
       })
-      if (error) return setError(deleteRefusalText(error as DeleteRefusal))
+      if (error) {
+        const refusal = error as DeleteRefusal
+        return setError({
+          text: deleteRefusalText(refusal),
+          field: refusal.code === 'INVALID_PASSWORD',
+        })
+      }
       window.location.assign('/')
     } catch (err) {
-      setError(messageOf(err))
+      setError({ text: messageOf(err), field: false })
     } finally {
       pending.current = false
       setBusy(false)
@@ -205,7 +217,7 @@ function DeleteAccountForm() {
         </Link>{' '}
         describes. You can sign up again with the same email, as a new, empty account.
       </p>
-      <Field data-invalid={error ? true : undefined}>
+      <Field data-invalid={error?.field || undefined}>
         <FieldLabel htmlFor="delete-password">Password to delete your account</FieldLabel>
         <Input
           id="delete-password"
@@ -213,10 +225,11 @@ function DeleteAccountForm() {
           type="password"
           required
           autoComplete="current-password"
-          aria-invalid={error ? true : undefined}
+          aria-invalid={error?.field || undefined}
         />
-        <FieldError>{error}</FieldError>
+        {error?.field && <FieldError>{error.text}</FieldError>}
       </Field>
+      {error && !error.field && <FieldError>{error.text}</FieldError>}
       <div>
         <Button type="submit" variant="destructive" disabled={!hydrated || busy}>
           Delete account

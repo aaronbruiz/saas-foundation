@@ -107,10 +107,6 @@ export type AuthOptions = {
    */
   runInBackground?: (promise: Promise<unknown>) => void
   /**
-   * The app's billing policy, asked by Better Auth's own endpoints so no path bypasses it
-   * (ADR-0020). Without it: Better Auth's default member limit, and deletion is never refused.
-   */
-  /**
    * Self-service account deletion (ADR-0044). `input` validates the request (AGENTS.md invariant 9);
    * `onDeactivated` runs after the deactivation commits. Without it, the endpoint doesn't exist.
    */
@@ -118,6 +114,10 @@ export type AuthOptions = {
     input: StandardSchemaV1<unknown, { password: string }>
     onDeactivated: (userId: string) => Promise<void>
   }
+  /**
+   * The app's billing policy, asked by Better Auth's own endpoints so no path bypasses it
+   * (ADR-0020). Without it: Better Auth's default member limit, and deletion is never refused.
+   */
   billing?: {
     /** Seats the organization's plan allows (null = unlimited). */
     memberLimit: (organizationId: string) => Promise<number | null>
@@ -205,12 +205,10 @@ export function createAuth({
     secret,
     baseURL,
     // `transaction: true`: Better Auth's multi-write operations (sign-up, accepting an invitation,
-    // consuming a verification token, removing a member, deleting an organization) run in one
-    // Postgres transaction on the request's single connection, so a database error rolls all of
-    // their writes back. Without it they auto-commit one by one: a failed organization delete left
-    // the organization without members. Hooks and checks that run before those operations (our
-    // middleware, permission checks, clearing the active organization, beforeDeleteOrganization and
-    // its Polar call) are outside the transaction and aren't undone by it.
+    // consuming a verification token, removing a member, deleting an organization) commit or roll
+    // back together on the request's connection; without it, a failed delete left an organization
+    // with no members. Hooks and checks before them (our middleware, permission checks, clearing
+    // the active organization, beforeDeleteOrganization and its Polar call) aren't undone by it.
     database: drizzleAdapter(rawDb(db), { provider: 'pg', schema, transaction: true }),
     // `verification.identifier` holds a SHA-256 of `reset-password:<token>`, so reading the table
     // yields no usable reset link. Rows stored in plaintext before this keep working until they

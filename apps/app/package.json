@@ -7,9 +7,9 @@
     "build": "vite build",
     "preview": "pnpm build && vite preview",
     "deploy": "node ../../scripts/check-secrets.mjs --deployed && pnpm build && wrangler deploy",
-    "typecheck": "tsc --noEmit",
+    "postinstall": "pnpm cf-typegen || node -e \"console.warn('postinstall: Worker types not generated; pnpm check generates them')\"",
+    "typecheck": "pnpm cf-typegen && tsc --noEmit",
     "cf-typegen": "wrangler types --env-file .dev.vars.example",
-    "types:check": "wrangler types --env-file .dev.vars.example --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:visual": "node ../../scripts/test-visual.mjs"
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.67.0",
-    "@cloudflare/vitest-plugin": "^1.5.0",
+    "@cloudflare/vitest-plugin": "^1.5.1",
     "@playwright/test": "^1.64.1",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
@@ -48,6 +48,6 @@
     "typescript": "~6.0.3",
     "vite": "^8.3.5",
     "vitest": "^4.1.12",
-    "wrangler": "^4.156.2"
+    "wrangler": "^4.157.0"
   }
 }

@@ -8,8 +8,8 @@ Before planning work, read [`docs/roadmap.md`](docs/roadmap.md): it sets the cur
 
 ## Module map
 
-- `apps/app/src/routes/t.$tenant*.tsx`: tenant-scoped pages and loaders. May import: `modules/`, `server/`, `@saas-foundation/contracts` types only (`import type`, in every route and component: zod stays out of the browser; forms use HTML constraint attributes and show the server's errors).
-- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages (Base UI by subpath), `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded: their server HTML has value-dependent inline styles the CSP refuses (ADR-0045).
+- `apps/app/src/routes/t.$tenant*.tsx`: tenant-scoped pages and loaders. May import: `modules/`, `server/`, `@saas-foundation/contracts` types only (`import type` in routes and components, ADR-0046 decision 7).
+- `apps/app/src/components/ui/`: UI primitives, data through props. May import: npm packages (Base UI by subpath), `lib/`, each other. Base UI's slider, progress, meter, scroll-area, accordion and collapsible are excluded (ADR-0046).
 - `apps/app/src/routes/api/auth/$.ts`: Better Auth handler. May import: `@saas-foundation/auth`.
 - `apps/app/src/server/context.ts`: `getTenantContext(db, headers, slug)`: session → slug → org → membership. May import: `@saas-foundation/auth`, `@saas-foundation/db`.
 - `apps/app/src/server/auth.ts`: Better Auth per request (`authFor`): sign-up gate, email verification, Turnstile, owner-change billing hooks. May import: `@saas-foundation/auth`, `@saas-foundation/db`, `modules/billing/{config,policy}`.
@@ -32,7 +32,7 @@ The import boundaries above are enforced by `eslint.config.js`, along with raw d
 ```
 pnpm db:up         # start local Postgres (docker compose; dev DB `app`, test DB `app_test`)
 pnpm dev           # local Worker on http://localhost:3000 (strict port); DB via Hyperdrive localConnectionString
-pnpm check         # lint (ESLint v10) + format:check (Oxfmt) + typecheck (tsc --noEmit) + plans and Worker types drift checks
+pnpm check         # lint (ESLint v10) + format:check (Oxfmt) + typecheck (tsc --noEmit; the app generates worker-configuration.d.ts first, git-ignored) + plans drift check
 pnpm test          # Vitest 4 inside workerd (@cloudflare/vitest-plugin), against `app_test`
 pnpm format        # apply Oxfmt
 pnpm build         # production build
@@ -44,7 +44,7 @@ pnpm test:e2e      # Playwright: full slice + isolation (starts `pnpm dev`, loca
 pnpm --filter docs dev | build   # docs site (ADR-0028) on http://localhost:4321 | static build to apps/docs/dist; CI: docs.yml
 pnpm --filter site dev | build   # marketing site (ADR-0033) on http://localhost:4322 | static build to apps/site/dist; CI: site.yml
 pnpm test:visual   # [--baseline|--compare] (ADR-0046; not in CI)
-pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (`pnpm check` fails until you do)
+pnpm csp:hashes    # regenerate csp-hashes.gen.ts after a sonner/React/Base UI bump (ADR-0046 decision 4)
 pnpm plans:export  # regenerate apps/site/src/data/plans.json after changing billing/policy.ts (`pnpm check` fails until you do)
 scripts/{preview,backup,sites,release}/   # previews (ADR-0021), backups (ADR-0003, ADR-0023), static sites (ADR-0028, ADR-0033), releases and rollback (ADR-0029); run by CI; manual procedures in docs/runbooks/README.md
 ```
@@ -77,22 +77,15 @@ kill -9 $(lsof -t -i:3000)
 
 ## Recipes
 
-**Add a tenant-owned table:** `organization_id` NOT NULL + FK to `organization.id` + an index that leads with `organization_id` → a child of a tenant table (comments on a request) also carries `organization_id` and references its parent through a composite FK, so a row can't point at another tenant's parent: `unique().on(t.organizationId, t.id)` on the parent, and `foreignKey({ columns: [t.organizationId, t.requestId], foreignColumns: [request.organizationId, request.id] }).onDelete('cascade')` on the child, whose index leads with `(organization_id, request_id)` → add repository functions in `packages/db/src/<table>.ts` that run through `inTenant` (ADR-0040 decision 1) and filter by `ctx.orgId` on every read, update and delete → add a Zod schema without `organizationId` → add cross-tenant tests (URL **and** server-function input) → `pnpm db:generate` → review the SQL → grant `app_runtime` only the privileges it needs in a `drizzle-kit generate --custom` migration and add the table to `GRANTS` in `apps/app/test/database-role.test.ts` (ADR-0038) → in the same custom migration, add its `archive_delete` trigger (`AFTER DELETE … FOR EACH ROW EXECUTE FUNCTION archive.capture_delete()`, ADR-0039; the catalog test in `test/archive.test.ts` fails without it) → register the trigger in `packages/db/sql-only-objects.tsv` (the line `pnpm db:check` prints, after reviewing it). A column pointing at a user is nullable with `ON DELETE SET NULL`, and its table gets the `refuse_deleted_user` trigger (ADR-0044; the catalog test in `test/account-deletion.test.ts` fails without it).
-
-**Add a plan limit or feature (ADR-0020):** add it to `Entitlements` and every plan in `modules/billing/policy.ts` → enforce it where the resource is created, asking `entitlementsIn(db, ctx.orgId)` (a count-then-insert needs the organization row lock and reads the plan in that transaction through `entitlementsOfSubscription`, like `projects.createWithinLimit`) → tests for the cap, upgrade, downgrade (nothing deleted) and concurrency.
-
-**Add a tenant-scoped server function:** input schema includes `tenant: TenantSlug` → parse the input, then first inside `withDb`: `const ctx = await getTenantContext(db, headers, tenant)` → for an operation on a resource id, first confirm the resource exists in this tenant (404) → `authorize(ctx, '<capability>')` (add the capability to the matrix in `server/permissions.ts` and a test per role in `test/roles.test.ts`) → call repositories with `ctx` → a check followed by a write (a status, an owner, a count) holds in the write itself: a conditional `UPDATE … WHERE` in `packages/db` that reports 0 rows as the operation's not-found or conflict answer, or a row lock taken in the same transaction as the check and the write, so that every operation changing that condition waits for it (`projects.createWithinLimit`). Don't make that write through a library endpoint that skips the condition.
-
-**Add a Cloudflare binding:** write `docs/adr/NNNN-<binding>.md` (trigger, alternatives, preview isolation) → add it to `wrangler.jsonc` **and** its `previews` block → `pnpm --filter app cf-typegen`.
-
-**Add a deployable or another runtime (ADR-0027):** write its ADR against ADR-0027's criteria and checklist → `apps/<name>/` with its native manifest → no tenant database access unless that ADR chooses and reviews a boundary.
+Required steps, in [`docs/architecture/recipes.md`](docs/architecture/recipes.md): add a tenant-owned table (and a child of one), a plan limit or feature (ADR-0020), a tenant-scoped server function, a Cloudflare binding (invariant 14), a deployable or runtime (ADR-0027).
 
 ## UI (ADR-0046)
 
-- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`. Brand rules: `docs/product/AGENTS.md`; colours: `packages/brand/brand.css`.
-- A simple single choice is `NativeSelect`; Base UI `Select` only for rich options, groups, search or custom interaction.
-- A style the CSP refuses fails e2e and visual tests; allowing one is a CSP change (ADR-0045).
-- Before UI work: `pnpm test:visual --baseline`. When done: `--compare`; its summary line (baseline commit, N compared, M changed) in Checks.
+- Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`.
+- Simple choice: `NativeSelect`; Base UI `Select` only for rich ones (ADR-0046).
+- Auth pages: `AuthLayout`. Invalid input: `Field` gets `data-invalid` and a `FieldError`; other failures: a form-level `role="alert"`; toasts: success only. `destructiveSolid`: only an `AlertDialog`'s final action confirming an irreversible action or ownership transfer. Lone and menu links ≥ 24 px (`min-h-6`).
+- A style the CSP refuses fails e2e and visual tests; allowing it changes the CSP (ADR-0045).
+- `pnpm test:visual --baseline` before, `--compare` after (summary in Checks); procedure: `ui-page` skill.
 
 ## Git workflow (ADR-0030)
 
@@ -107,7 +100,7 @@ kill -9 $(lsof -t -i:3000)
 
 - `packages/db/src/schema/auth.ts`: generated by the Better Auth CLI (`pnpm auth:generate`, the `auth` CLI pinned in `packages/auth`); regenerate instead
 - migrations that have already been applied
-- generated files: `routeTree.gen.ts` (regenerate with `pnpm build`), `csp-hashes.gen.ts` (`pnpm csp:hashes`; a CSP change), `worker-configuration.d.ts` (`pnpm --filter app cf-typegen`).
+- generated files: `routeTree.gen.ts` (regenerate with `pnpm build`), `csp-hashes.gen.ts` (`pnpm csp:hashes`; a CSP change).
 
 ## Working rules
 
@@ -144,14 +137,15 @@ Review for behaviour and security. Formatting, lint and types are CI's job. Flag
 - Webhook handlers that parse JSON before verifying the signature, or that aren't idempotent; a billing webhook that works without its secret configured, or that lets an older or duplicate event change state (ADR-0018).
 - A Polar subscription event applied from its payload alone (instead of the re-read subscription), or linked to an organization unless its `metadata.organization_id` equals the customer's `external_id`; Polar mode inferred from a token instead of `BILLING_PROVIDER=polar` (ADR-0022).
 - An owner change (role update, removal, leave, organization deletion) that bypasses Better Auth's organization hooks, or a failed Polar revoke or customer removal that doesn't refuse the change (revoke before, grant after; ADR-0022).
+- A step of `docs/architecture/recipes.md` skipped: a child of a tenant table without its own `organization_id` and a composite FK `(organization_id, <parent>_id)` to the parent's `unique(organization_id, id)` (cascade, index leading with both); a count-then-insert without the organization row lock and the plan read in that transaction (`entitlementsOfSubscription`, like `projects.createWithinLimit`); a check followed by a write (a status, an owner, a count) that doesn't hold in the write itself (a conditional `UPDATE … WHERE` in `packages/db` reporting 0 rows as not-found or conflict, or a row lock in the same transaction as the check and the write), or that write made through a library endpoint that skips the condition.
 - New tenant data without cross-tenant tests.
 - A Behaviour item in the PR description, failure cases included, that is neither verified (by a test, or a manual check recorded under Checks) nor listed as unverified; a test deleted, skipped, weakened or corrected without a reason in the PR description.
 - Email sent outside `server/email.ts`'s `Mailer`, a token placed in a URL path instead of the query string, or `EMAIL_DELIVERY=console` reachable outside localhost (ADR-0016).
-- Logging request bodies, headers, cookies, tokens, connection strings or user data (emails, names) anywhere; server-side logs go through `server/log.ts` with a stable `event` name (ADR-0015).
+- Logging request bodies, headers, cookies, tokens, connection strings or user data (emails, names) anywhere; server-side logs go through `server/log.ts` with a stable `event` name (ADR-0015). One exception, nothing wider: `apps/app/eval/polar-provider.test.ts` may print a Polar sandbox checkout or portal link, which carries a session credential and the owner's email, only when the owner sets `POLAR_EVAL_SHOW_LINKS=1` and runs it in their own local terminal. Never when an agent runs it, in CI, into captured or saved output, or with a production token or `POLAR_SERVER=production`.
 - A server function that changes tenant data without `authorize(ctx, …)`, role checks written inline instead of through the capability matrix, or a matrix change without per-role tests.
 - Sign-in/sign-up done through `auth.api.*` server calls instead of the `/api/auth/*` HTTP handler (bypasses login rate limiting, ADR-0005), or changes to `rateLimit` / `advanced.ipAddress` without updating ADR-0005.
 - A way to skip Turnstile (ADR-0025): an unauthenticated endpoint that signs in, creates an account or sends email missing from `BOT_PROTECTED_PATHS`, a test key accepted outside localhost/workers.dev, a missing key that skips the check instead of refusing, or a captcha token sent anywhere but the `x-captcha-response` header.
 - A renamed or removed section of this file still cited by a skill in `.agents/skills/` (ADR-0042), or a skill stating a rule of its own.
 - A PR that breaks ADR-0030's reviewed rules: non-trivial work without a spec (Goal, Behaviour, Out of scope, Checks) in its description, a branch not named `<type>/<scope>-<description>`, a stack deeper than 3, or tests named after the implementation instead of the behaviour.
 
-Safe to ignore: generated files (`schema/auth.ts`, `routeTree.gen.ts`, `worker-configuration.d.ts`).
+Safe to ignore: generated files (`schema/auth.ts`, `routeTree.gen.ts`).
