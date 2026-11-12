@@ -14,6 +14,7 @@ import {
 import {
   LeftoverCustomer,
   StoppedWithoutCleanup,
+  linkLine,
   linksRefusal,
   sandboxLink,
   lookupOrNull,
@@ -37,6 +38,9 @@ if (vars.POLAR_EVAL_GATE && vars.POLAR_EVAL_PAID)
 // Also checked by vitest.eval.config.ts before the run starts; here against the bindings too.
 const linksRefused = linksRefusal(vars)
 if (linksRefused) throw new Error(linksRefused)
+/** Every checkout or portal link in this file goes through this (AGENTS.md logging exception). */
+const showLink = (label: string, url: string) =>
+  console.log(linkLine(label, url, vars.POLAR_EVAL_SHOW_LINKS === '1'))
 const adapterRun = run !== '' && !vars.POLAR_EVAL_PAID && !vars.POLAR_EVAL_GATE
 
 // Failures go through `scrubbed` (./safe-report.ts): only validated identifiers and statuses.
@@ -247,7 +251,7 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
         successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
         cancelUrl: 'http://localhost:3000/t/eval/billing',
       })
-      console.log(`[eval] pay with the sandbox test card:\n${url}`)
+      showLink('[eval] pay with the sandbox test card', url)
       return
     }
 
@@ -287,7 +291,7 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
         customerEmail: required('POLAR_EVAL_OWNER_EMAIL'),
         returnUrl: 'http://localhost:3000/t/eval/billing',
       })
-      console.log(`[eval] portal:\n${url}`)
+      showLink('[eval] portal', url)
       return
     }
     if (!endpoint) throw new Error('run POLAR_EVAL_PAID=start first')
@@ -451,15 +455,6 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
         const freeId = `eval-${run}-free`
         const owner = { userId: `eval-${run}-owner`, email: required('POLAR_EVAL_OWNER_EMAIL') }
         const short = (id: string | null | undefined) => (id ? id.slice(0, 8) : null)
-        // AGENTS.md logging exception: the full link only on the owner's opt-in, only a sandbox one.
-        const showLink = (label: string, url: string) => {
-          if (!sandboxLink(url)) throw new Error('not a sandbox link; nothing printed')
-          console.log(
-            vars.POLAR_EVAL_SHOW_LINKS === '1'
-              ? `[gate] ${label}:\n${url}`
-              : `[gate] ${label}: ${new URL(url).origin}/… (hidden; POLAR_EVAL_SHOW_LINKS=1 shows it)`,
-          )
-        }
         /** The customer, null only on Polar's 404; any other failure propagates (outcome unknown). */
         const customerOrNull = (externalId: string) =>
           lookupOrNull(() => polar.customers.getExternal(externalId))
@@ -501,7 +496,7 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
             status: session!.status,
             expires: session!.expires_at,
           })
-          showLink('checkout page', url)
+          showLink('[gate] checkout page', url)
           return
         }
 
@@ -564,7 +559,7 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
             customerEmail: owner.email,
             returnUrl: 'http://localhost:3000/t/eval/billing',
           })
-          showLink('(d) portal for a customer with no subscription', url)
+          showLink('[gate] (d) portal for a customer with no subscription', url)
           return
         }
 
