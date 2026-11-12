@@ -34,12 +34,19 @@ const scrubbed = (body: () => Promise<void>) => async () => {
   try {
     await body()
   } catch (e) {
-    const err = e as { name?: string; statusCode?: number; status?: number; stack?: string }
-    const status = err.statusCode ?? err.status
-    const line = err.stack?.split('\n').find((l) => l.includes('polar-provider.test.ts'))
+    const err = e as { name?: unknown; statusCode?: unknown; status?: unknown; stack?: unknown }
+    // Only values that can't carry text: a plain identifier, a number, and numeric coordinates
+    // from a stack frame (a frame line can repeat the message, so it's never copied).
+    const name =
+      typeof err.name === 'string' && /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'Error'
+    const code = [err.statusCode, err.status].find((v) => Number.isInteger(v))
+    const at = String(err.stack ?? '')
+      .split('\n')
+      .map((l) => /^\s+at .*polar-provider\.test\.ts:(\d+):(\d+)\)?$/.exec(l))
+      .find((m) => m)
     // eslint-disable-next-line preserve-caught-error -- a cause would print the details hidden here
     throw new Error(
-      `${err.name ?? 'Error'}${status ? ` (HTTP ${status})` : ''} at ${line?.trim() ?? 'unknown line'}; details hidden`,
+      `${name}${code ? ` (HTTP ${code})` : ''} at line ${at ? `${at[1]}:${at[2]}` : 'unknown'}; details hidden`,
     )
   }
 }
