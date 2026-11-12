@@ -134,9 +134,12 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         await expect(members.revoke(orgId, next.userId, [])).rejects.toBeInstanceOf(NoSuccessor)
 
         // More members than one page (Polar lists 10 by default): revoke and grant still find them.
+        // Plus-addresses of the owner's own mailbox: Polar checks email domains by DNS, and a public
+        // inbox would let anyone read what Polar might send them.
+        const [local, domain] = owner.email.split('@') as [string, string]
         const extra = Array.from({ length: 12 }, (_, i) => ({
           userId: `eval-${run}-m${i}`,
-          email: `eval-${run}-m${i}@mailinator.com`,
+          email: `${local.split('+')[0]}+eval-${run}-m${i}@${domain}`,
         }))
         for (const m of extra) {
           await members.grant(orgId, m)
