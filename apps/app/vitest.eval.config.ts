@@ -22,6 +22,8 @@ export default defineConfig({
           POLAR_EVAL_PHASE: process.env.POLAR_EVAL_PHASE ?? 'offline',
           POLAR_EVAL_RUN: process.env.POLAR_EVAL_RUN ?? '',
           POLAR_EVAL_PAID: process.env.POLAR_EVAL_PAID ?? '',
+          POLAR_EVAL_GATE: process.env.POLAR_EVAL_GATE ?? '',
+          POLAR_EVAL_SHOW_LINKS: process.env.POLAR_EVAL_SHOW_LINKS ?? '',
           POLAR_EVAL_CUSTOMER_IP: process.env.POLAR_EVAL_CUSTOMER_IP ?? '',
         },
       },
