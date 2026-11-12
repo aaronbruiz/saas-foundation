@@ -7,9 +7,8 @@
     "build": "vite build",
     "preview": "pnpm build && vite preview",
     "deploy": "node ../../scripts/check-secrets.mjs --deployed && pnpm build && wrangler deploy",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm cf-typegen && tsc --noEmit",
     "cf-typegen": "wrangler types --env-file .dev.vars.example",
-    "types:check": "wrangler types --env-file .dev.vars.example --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:visual": "node ../../scripts/test-visual.mjs"
