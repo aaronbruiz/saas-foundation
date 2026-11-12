@@ -61,6 +61,22 @@ describe('error summary', () => {
     expect(SECRET.test(thrown.message)).toBe(false)
     expect((thrown as Error & { cause?: unknown }).cause).toBeUndefined()
   })
+
+  it('a link or response body inside a wrapped error never reaches the report', async () => {
+    const cause = Object.assign(new Error('https://sandbox.polar.sh/checkout/polar_c_FAKE'), {
+      name: 'SDKError',
+      statusCode: 422,
+      body: '{"email":"a@example.invalid","url":"https://sandbox.polar.sh/portal?customer_session_token=FAKE"}',
+    })
+    const thrown = await scrubbed(async () => {
+      throw new Error('checkout failed: https://sandbox.polar.sh/checkout/polar_c_FAKE', { cause })
+    })().then(
+      () => new Error('did not throw'),
+      (x: Error) => x,
+    )
+    expect(thrown.message).toMatch(/^Error ← SDKError \(HTTP 422\) at line /)
+    expect(SECRET.test(thrown.message)).toBe(false)
+  })
 })
 
 describe('both checkouts', () => {
