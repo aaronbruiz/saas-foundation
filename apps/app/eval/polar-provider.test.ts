@@ -19,7 +19,9 @@ const required = (key: string) => {
   return v
 }
 
-describe.runIf(run !== '' && !vars.POLAR_EVAL_PAID)('polar adapter against the sandbox', () => {
+// The gate's modes below run on their own.
+const adapterRun = run !== '' && !vars.POLAR_EVAL_PAID && !vars.POLAR_EVAL_GATE
+describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
   it('checkout, portal and member sync on one organization customer', async () => {
     if (!/^[a-z0-9-]{4,40}$/.test(run)) throw new Error('POLAR_EVAL_RUN must be a short slug')
     const config = {
@@ -357,3 +359,142 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
     await polarMembers(config).removeAccount(orgId)
   }, 300_000)
 })
+
+// ADR-0043 release gate, one scenario per mode, with only the app's own token scopes (no webhook
+// endpoint, no subscription writes). POLAR_EVAL_GATE=open opens one session through the adapter and
+// checks it's listed as soon as the create answers (a); run it once per scenario (paid, abandoned,
+// declined), noting the id it prints. =status prints every session and subscription (read-only),
+// for (b) and (c). =paid checks the paid session's subscription carries its `checkout_id` and is
+// listed by customer (b). =freeportal creates a customer with no subscription and prints its portal
+// link (d). =cleanup deletes both customers (Polar cancels their subscriptions) and reads each
+// subscription back to show it ended; sessions can't be deleted and stay as Polar holds them.
+const gate = vars.POLAR_EVAL_GATE ?? ''
+describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup'].includes(gate))(
+  'ADR-0043 gate',
+  () => {
+    it(`gate ${gate}`, async () => {
+      if (!/^[a-z0-9-]{4,40}$/.test(run)) throw new Error('POLAR_EVAL_RUN must be a short slug')
+      const config = {
+        accessToken: required('POLAR_SANDBOX_ACCESS_TOKEN'),
+        server: 'sandbox' as const,
+      }
+      const polar = polarClient(config)
+      const provider = polarProvider(config)
+      const orgId = `eval-${run}-gate`
+      const freeId = `eval-${run}-free`
+      const owner = { userId: `eval-${run}-owner`, email: required('POLAR_EVAL_OWNER_EMAIL') }
+      const short = (id: string | null | undefined) => (id ? id.slice(0, 8) : null)
+      const sessionsOf = async (customerId: string) =>
+        (await polar.checkouts.list({ customer_id: customerId, limit: 100 })).items
+      const subscriptionsOf = async (customerId: string) =>
+        (await polar.subscriptions.list({ customer_id: customerId, limit: 100 })).items
+
+      if (gate === 'open') {
+        const url = await provider.checkout({
+          organizationId: orgId,
+          organizationName: `Eval ${run} gate`,
+          customerId: null,
+          userId: owner.userId,
+          customerEmail: owner.email,
+          customerIp: null,
+          priceKey: 'pro_monthly',
+          trialDays: 14,
+          successUrl: 'http://localhost:3000/t/eval/billing?checkout=success',
+          cancelUrl: 'http://localhost:3000/t/eval/billing',
+        })
+        // (a) No wait between the create's answer and these reads.
+        const customer = await polar.customers.getExternal(orgId)
+        const session = (await sessionsOf(customer.id)).find((c) => c.url === url)
+        expect(session, 'session listed as soon as its create answered').toBeDefined()
+        await expect(provider.accountState(orgId)).resolves.toMatchObject({
+          hasPendingCheckout: true,
+        })
+        console.log('[gate] (a) listed at once', {
+          session: short(session!.id),
+          status: session!.status,
+          expires: session!.expires_at,
+        })
+        console.log(`[gate] checkout page:\n${url}`)
+        return
+      }
+
+      if (gate === 'status') {
+        const customer = await polar.customers.getExternal(orgId)
+        console.log('[gate] sessions', {
+          at: new Date().toISOString(),
+          sessions: (await sessionsOf(customer.id)).map((c) => ({
+            id: short(c.id),
+            status: c.status,
+            expires: c.expires_at,
+          })),
+          subscriptions: (await subscriptionsOf(customer.id)).map((s) => ({
+            id: short(s.id),
+            status: s.status,
+            checkout: short(s.checkout_id),
+          })),
+          accountState: await provider.accountState(orgId),
+        })
+        return
+      }
+
+      if (gate === 'paid') {
+        const customer = await polar.customers.getExternal(orgId)
+        const succeeded = (await sessionsOf(customer.id)).filter((c) => c.status === 'succeeded')
+        const subs = await subscriptionsOf(customer.id)
+        expect(succeeded).toHaveLength(1)
+        expect(subs).toHaveLength(1)
+        // (b) The subscription names its session, and the list by customer found it.
+        expect(subs[0]!.checkout_id).toBe(succeeded[0]!.id)
+        const state = await provider.accountState(orgId)
+        expect(state.subscriptions).toHaveLength(1)
+        console.log('[gate] (b) paid', {
+          session: short(succeeded[0]!.id),
+          subscription: short(subs[0]!.id),
+          status: subs[0]!.status,
+          checkout: short(subs[0]!.checkout_id),
+          hasPendingCheckout: state.hasPendingCheckout,
+        })
+        return
+      }
+
+      if (gate === 'freeportal') {
+        const customer = await polar.customers.create({
+          type: 'team',
+          external_id: freeId,
+          name: `Eval ${run} free`,
+          metadata: { organization_id: freeId },
+          owner: { email: owner.email, external_id: owner.userId },
+        })
+        expect(await subscriptionsOf(customer.id)).toEqual([])
+        const url = await provider.portal({
+          organizationId: freeId,
+          customerId: customer.id,
+          userId: owner.userId,
+          customerEmail: owner.email,
+          returnUrl: 'http://localhost:3000/t/eval/billing',
+        })
+        console.log(`[gate] (d) portal for a customer with no subscription:\n${url}`)
+        return
+      }
+
+      // cleanup
+      const ended = []
+      for (const id of [orgId, freeId]) {
+        const customer = await polar.customers.getExternal(id).catch(() => null)
+        if (!customer) {
+          console.log('[gate] cleanup: no customer', id)
+          continue
+        }
+        const subs = await subscriptionsOf(customer.id)
+        await polarMembers(config).removeAccount(id)
+        await expect(polar.customers.getExternal(id)).rejects.toThrow()
+        for (const s of subs) ended.push(await polar.subscriptions.get(s.id))
+        console.log('[gate] cleanup: customer deleted', id)
+      }
+      console.log(
+        '[gate] cleanup: subscriptions now',
+        ended.map((s) => ({ id: short(s.id), status: s.status, endedAt: s.ended_at })),
+      )
+    }, 120_000)
+  },
+)
