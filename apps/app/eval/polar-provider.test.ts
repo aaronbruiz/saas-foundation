@@ -66,6 +66,19 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
       const orgId = `eval-${run}-org`
       const owner = { userId: `eval-${run}-owner`, email: required('POLAR_EVAL_OWNER_EMAIL') }
       const next = { userId: `eval-${run}-next`, email: required('POLAR_EVAL_NEW_OWNER_EMAIL') }
+      // Page-filler members: plus-addresses of the owner's own mailbox (Polar checks email domains
+      // by DNS; a public inbox would let anyone read what it sends). Built before any provider
+      // call, and only from a plain unquoted address whose tagged local part stays within 64.
+      const plain =
+        /^([A-Za-z0-9._%-]+)(?:\+[A-Za-z0-9._%-]*)?@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)$/
+      const [, local, domain] = plain.exec(owner.email) ?? []
+      if (!local || !domain) throw new Error('POLAR_EVAL_OWNER_EMAIL must be a plain address')
+      const extra = Array.from({ length: 12 }, (_, i) => ({
+        userId: `eval-${run}-m${i}`,
+        email: `${local}+eval-${run}-m${i}@${domain}`,
+      }))
+      if (extra.some((m) => m.email.split('@')[0]!.length > 64))
+        throw new Error('POLAR_EVAL_OWNER_EMAIL: local part too long for the plus-tag')
       const checkoutReq = {
         organizationId: orgId,
         organizationName: `Eval ${run}`,
@@ -134,13 +147,6 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         await expect(members.revoke(orgId, next.userId, [])).rejects.toBeInstanceOf(NoSuccessor)
 
         // More members than one page (Polar lists 10 by default): revoke and grant still find them.
-        // Plus-addresses of the owner's own mailbox: Polar checks email domains by DNS, and a public
-        // inbox would let anyone read what Polar might send them.
-        const [local, domain] = owner.email.split('@') as [string, string]
-        const extra = Array.from({ length: 12 }, (_, i) => ({
-          userId: `eval-${run}-m${i}`,
-          email: `${local.split('+')[0]}+eval-${run}-m${i}@${domain}`,
-        }))
         for (const m of extra) {
           await members.grant(orgId, m)
           await new Promise((r) => setTimeout(r, 1500)) // sandbox rate limit
