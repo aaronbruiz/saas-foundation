@@ -120,8 +120,9 @@ jobs:
       - name: Create test database (mirrors docker/postgres-init)
         if: env.APP == 'true'
         run: docker exec ${{ job.services.postgres.id }} psql -U app -d app -c "CREATE DATABASE app_test OWNER app"
-      # Every PR: lint, formatting, typecheck (astro check for the static sites) and the plans/Worker
-      # types drift checks need no database, and nothing else runs them on a static-site PR.
+      # Every PR: lint, formatting, typecheck (astro check for the static sites; the app generates
+      # its Worker types first) and the plans drift check need no database, and nothing else runs
+      # them on a static-site PR.
       - run: pnpm check
       # Invariant 10: applied migrations stay untouched, the history has no collision, no schema
       # change lacks its migration, schema/auth.ts is current, and the migrations' SQL builds the

@@ -7,7 +7,8 @@ import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
 // indicator, the transfer picker answers arrow keys and Escape without losing focus, and the
 // rename toast doesn't take focus. Runs in every `pnpm test:visual` mode; it takes no screenshots.
-// No page uses a dialog or a menu yet: their Escape checks come with the first page that does.
+// The settings page's transfer dialog keeps Tab inside it, and Cancel and Escape close it, return
+// focus to the page's button and send nothing. No page uses a menu yet.
 
 const settingsControls = [
   'Organization name',
@@ -39,6 +40,39 @@ for (const theme of themes)
       // The page's own controls, in reading order (the nav and footer links around them vary by
       // browser: WebKit skips links on Tab by default).
       expect(names.filter((n) => settingsControls.includes(n))).toEqual(settingsControls)
+    })
+
+    test('settings: the transfer dialog keeps focus inside, and Cancel and Escape send nothing', async ({
+      page,
+      allowWebKitSelect,
+    }) => {
+      await openSettings(page)
+      await allowWebKitSelect(page)
+      const transfer = page.getByRole('button', { name: 'Transfer ownership' })
+      const dialog = page.getByRole('alertdialog')
+      for (const close of ['Escape', 'Cancel'] as const) {
+        await transfer.click()
+        await expect(dialog).toBeVisible()
+        // More presses than the dialog has buttons: Tab wraps around inside it. At the wrap, Base
+        // UI's focus guard takes focus for a moment and then moves it to the first button, so this
+        // waits for focus to settle inside the dialog; focus reaching the page behind still fails.
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press('Tab')
+          await expect
+            .poll(() => dialog.evaluate((d) => d.contains(document.activeElement)))
+            .toBe(true)
+        }
+        if (close === 'Escape') await page.keyboard.press('Escape')
+        else await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect(transfer).toBeFocused()
+      }
+      // Nothing was sent: the signed-in owner is still the only owner. Checked on the members page,
+      // not by reloading this one: WebKit's <select> refusals are allowed once per page URL.
+      await page.goto(`/t/${team().slug}/members`)
+      await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
+      await expect(page.getByText('member', { exact: true })).toHaveCount(2)
+      await expect(page.getByText('owner', { exact: true })).toHaveCount(1)
     })
 
     test('settings: the transfer picker answers arrow keys and Escape, and keeps focus', async ({

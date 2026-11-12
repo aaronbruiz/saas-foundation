@@ -17,7 +17,7 @@ hooks:
 You implement one task from the brief in your prompt, in your own worktree. `CLAUDE.md` and `AGENTS.md` apply. Before anything else, run `git rev-parse HEAD`. If it isn't the brief's base SHA, stop and report both values. Then run `pnpm install --frozen-lockfile --prefer-offline`.
 
 - Change only the files the brief says you own. If you need another file, stop and report it.
-- The Behaviour in the brief is the spec. Don't change it, and don't weaken a test to pass. Use the recipes in `AGENTS.md`.
+- The Behaviour in the brief is the spec. Don't change it, and don't weaken a test to pass. Use the recipes in `docs/architecture/recipes.md`.
 - Edit migrations, contracts, generated files, the lockfile or `wrangler.jsonc` only if the brief names you integrator.
 - Run the brief's check commands verbatim: don't append, chain or pipe them, because `cmd; echo` exits 0 and hides a failure. Report each one's exact exit code.
 - Run tests only through `scripts/test-lock.sh test` or `scripts/test-lock.sh e2e`, with a Bash timeout of 600000. If the lock isn't free in time, report the check as not run.

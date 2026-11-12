@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Shared helpers for the static sites' deploys (ADR-0028, ADR-0033 decision 9; ADR-0029 decisions
-# 5–6). SITE names the site's app directory (`docs` or `site`); its Worker config is
-# apps/$SITE/wrangler.jsonc,
-# kept assets-only by check-bindings.mjs. Sourced by the scripts next to it; the static-site
-# workflows run them from `main`'s checkout with one per-Worker token as CLOUDFLARE_API_TOKEN. A
-# static site has no bindings, secrets or data: the build output (`dist`) is the whole deploy, and
-# it's always treated as data.
+# Shared helpers for the static sites' deploys (ADR-0028, ADR-0033 decision 9; ADR-0029
+# decisions 5–6). SITE names the site's app directory (`docs` or `site`); its Worker config is
+# apps/$SITE/wrangler.jsonc, kept assets-only by check-bindings.mjs. Sourced by the scripts next
+# to it; the static-site workflows run them from `main`'s checkout with one per-Worker token as
+# CLOUDFLARE_API_TOKEN. A static site has no bindings, secrets or data: the build output (`dist`)
+# is the whole deploy, and it's always treated as data.
 # Requires: curl, jq, pnpm (wrangler from the site's workspace package).
 set -euo pipefail
 # A failure inside `$(…)` stops the script too (bash turns errexit off there by default).

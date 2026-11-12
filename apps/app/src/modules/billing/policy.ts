@@ -54,9 +54,9 @@ export const CHECKOUT = {
 
 /**
  * Statuses that keep a paid plan's entitlements. `past_due` is included: the provider is still
- * retrying the payment, and cutting access on the first failed charge
- * punishes expired cards. `unpaid` (retries exhausted), `paused`, `incomplete` and `canceled` fall
- * back to the default plan.
+ * retrying the payment, and cutting access on the first failed charge punishes expired cards.
+ * `unpaid` (retries exhausted), `paused`, `incomplete` and `canceled` fall back to the default
+ * plan.
  */
 const ENTITLED: ReadonlySet<SubscriptionStatus> = new Set(['active', 'trialing', 'past_due'])
 
