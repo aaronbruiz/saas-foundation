@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "pnpm build && vite preview",
     "deploy": "node ../../scripts/check-secrets.mjs --deployed && pnpm build && wrangler deploy",
+    "postinstall": "pnpm cf-typegen",
     "typecheck": "pnpm cf-typegen && tsc --noEmit",
     "cf-typegen": "wrangler types --env-file .dev.vars.example",
     "test": "vitest run",
