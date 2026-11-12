@@ -136,3 +136,15 @@ export const sandboxLink = (url: string) => {
     return false
   }
 }
+
+/**
+ * The line that shows a checkout or portal link: the whole link only when the owner opted in
+ * (`POLAR_EVAL_SHOW_LINKS=1`, AGENTS.md logging exception), otherwise only its origin. A link
+ * that isn't on the sandbox's origin is refused and nothing is shown.
+ */
+export function linkLine(label: string, url: string, show: boolean): string {
+  if (!sandboxLink(url)) throw new Error('not a sandbox link; nothing printed')
+  return show
+    ? `${label}:\n${url}`
+    : `${label}: ${new URL(url).origin}/… (hidden; POLAR_EVAL_SHOW_LINKS=1 shows it)`
+}

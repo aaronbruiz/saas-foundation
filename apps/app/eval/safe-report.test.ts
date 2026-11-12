@@ -5,6 +5,7 @@ import {
   errorSummary,
   lookupOrNull,
   removeVerified,
+  linkLine,
   linksRefusal,
   sandboxLink,
   scrubbed,
@@ -59,6 +60,22 @@ describe('error summary', () => {
     )
     expect(SECRET.test(thrown.message)).toBe(false)
     expect((thrown as Error & { cause?: unknown }).cause).toBeUndefined()
+  })
+
+  it('a link or response body inside a wrapped error never reaches the report', async () => {
+    const cause = Object.assign(new Error('https://sandbox.polar.sh/checkout/polar_c_FAKE'), {
+      name: 'SDKError',
+      statusCode: 422,
+      body: '{"email":"a@example.invalid","url":"https://sandbox.polar.sh/portal?customer_session_token=FAKE"}',
+    })
+    const thrown = await scrubbed(async () => {
+      throw new Error('checkout failed: https://sandbox.polar.sh/checkout/polar_c_FAKE', { cause })
+    })().then(
+      () => new Error('did not throw'),
+      (x: Error) => x,
+    )
+    expect(thrown.message).toMatch(/^Error ← SDKError \(HTTP 422\) at line /)
+    expect(SECRET.test(thrown.message)).toBe(false)
   })
 })
 
@@ -167,5 +184,30 @@ describe('link output (AGENTS.md logging exception)', () => {
     expect(sandboxLink('https://polar.sh/checkout/x')).toBe(false)
     expect(sandboxLink('https://sandbox.polar.sh.example.invalid/x')).toBe(false)
     expect(sandboxLink('not a url')).toBe(false)
+  })
+})
+
+describe('link lines', () => {
+  const link = 'https://sandbox.polar.sh/checkout/polar_c_FAKE'
+
+  it('shows only the origin unless the owner opted in', () => {
+    const hidden = linkLine('[eval] portal', link, false)
+    expect(hidden).toBe(
+      '[eval] portal: https://sandbox.polar.sh/… (hidden; POLAR_EVAL_SHOW_LINKS=1 shows it)',
+    )
+    expect(SECRET.test(hidden.replace('https://sandbox.polar.sh', ''))).toBe(false)
+    expect(linkLine('[eval] portal', link, true)).toBe(`[eval] portal:\n${link}`)
+  })
+
+  it('refuses a link off the sandbox origin, with nothing of it in the error', () => {
+    for (const bad of ['https://polar.sh/checkout/polar_c_FAKE', 'not a url FAKE']) {
+      let message = ''
+      try {
+        linkLine('[gate] x', bad, true)
+      } catch (e) {
+        message = (e as Error).message
+      }
+      expect(message).toBe('not a sandbox link; nothing printed')
+    }
   })
 })
