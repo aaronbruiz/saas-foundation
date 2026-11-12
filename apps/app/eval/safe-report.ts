@@ -31,7 +31,8 @@ export function errorSummary(e: unknown): string {
     parts.push(status ? `${name} (HTTP ${status})` : name)
     current = typeof current === 'object' ? err.cause : undefined
   }
-  return parts.join(' ← ')
+  // A rejection with nothing in it (null, undefined) still gets an identifier.
+  return parts.length ? parts.join(' ← ') : 'Error'
 }
 
 /** The numeric line:column of the first frame in the eval test file (a frame can repeat text). */

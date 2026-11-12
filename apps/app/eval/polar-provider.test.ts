@@ -86,6 +86,7 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
       if ((await lookupOrNull(() => polar.customers.getExternal(orgId))) !== null)
         throw new LeftoverCustomer('customer exists')
 
+      let cleanupStarted = false
       try {
         // Checkout creates the team customer once (named after the organization), owner = caller.
         // Both calls are waited for and reported; if either fails, nothing more is written.
@@ -166,6 +167,7 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         console.log('[eval] portal ok (missing member repaired)')
 
         // Organization deletion: the customer goes (proven by a 404); a second call is a no-op.
+        cleanupStarted = true
         const removed = await removeVerified(
           () => polar.customers.getExternal(orgId),
           () => members.removeAccount(orgId),
@@ -176,8 +178,13 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         expect((await lookupOrNull(() => polar.customers.getExternal(orgId))) === null).toBe(true)
         console.log('[eval] removeAccount ok')
       } catch (e) {
-        // No cleanup on a failure: what's in the sandbox stays as it is, for the owner to decide.
-        console.log('[eval] stopped; no cleanup ran; customer', orgId, 'left as it is')
+        // No cleanup after a failure: the sandbox stays as it is, for the owner to decide. A failure
+        // during the cleanup itself leaves its outcome unknown.
+        console.log(
+          cleanupStarted
+            ? `[eval] stopped during cleanup; outcome UNKNOWN for customer ${orgId}`
+            : `[eval] stopped; no cleanup ran; customer ${orgId} left as it is`,
+        )
         throw e
       }
     }),
@@ -533,6 +540,8 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
         }
 
         if (gate === 'freeportal') {
+          // Read-only, before the write: never reuse a customer an earlier attempt left.
+          if ((await customerOrNull(freeId)) !== null) throw new LeftoverCustomer('customer exists')
           const customer = await polar.customers.create({
             type: 'team',
             external_id: freeId,

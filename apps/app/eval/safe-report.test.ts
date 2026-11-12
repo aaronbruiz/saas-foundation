@@ -36,7 +36,8 @@ describe('error summary', () => {
     for (const n of ['L3', 'L2', 'L1', 'L0']) e = wrapped(n, e)
     expect(errorSummary(e)).toBe('L0 ← L1 ← L2 ← L3')
     expect(errorSummary('FAKE string')).toBe('Error')
-    expect(errorSummary(null)).toBe('')
+    expect(errorSummary(null)).toBe('Error')
+    expect(errorSummary(undefined)).toBe('Error')
     const loop = wrapped('Loop', undefined) as Error & { cause?: unknown }
     loop.cause = loop
     expect(errorSummary(loop)).toBe('Loop ← Loop ← Loop ← Loop')
@@ -80,6 +81,12 @@ describe('both checkouts', () => {
   it('reports an unknown outcome (no status) the same way', async () => {
     const result = await settleAll([Promise.resolve('a'), Promise.reject(new TypeError('FAKE'))])
     expect(result).toMatchObject({ failed: true, outcomes: ['created', 'TypeError'] })
+  })
+
+  it('a rejection with no error in it still reports an identifier', async () => {
+    const result = await settleAll([Promise.reject(null), Promise.resolve('a')])
+    expect(result.outcomes).toEqual(['Error', 'created'])
+    expect(result.failed).toBe(true)
   })
 
   it('passes both values through when both are created', async () => {
@@ -128,5 +135,14 @@ describe('lookups and cleanup', () => {
       (x: unknown) => x,
     )
     expect(errorSummary(e)).toBe('CleanupUnknown ← SDKError (HTTP 500)')
+  })
+
+  it('a removal that ran but whose check then fails is CleanupUnknown, not deleted', async () => {
+    let calls = 0
+    const lookup = () => (calls++ === 0 ? Promise.resolve('c') : down())
+    let removed = 0
+    const e = await removeVerified(lookup, async () => void removed++).catch((x: unknown) => x)
+    expect(removed).toBe(1)
+    expect(errorSummary(e)).toBe('CleanupUnknown ← SDKError (HTTP 503)')
   })
 })
