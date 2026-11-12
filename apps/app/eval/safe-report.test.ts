@@ -5,6 +5,8 @@ import {
   errorSummary,
   lookupOrNull,
   removeVerified,
+  linksRefusal,
+  sandboxLink,
   scrubbed,
   settleAll,
 } from './safe-report'
@@ -144,5 +146,26 @@ describe('lookups and cleanup', () => {
     const e = await removeVerified(lookup, async () => void removed++).catch((x: unknown) => x)
     expect(removed).toBe(1)
     expect(errorSummary(e)).toBe('CleanupUnknown ← SDKError (HTTP 503)')
+  })
+})
+
+describe('link output (AGENTS.md logging exception)', () => {
+  it('is allowed only on the opt-in, outside CI and production mode', () => {
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: '1' })).toBeNull()
+    expect(linksRefusal({ CI: 'true' }, { POLAR_SERVER: 'production' })).toBeNull()
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: '1', CI: 'false' }, {})).toBeNull()
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: '1', CI: 'true' })).toMatch(/refused in CI/)
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: '1', CI: '1' })).toMatch(/refused in CI/)
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: 'yes' }, { CI: 'true' })).toMatch(/refused in CI/)
+    expect(linksRefusal({ POLAR_EVAL_SHOW_LINKS: '1' }, { POLAR_SERVER: 'production' })).toMatch(
+      /POLAR_SERVER=production/,
+    )
+  })
+
+  it('prints only links on the sandbox origin', () => {
+    expect(sandboxLink('https://sandbox.polar.sh/checkout/x')).toBe(true)
+    expect(sandboxLink('https://polar.sh/checkout/x')).toBe(false)
+    expect(sandboxLink('https://sandbox.polar.sh.example.invalid/x')).toBe(false)
+    expect(sandboxLink('not a url')).toBe(false)
   })
 })

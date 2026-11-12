@@ -3,6 +3,7 @@
 import { cloudflareTest } from '@cloudflare/vitest-plugin'
 import { existsSync, readFileSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
+import { linksRefusal } from './eval/safe-report'
 
 const file = new URL('./.dev.vars', import.meta.url)
 const polarVars: Record<string, string> = {}
@@ -11,6 +12,10 @@ if (existsSync(file))
     const m = line.match(/^\s*(POLAR_[A-Z_]+)\s*=\s*(.*?)\s*$/)
     if (m) polarVars[m[1]!] = m[2]!.replace(/^(['"])(.*)\1$/, '$2')
   }
+
+// Before any test, so before any network call or link output (AGENTS.md logging exception).
+const refusal = linksRefusal(process.env, polarVars)
+if (refusal) throw new Error(refusal)
 
 export default defineConfig({
   plugins: [
@@ -24,6 +29,7 @@ export default defineConfig({
           POLAR_EVAL_PAID: process.env.POLAR_EVAL_PAID ?? '',
           POLAR_EVAL_GATE: process.env.POLAR_EVAL_GATE ?? '',
           POLAR_EVAL_SHOW_LINKS: process.env.POLAR_EVAL_SHOW_LINKS ?? '',
+          CI: process.env.CI ?? '',
           POLAR_EVAL_CUSTOMER_IP: process.env.POLAR_EVAL_CUSTOMER_IP ?? '',
         },
       },

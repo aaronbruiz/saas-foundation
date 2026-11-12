@@ -14,6 +14,8 @@ import {
 import {
   LeftoverCustomer,
   StoppedWithoutCleanup,
+  linksRefusal,
+  sandboxLink,
   lookupOrNull,
   removeVerified,
   scrubbed,
@@ -32,10 +34,12 @@ const required = (key: string) => {
 // before any provider call (the paid modes need webhook and subscription-write scopes).
 if (vars.POLAR_EVAL_GATE && vars.POLAR_EVAL_PAID)
   throw new Error('set POLAR_EVAL_GATE or POLAR_EVAL_PAID, not both')
+// Also checked by vitest.eval.config.ts before the run starts; here against the bindings too.
+const linksRefused = linksRefusal(vars)
+if (linksRefused) throw new Error(linksRefused)
 const adapterRun = run !== '' && !vars.POLAR_EVAL_PAID && !vars.POLAR_EVAL_GATE
 
 // Failures go through `scrubbed` (./safe-report.ts): only validated identifiers and statuses.
-const sandboxOrigin = (url: string) => new URL(url).origin === 'https://sandbox.polar.sh'
 describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
   it(
     'checkout, portal and member sync on one organization customer',
@@ -97,8 +101,8 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         console.log('[eval] checkout pair:', pair.outcomes.join(' | '))
         if (pair.failed) throw new StoppedWithoutCleanup('a checkout failed')
         const [url1, url2] = pair.values as [string, string]
-        expect(sandboxOrigin(url1) && new URL(url1).pathname.startsWith('/checkout/')).toBe(true)
-        expect(sandboxOrigin(url2) && new URL(url2).pathname.startsWith('/checkout/')).toBe(true)
+        expect(sandboxLink(url1) && new URL(url1).pathname.startsWith('/checkout/')).toBe(true)
+        expect(sandboxLink(url2) && new URL(url2).pathname.startsWith('/checkout/')).toBe(true)
 
         // ADR-0043: both open sessions are visible at once, before anyone has paid.
         const pending = await provider.accountState(orgId)
@@ -160,7 +164,7 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
           customerEmail: owner.email,
           returnUrl: 'http://localhost:3000/t/eval/billing',
         })
-        expect(sandboxOrigin(portalUrl)).toBe(true)
+        expect(sandboxLink(portalUrl)).toBe(true)
         expect(await memberList(customer.id)).toEqual(
           expect.arrayContaining([{ ext: owner.userId, role: 'billing_manager' }]),
         )
@@ -447,12 +451,15 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
         const freeId = `eval-${run}-free`
         const owner = { userId: `eval-${run}-owner`, email: required('POLAR_EVAL_OWNER_EMAIL') }
         const short = (id: string | null | undefined) => (id ? id.slice(0, 8) : null)
-        const showLink = (label: string, url: string) =>
+        // AGENTS.md logging exception: the full link only on the owner's opt-in, only a sandbox one.
+        const showLink = (label: string, url: string) => {
+          if (!sandboxLink(url)) throw new Error('not a sandbox link; nothing printed')
           console.log(
             vars.POLAR_EVAL_SHOW_LINKS === '1'
               ? `[gate] ${label}:\n${url}`
               : `[gate] ${label}: ${new URL(url).origin}/… (hidden; POLAR_EVAL_SHOW_LINKS=1 shows it)`,
           )
+        }
         /** The customer, null only on Polar's 404; any other failure propagates (outcome unknown). */
         const customerOrNull = (externalId: string) =>
           lookupOrNull(() => polar.customers.getExternal(externalId))

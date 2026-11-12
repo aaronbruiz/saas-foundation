@@ -112,3 +112,27 @@ export async function removeVerified(
     throw new CleanupUnknown('still present after the removal')
   return 'deleted'
 }
+
+/**
+ * AGENTS.md (Code Review Rules, logging): a sandbox checkout or portal link may be printed only on
+ * the owner's own opt-in in their local terminal. Refused whenever the opt-in is set together with
+ * CI, or with production mode in any of the given sources. Returns the reason, or null.
+ */
+export function linksRefusal(...sources: Record<string, string | undefined>[]): string | null {
+  const optIn = sources.some((env) => (env.POLAR_EVAL_SHOW_LINKS ?? '') !== '')
+  if (!optIn) return null
+  const ci = sources.some((env) => !['', '0', 'false'].includes(env.CI ?? ''))
+  if (ci) return 'POLAR_EVAL_SHOW_LINKS is refused in CI'
+  if (sources.some((env) => env.POLAR_SERVER === 'production'))
+    return 'POLAR_EVAL_SHOW_LINKS is refused with POLAR_SERVER=production'
+  return null
+}
+
+/** True only for a link on the Polar sandbox's own origin. */
+export const sandboxLink = (url: string) => {
+  try {
+    return new URL(url).origin === 'https://sandbox.polar.sh'
+  } catch {
+    return false
+  }
+}
