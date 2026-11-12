@@ -1,6 +1,6 @@
 # Testing
 
-How the foundation is tested, what each layer proves and how to test a product feature. Setup (Node, pnpm, Docker, `.dev.vars`) is in [`README.md`](../README.md); the rules every change keeps are in [`AGENTS.md`](../AGENTS.md) ("Done means", recipes). Terms: [glossary](glossary.md). A product's own fixtures or integration fakes, if any, are documented in its `docs/product/` ([ADR-0041](adr/0041-product-owned-documentation-and-agent-instructions.md)).
+How the foundation is tested, what each layer proves and how to test a product feature. Setup (Node, pnpm, Docker, `.dev.vars`) is in [`README.md`](../README.md); the rules every change keeps are in [`AGENTS.md`](../AGENTS.md) ("Done means") and [`architecture/recipes.md`](architecture/recipes.md). Terms: [glossary](glossary.md). A product's own fixtures or integration fakes, if any, are documented in its `docs/product/` ([ADR-0041](adr/0041-product-owned-documentation-and-agent-instructions.md)).
 
 ## Layers
 
