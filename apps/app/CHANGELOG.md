@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.6.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.5.0...app-v0.6.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **account:** self-service account deactivation, eligible for purge after 90 days ([#237](https://github.com/aaronbruiz/saas-foundation/issues/237))
+
+### Features
+
+* **account:** organization menu and account page ([#231](https://github.com/aaronbruiz/saas-foundation/issues/231)) ([55fd9cf](https://github.com/aaronbruiz/saas-foundation/commit/55fd9cfe328d4ef412ab604826ffcdfcaab23233))
+* **account:** self-service account deactivation, eligible for purge after 90 days ([#237](https://github.com/aaronbruiz/saas-foundation/issues/237)) ([ad32b8c](https://github.com/aaronbruiz/saas-foundation/commit/ad32b8c75fd3740d7c8cb133e2a859e3fbb606aa))
+* **agents:** coordinated workflow with parallel workers, trial skills and permission rules ([#226](https://github.com/aaronbruiz/saas-foundation/issues/226)) ([4fdb2d3](https://github.com/aaronbruiz/saas-foundation/commit/4fdb2d3523a60448e2fd340a485921ec00ef2d4c))
+* **app:** account and legal pages on the UI foundation ([#259](https://github.com/aaronbruiz/saas-foundation/issues/259)) ([6080b3c](https://github.com/aaronbruiz/saas-foundation/commit/6080b3c6c1465fa44f59d587f54f9874e9a0375b))
+* **app:** auth and onboarding pages on the UI foundation ([#258](https://github.com/aaronbruiz/saas-foundation/issues/258)) ([52d128d](https://github.com/aaronbruiz/saas-foundation/commit/52d128d2cdacad537c284a1c15d2d8cad18069c1))
+* **app:** confirm ownership transfers and tidy the settings page ([#275](https://github.com/aaronbruiz/saas-foundation/issues/275)) ([345fb0e](https://github.com/aaronbruiz/saas-foundation/commit/345fb0e57e2a8379d5b8426e4b247d9afb3bf862))
+* **app:** follow the system theme and drop the legacy UI helpers ([#261](https://github.com/aaronbruiz/saas-foundation/issues/261)) ([94537e1](https://github.com/aaronbruiz/saas-foundation/commit/94537e114d63f50625b1d9b4c7f397b949a85475))
+* **app:** group the tenant nav, mark the organization switcher and align the footer ([#274](https://github.com/aaronbruiz/saas-foundation/issues/274)) ([4074176](https://github.com/aaronbruiz/saas-foundation/commit/4074176d5cc6a9b6d709f4ddca8fbc555a97d5fe))
+* **app:** tenant pages on the UI foundation ([#257](https://github.com/aaronbruiz/saas-foundation/issues/257)) ([874ea78](https://github.com/aaronbruiz/saas-foundation/commit/874ea787f32f8b4075a9766dfd1852235976d0f4))
+* **app:** UI foundation on shadcn and Base UI ([#253](https://github.com/aaronbruiz/saas-foundation/issues/253)) ([db32773](https://github.com/aaronbruiz/saas-foundation/commit/db327736be0f0ad7e3d36696996f3653ce39c46c))
+* **organizations:** members page with pending invitations and revoke ([#220](https://github.com/aaronbruiz/saas-foundation/issues/220)) ([2a3167a](https://github.com/aaronbruiz/saas-foundation/commit/2a3167a54b53ac54cb6d56ebf1e1a6be27ad7f9d))
+* **organizations:** remove members and change their role ([#225](https://github.com/aaronbruiz/saas-foundation/issues/225)) ([dac507d](https://github.com/aaronbruiz/saas-foundation/commit/dac507d67994fab501b4923f8da3b0d83ddd0c4c))
+* **organizations:** settings, leave, ownership transfer and delete ([#232](https://github.com/aaronbruiz/saas-foundation/issues/232)) ([3b90eb3](https://github.com/aaronbruiz/saas-foundation/commit/3b90eb37db36d6e42eaa00e4f47b4d2d8602d195))
+
+
+### Bug Fixes
+
+* **app:** form-level alerts for failures that are not about the typed value ([#278](https://github.com/aaronbruiz/saas-foundation/issues/278)) ([2329cd4](https://github.com/aaronbruiz/saas-foundation/commit/2329cd4a6fa07544c0ab0376e4491d1cb687d062))
+* **app:** form-level invite errors and a stacked subprocessors list on phones ([#270](https://github.com/aaronbruiz/saas-foundation/issues/270)) ([5deb068](https://github.com/aaronbruiz/saas-foundation/commit/5deb068ccead6097a722410cb2525dd110a80a4c))
+* **app:** security headers and a nonce-based CSP on every app response ([#243](https://github.com/aaronbruiz/saas-foundation/issues/243)) ([007c4ed](https://github.com/aaronbruiz/saas-foundation/commit/007c4edb8ef5236e715fb8c101f4ac2eeea4236d))
+* **ci:** install Playwright's Chromium without apt ([#266](https://github.com/aaronbruiz/saas-foundation/issues/266)) ([34450e8](https://github.com/aaronbruiz/saas-foundation/commit/34450e8c716a5dd9acfdb73b602a345b8aa4858b))
+* **db:** answer every request when its database backend is lost ([#210](https://github.com/aaronbruiz/saas-foundation/issues/210)) ([354525e](https://github.com/aaronbruiz/saas-foundation/commit/354525e5f8c7693da98bd9447c983f66d6d31468))
+* **db:** stop waiting to close a connection whose socket has failed ([#223](https://github.com/aaronbruiz/saas-foundation/issues/223)) ([17c5509](https://github.com/aaronbruiz/saas-foundation/commit/17c5509e06a94d786584aad3b4495a7cb4cddf76))
+* **deps:** bump the production-minor-and-patch group across 1 directory with 2 updates ([#256](https://github.com/aaronbruiz/saas-foundation/issues/256)) ([06d6a33](https://github.com/aaronbruiz/saas-foundation/commit/06d6a337b488ffe06d3f44c1c4e08678a8505591))
+* **deps:** patch transitive seroval, zod, undici and tooling advisories ([#244](https://github.com/aaronbruiz/saas-foundation/issues/244)) ([a3517e1](https://github.com/aaronbruiz/saas-foundation/commit/a3517e1a717e85205845020eadbd42f962afdfbb))
+* **deps:** update better-auth and its CLI to 1.7.17 ([#242](https://github.com/aaronbruiz/saas-foundation/issues/242)) ([11a488a](https://github.com/aaronbruiz/saas-foundation/commit/11a488a783745abd8332f631b4cada47cfe35cc7))
+
+
+### Refactoring
+
+* **app:** one shared layout for the auth pages ([#265](https://github.com/aaronbruiz/saas-foundation/issues/265)) ([67304a6](https://github.com/aaronbruiz/saas-foundation/commit/67304a6dd39aac16b808c193b9aec65e57d47902))
+
 ## [0.5.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.4.1...app-v0.5.0) (2026-10-29)
 
 
