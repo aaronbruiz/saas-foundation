@@ -1,6 +1,7 @@
 // ADR-0022 POC: the real Polar adapter (providers/polar.ts) against the Polar sandbox. Not part of
 // `pnpm test`; run with `vitest run --config vitest.eval.config.ts` and POLAR_EVAL_RUN=<slug>.
-// Uses the sandbox token and eval emails from apps/app/.dev.vars; cleans up its customer.
+// Uses the sandbox token and eval emails from apps/app/.dev.vars; removes its customer only on success
+// (a failure stops with the sandbox left as it is, for the owner to decide).
 import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,6 +11,14 @@ import {
   polarProvider,
   polarWebhookParser,
 } from '../src/modules/billing/providers/polar'
+import {
+  LeftoverCustomer,
+  StoppedWithoutCleanup,
+  lookupOrNull,
+  removeVerified,
+  scrubbed,
+  settleAll,
+} from './safe-report'
 
 const vars = env as unknown as Record<string, string | undefined>
 const run = vars.POLAR_EVAL_RUN ?? ''
@@ -25,31 +34,7 @@ if (vars.POLAR_EVAL_GATE && vars.POLAR_EVAL_PAID)
   throw new Error('set POLAR_EVAL_GATE or POLAR_EVAL_PAID, not both')
 const adapterRun = run !== '' && !vars.POLAR_EVAL_PAID && !vars.POLAR_EVAL_GATE
 
-/**
- * Runs a sandbox test body so a failure reports only its kind, HTTP status and line: an assertion's
- * or provider error's message can carry checkout and portal links (session credentials), emails or
- * response bodies. Assertions inside compare scalars for the same reason.
- */
-const scrubbed = (body: () => Promise<void>) => async () => {
-  try {
-    await body()
-  } catch (e) {
-    const err = e as { name?: unknown; statusCode?: unknown; status?: unknown; stack?: unknown }
-    // Only values that can't carry text: a plain identifier, a number, and numeric coordinates
-    // from a stack frame (a frame line can repeat the message, so it's never copied).
-    const name =
-      typeof err.name === 'string' && /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : 'Error'
-    const code = [err.statusCode, err.status].find((v) => Number.isInteger(v))
-    const at = String(err.stack ?? '')
-      .split('\n')
-      .map((l) => /^\s+at .*polar-provider\.test\.ts:(\d+):(\d+)\)?$/.exec(l))
-      .find((m) => m)
-    // eslint-disable-next-line preserve-caught-error -- a cause would print the details hidden here
-    throw new Error(
-      `${name}${code ? ` (HTTP ${code})` : ''} at line ${at ? `${at[1]}:${at[2]}` : 'unknown'}; details hidden`,
-    )
-  }
-}
+// Failures go through `scrubbed` (./safe-report.ts): only validated identifiers and statuses.
 const sandboxOrigin = (url: string) => new URL(url).origin === 'https://sandbox.polar.sh'
 describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
   it(
@@ -97,12 +82,20 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
           role: m.role,
         }))
 
+      // Read-only, before any write: a run never builds on what an earlier attempt left.
+      if ((await lookupOrNull(() => polar.customers.getExternal(orgId))) !== null)
+        throw new LeftoverCustomer('customer exists')
+
       try {
         // Checkout creates the team customer once (named after the organization), owner = caller.
-        const [url1, url2] = await Promise.all([
+        // Both calls are waited for and reported; if either fails, nothing more is written.
+        const pair = await settleAll([
           provider.checkout(checkoutReq),
           provider.checkout(checkoutReq),
         ])
+        console.log('[eval] checkout pair:', pair.outcomes.join(' | '))
+        if (pair.failed) throw new StoppedWithoutCleanup('a checkout failed')
+        const [url1, url2] = pair.values as [string, string]
         expect(sandboxOrigin(url1) && new URL(url1).pathname.startsWith('/checkout/')).toBe(true)
         expect(sandboxOrigin(url2) && new URL(url2).pathname.startsWith('/checkout/')).toBe(true)
 
@@ -172,18 +165,20 @@ describe.runIf(adapterRun)('polar adapter against the sandbox', () => {
         )
         console.log('[eval] portal ok (missing member repaired)')
 
-        // Organization deletion: the customer goes; a second call is a no-op.
+        // Organization deletion: the customer goes (proven by a 404); a second call is a no-op.
+        const removed = await removeVerified(
+          () => polar.customers.getExternal(orgId),
+          () => members.removeAccount(orgId),
+        )
+        console.log('[eval] cleanup:', orgId, removed)
+        expect(removed).toBe('deleted')
         await members.removeAccount(orgId)
-        await members.removeAccount(orgId)
-        expect(
-          await polar.customers.getExternal(orgId).then(
-            () => 'found',
-            () => 'gone',
-          ),
-        ).toBe('gone')
+        expect((await lookupOrNull(() => polar.customers.getExternal(orgId))) === null).toBe(true)
         console.log('[eval] removeAccount ok')
-      } finally {
-        await members.removeAccount(orgId).catch(() => {})
+      } catch (e) {
+        // No cleanup on a failure: what's in the sandbox stays as it is, for the owner to decide.
+        console.log('[eval] stopped; no cleanup ran; customer', orgId, 'left as it is')
+        throw e
       }
     }),
     300_000,
@@ -451,15 +446,9 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
               ? `[gate] ${label}:\n${url}`
               : `[gate] ${label}: ${new URL(url).origin}/… (hidden; POLAR_EVAL_SHOW_LINKS=1 shows it)`,
           )
-        // As the adapter reads it (providers/polar.ts statusOf).
-        const status = (e: unknown) =>
-          (e as { statusCode?: number })?.statusCode ?? (e as { status?: number })?.status
         /** The customer, null only on Polar's 404; any other failure propagates (outcome unknown). */
         const customerOrNull = (externalId: string) =>
-          polar.customers.getExternal(externalId).catch((e: unknown) => {
-            if (status(e) === 404) return null
-            throw e
-          })
+          lookupOrNull(() => polar.customers.getExternal(externalId))
         const sessionsOf = async (customerId: string) =>
           (await polar.checkouts.list({ customer_id: customerId, limit: 100 })).items
         const subscriptionsOf = async (customerId: string) =>
@@ -572,12 +561,13 @@ describe.runIf(run !== '' && ['open', 'status', 'paid', 'freeportal', 'cleanup']
             continue
           }
           const subs = await subscriptionsOf(customer.id)
-          await polarMembers(config).removeAccount(id)
-          expect((await customerOrNull(id)) === null, `${id} gone (404) after the delete`).toBe(
-            true,
+          // `deleted` only when the lookup then answers 404; anything else is CleanupUnknown.
+          const removed = await removeVerified(
+            () => polar.customers.getExternal(id),
+            () => polarMembers(config).removeAccount(id),
           )
+          console.log('[gate] cleanup:', id, removed)
           for (const s of subs) ended.push(await polar.subscriptions.get(s.id))
-          console.log('[gate] cleanup: customer deleted', id)
         }
         console.log(
           '[gate] cleanup: subscriptions now',
