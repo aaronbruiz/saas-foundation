@@ -3,7 +3,7 @@
 import { cloudflareTest } from '@cloudflare/vitest-plugin'
 import { existsSync, readFileSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
-import { linksRefusal } from './eval/safe-report'
+import { linksRefusal } from './eval/safe-report.ts'
 
 const file = new URL('./.dev.vars', import.meta.url)
 const polarVars: Record<string, string> = {}
