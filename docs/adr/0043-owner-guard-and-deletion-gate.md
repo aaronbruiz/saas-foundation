@@ -74,7 +74,7 @@ The database holds no billing policy: the app decides what's live (`isLive`), an
 
 **The limitation that remains.** An attempt whose outcome is unknown blocks that organization's deletion, indefinitely. Clearing it is a risk override, not recovery (runbook, "Stuck checkout attempts"): checking Polar is a judgment, not a proof, because a request that never answered could in principle land afterwards. If it did, a customer could pay for a deleted organization; the webhook would answer `unlinked` and log it. Closing this needs a provider feature (idempotency, or a way to cancel a session) or a compensating action, such as revoking and refunding on `unlinked`, which is a policy decision and isn't built here.
 
-A session that never reaches a finished status would also block deletion, with no operator step to clear it. Whether Polar always moves `open` and `failed` to `expired` is a release gate below.
+A session that never reaches a finished status would also block deletion, with no operator step to clear it. The sandbox gate below records observed expiry of `open` sessions; expiry of `failed` sessions remains unverified, with the residual risk explicitly accepted for release 0.6.0 in the smoke-test-only environment.
 
 **Operating constraints.** Two things the gate can't see, which operators work within. **A database restore** can lose an in-flight count or a commit made after the restore point, while the request it counted can still land: after a restore, treat checkouts since the restore point as unknown (runbook). **Anything outside the app**, such as a subscription created in Polar's dashboard or API after the read, isn't ordered by the gate; only the app creates sessions, and only by this path, so don't create subscriptions for an organization outside the app while it may be deleted.
 
@@ -89,10 +89,12 @@ A session that never reaches a finished status would also block deletion, with n
 
 ### Release gates
 
-Neither is verified, and both must pass before this ships to production:
+Both gates must be satisfied before this ships to production. Evidence is recorded in the runbook under “Before releasing ADR-0043”. The owner amended the sandbox gate on 2026-11-14 as recorded below; this does not authorize deployment:
 
 - **Hyperdrive.** The settings e2e against a preview, plus the owner races through the preview, with the trigger's refusals and the isolation assumption observed through Hyperdrive.
-- **Real Polar, in the sandbox.** `apps/app/eval/polar-provider.test.ts` for session visibility, plus a paid checkout showing that: a session is listed as soon as its create answers; a paid session's subscription has its `checkout_id`, and appears in the list by customer; abandoned `open` and `failed` sessions reach `expired`; and the portal can't start a subscription for a customer without a live one.
+- **Real Polar, in the sandbox.** `apps/app/eval/polar-provider.test.ts` for session visibility, plus a paid checkout showing that: a session is listed as soon as its create answers; a paid session's subscription has its `checkout_id`, and appears in the list by customer; abandoned `open` sessions are subsequently observed `expired`; and the portal can't start a subscription for a customer without a live one.
+
+**Sandbox gate satisfied under amendment (owner, 2026-11-14).** For release 0.6.0 in the current smoke-test-only environment, the owner accepts (c2), `failed` → `expired`, remaining **unverified**: no session was observed `failed`. The declined-card attempt left its session `open`; the watched open sessions were later observed `expired`, across an unobserved interval. This does not prove when they expired or which intermediate states they entered. A session stuck in `failed` would indefinitely block that organization's deletion, with no existing operator step to clear it. That availability risk is accepted for this release; revisit if observed. Recovery would require a separately reviewed change; deletion must remain blocked meanwhile. The implementation and the live-billing restriction in condition 4 are unchanged. The runbook records the individual evidence and the canceled-subscription limitation of the paid check.
 
 ### Freeze exception
 
