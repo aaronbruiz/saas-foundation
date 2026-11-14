@@ -657,7 +657,7 @@ Fallback when CI or the token is unavailable: the manual sequence ("First produc
 
 Each is a gate: record it here before the release, or the release waits. If one exposes a broken assumption, correct the implementation before the release.
 
-- [ ] **No organization without an owner.** The guard doesn't repair existing rows. Read-only, as `app_owner`, during release preparation and only with the owner's authorization for that run; the expected result is no rows. Any row is the owner's to decide on before the release.
+- [x] **No organization without an owner.** The guard doesn't repair existing rows. Read-only, as `app_owner`, during release preparation and only with the owner's authorization for that run; the expected result is no rows. Any row is the owner's to decide on before the release. 2026-11-14T22:15Z, owner-authorized for this check only: the query below, as written, against production (branch `main`, database `app`) as `app_owner` with verified TLS, returned 0 rows and rolled back; production ran app-v0.5.0 (`/api/health`: version 0.5.0, commit `65d49b8`); the query text was `main` at `f18d16c`.
 
   ```sql
   BEGIN READ ONLY;
