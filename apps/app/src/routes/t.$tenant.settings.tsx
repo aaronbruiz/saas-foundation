@@ -9,6 +9,7 @@ import {
   renameOrganizationFn,
   transferOwnershipFn,
 } from '../modules/organizations/functions'
+import { DELETION_REFUSALS } from '../lib/deletion-refusals'
 import { messageOf, useHydrated } from '../lib/ui'
 import {
   AlertDialog,
@@ -509,26 +510,10 @@ function DeleteDialog({
   )
 }
 
-const MISMATCH = "That doesn't match the organization's name"
-
-/**
- * The deletion path's refusals, each of which establishes that nothing was deleted: the service's
- * checks, the billing hooks (packages/auth) and ADR-0043's gate (server/auth.ts). Only the message
- * reaches the page (the server-function response drops the error's name and status), so they're
- * matched by text. Anything else (the server's generic error, a proxy's error page, no answer, or a
- * refusal added later and not listed here) can follow the gate's commit: the outcome is unknown,
- * which is the safe default.
- */
-const REFUSALS = new Set([
-  MISMATCH,
-  'invalid input',
-  'forbidden',
-  'This organization has an active subscription. Cancel it in Billing first.',
-  "A checkout for this organization hasn't finished, or its outcome is unknown. Try again shortly; if this persists, contact support.",
-  'A checkout for this organization is still open. Try again once it completes or expires.',
-  'This organization changed while it was being deleted. Try again shortly.',
-  "Billing access couldn't be updated. Try again in a moment.",
-])
+const MISMATCH = DELETION_REFUSALS.mismatch
+// Anything else (the server's generic error, a proxy's error page, no answer) can follow ADR-0043's
+// commit: the outcome is unknown, which is the safe default.
+const REFUSALS = new Set<string>(Object.values(DELETION_REFUSALS))
 
 function deleteFailure(err: unknown, name: string) {
   if (err instanceof Error && REFUSALS.has(err.message))
