@@ -1,6 +1,6 @@
 # ADR-0047: Developer handbook: a task-based index over the repository's Markdown
 
-Status: Proposed · Date: 2026-11-15
+Status: Accepted (owner 2026-11-15T06:19Z, PR #292) · Date: 2026-11-15
 
 ## Context
 

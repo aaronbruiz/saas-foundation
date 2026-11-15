@@ -37,7 +37,7 @@ Simplified from the rename form in [`t.$tenant.settings.tsx`](../../../apps/app/
 
 Only the server knows why it refused. A page lists the answers that mean "this value is invalid" and marks the field for those; anything else is form-level. The settings page's `useAction(['invalid input'])` and the account deletion form's `INVALID_PASSWORD` are the models (Current).
 
-ADR-0046's Notes list five single-field forms that didn't follow the error rule yet (account name and deletion; organization rename, transfer and delete). All five follow it in the current code (`data-invalid` with a `FieldError` in the field, other failures form-level), so that note is history. **Gap:** the project pages and the invitation page show every failure in a `FieldError` after the fields without marking a field: a form-level alert in effect, which suits operation errors but would hide which field a 400 was about. Use the settings and account forms as the model.
+ADR-0046's Notes list five single-field forms that didn't follow the error rule yet (account name and deletion; organization rename, transfer and delete). All five follow it in the current code (`data-invalid` with a `FieldError` in the field, other failures form-level), since #278, as ADR-0046's dated Notes now record. **Gap:** the project pages and the invitation page show every failure in a `FieldError` after the fields without marking a field: a form-level alert in effect, which suits operation errors but would hide which field a 400 was about. Use the settings and account forms as the model.
 
 ## What the page still does
 
