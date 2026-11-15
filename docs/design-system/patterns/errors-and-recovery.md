@@ -21,14 +21,14 @@ The forms don't reset on failure (Current): the person fixes the value or tries 
 
 ## Status codes and what they mean to the person
 
-| Status | Meaning in this app                                                                                       | Recovery to offer                                                   |
-| ------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 400    | the input was invalid                                                                                     | fix the field                                                       |
-| 401    | no session (or the account was deactivated)                                                               | sign in again                                                       |
-| 403    | a member whose role lacks the capability, or a plan limit                                                 | say who can do it, or what the limit is and the next step (upgrade) |
-| 404    | unknown, not a member, another tenant's, or gone, indistinguishably                                       | go home; the page doesn't say which                                 |
-| 409    | the state changed or forbids it (only owner, live subscription, being deleted, a concurrent owner change) | the message says what to do first; some say to check and retry      |
-| 503    | a dependency isn't available or configured                                                                | try later; nothing changed                                          |
+| Status | Meaning in this app                                                                                       | Recovery to offer                                                                                                                                                                      |
+| ------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | the input was invalid                                                                                     | fix the field                                                                                                                                                                          |
+| 401    | no session (or the account was deactivated)                                                               | sign in again                                                                                                                                                                          |
+| 403    | a member whose role lacks the capability, or a plan limit                                                 | say who can do it, or what the limit is and the next step (upgrade)                                                                                                                    |
+| 404    | unknown, not a member, another tenant's, or gone, indistinguishably                                       | go home; the page doesn't say which                                                                                                                                                    |
+| 409    | the state changed or forbids it (only owner, live subscription, being deleted, a concurrent owner change) | the message says what to do first; some say to check and retry                                                                                                                         |
+| 503    | a dependency isn't available or configured                                                                | the message says what happened; usually nothing changed, but not always (a transfer can promote the new owner, then answer 503 on the second step, and says so); check before retrying |
 
 ## Stale pages and concurrent changes
 

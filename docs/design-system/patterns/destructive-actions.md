@@ -14,9 +14,9 @@ Deleting, removing, revoking, leaving and handing over ownership. They look alik
 | Delete the organization | an owner                                       | everything in it, for every member; refused while billing is live or a checkout may complete | none                                 | type the organization's exact name             |
 | Delete your account     | the user                                       | deactivated at once, you leave every organization, data purged later (ADR-0044)              | none; sign up again as a new account | password                                       |
 
-**Rules:** page and row buttons are the tinted `destructive` variant; `destructiveSolid` only as the final action of an `AlertDialog` confirming something that can't be undone or that hands over ownership (AGENTS.md "UI"). The `ui-page` skill's build step asks for that confirmation on such actions.
+**Rules:** page and row buttons are the tinted `destructive` variant; `destructiveSolid` only as the final action of an `AlertDialog` confirming something that can't be undone or that hands over ownership (AGENTS.md "UI"). The rule restricts where the solid button may appear; it doesn't require a dialog for every irreversible action. The `ui-page` skill's build step goes further and asks for that confirmation; a skill can't add a rule (ADR-0042 decision 2), so that step is a procedure without a canonical rule behind it, and the mismatch is for the owner to settle.
 
-**Gap:** project deletion, member removal, invitation revocation and leaving have no confirmation, and organization deletion uses typed confirmation without a dialog. Of these, project and organization deletion can't be undone in the app. Bringing them in line is a separate change.
+**Current, not a rule violation:** project deletion, member removal, invitation revocation and leaving have no confirmation, and organization deletion uses typed confirmation without a dialog. Of these, project and organization deletion can't be undone in the app. Adding confirmations is a **Proposal** for a separate change.
 
 ## Choosing the friction
 

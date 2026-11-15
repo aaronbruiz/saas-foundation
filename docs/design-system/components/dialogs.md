@@ -31,6 +31,6 @@ The primitives trap focus, restore it to the trigger on close, label the dialog 
 - **move focus somewhere sensible when the trigger is gone.** If the action removed the item whose button opened the dialog, the page moves focus to a stable place (the list or the page heading). No page does this yet (**Gap**: removal of a member or project isn't behind a dialog today).
 - **render without inline styles on the server.** They render under the CSP as configured (`CSPProvider` in `__root.tsx`); a new dialog page still goes through e2e and visual tests.
 
-## Known gaps
+## Where confirmations are missing
 
-Organization deletion is confirmed by typing the name, not by a dialog. Project deletion, member removal, invitation revocation and account deletion have no confirmation dialog: the `ui-page` skill's step for irreversible actions asks for one ([destructive actions](../patterns/destructive-actions.md)). These are candidates for separate changes, not examples to copy.
+Organization deletion is confirmed by typing the name, not by a dialog. Project deletion, member removal, invitation revocation and account deletion have no confirmation dialog. No canonical rule requires one (AGENTS.md "UI" only restricts `destructiveSolid` to a dialog's final action); the `ui-page` skill's build step asks for one, which is a **Proposal** until the owner adopts it ([destructive actions](../patterns/destructive-actions.md)). Don't copy these pages as the model for a new irreversible action without deciding that first.

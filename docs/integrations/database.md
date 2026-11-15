@@ -59,7 +59,7 @@ The boundary today is the repository: every function takes `ctx.orgId` from a ve
 
 ## Retry safety
 
-A statement that timed out may still have run on the server: pg's timeout doesn't cancel it (comment in `connection.ts`). Inside one repository call (one transaction), a failure commits nothing. A server function that calls several repositories gets several short transactions, so a failure part-way can leave the earlier ones committed (ADR-0040 decision 3). An operation that must be atomic is one `packages/db` function with one `inTenant`.
+A statement that timed out may still have run on the server: pg's timeout doesn't cancel it (comment in `connection.ts`). Inside one repository call (one transaction), a failure before `COMMIT` commits nothing; but if the connection is lost while waiting for `COMMIT`'s answer, the transaction may have committed and the caller can't tell (`runOwned` in `connection.ts` propagates the error). Treat such a failure as an unknown outcome: check the data before repeating a write that would duplicate something (AGENTS.md "Working rules"). A server function that calls several repositories gets several short transactions, so a failure part-way can leave the earlier ones committed (ADR-0040 decision 3). An operation that must be atomic is one `packages/db` function with one `inTenant`.
 
 ## Tests and operations
 

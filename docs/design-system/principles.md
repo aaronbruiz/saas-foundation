@@ -12,7 +12,7 @@ A person should be able to tell whether an action worked, failed, or may have wo
 
 ## Friction in proportion to consequence
 
-A confirmation is for an action that can't be undone or that hands over control; an ordinary save needs none. The strongest visual signal, the solid destructive button, is reserved for the final step of such a confirmation (AGENTS.md "UI", `destructiveSolid`). Typing the organization's name to delete it is the heaviest friction the app uses. WCAG 3.3.4 asks for reversible, checked or confirmed submissions for legal and financial transactions, not a dialog for everything ([WCAG 2.2 Understanding 3.3.4](https://www.w3.org/WAI/WCAG22/Understanding/error-prevention-legal-financial-data.html)). See [destructive actions](patterns/destructive-actions.md).
+Where the app asks for confirmation, it's for an action that can't be undone or that hands over control (ownership transfer, organization and account deletion); an ordinary save needs none. Which irreversible actions must be confirmed isn't a settled rule ([destructive actions](patterns/destructive-actions.md)). The strongest visual signal, the solid destructive button, is reserved for the final step of such a confirmation (AGENTS.md "UI", `destructiveSolid`). Typing the organization's name to delete it is the heaviest friction the app uses. WCAG 3.3.4 asks for reversible, checked or confirmed submissions for legal and financial transactions, not a dialog for everything ([WCAG 2.2 Understanding 3.3.4](https://www.w3.org/WAI/WCAG22/Understanding/error-prevention-legal-financial-data.html)). See [destructive actions](patterns/destructive-actions.md).
 
 ## Tokens, not colours
 

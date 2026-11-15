@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Transactional email for Better Auth: email verification, password reset and organization invitations. Templates and the choice of delivery are ours, behind one `Mailer` in [`server/email.ts`](../../apps/app/src/server/email.ts); Cloudflare Email Service, through the `send_email` binding `EMAIL`, delivers in production ([ADR-0016](../adr/0016-transactional-email.md), [ADR-0024](../adr/0024-email-activation-send-email-binding.md)). No other code sends email (Code Review Rules). Sending is synchronous within the request (no queue).
+Transactional email for Better Auth: email verification, password reset and organization invitations. Templates and the choice of delivery are ours, behind one `Mailer` in [`server/email.ts`](../../apps/app/src/server/email.ts); Cloudflare Email Service, through the `send_email` binding `EMAIL`, delivers in production ([ADR-0016](../adr/0016-transactional-email.md), [ADR-0024](../adr/0024-email-activation-send-email-binding.md)). No other code sends email (Code Review Rules). There's no queue (ADR-0016). Some sends run in the background of the same request through the Worker's `waitUntil` (`runInBackground` in `server/auth.ts`, Better Auth's `backgroundTasks`): a password-reset request answers before its email is sent, so its timing doesn't reveal whether the account exists, and a delivery that fails afterwards is only in the logs.
 
 ## Owning files
 
