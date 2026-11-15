@@ -17,10 +17,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 // The signed-in user's own account: Better Auth's endpoints through the HTTP client, which rate
 // limit password guesses (ADR-0005). Email changes aren't offered (they touch verification, ADR-0016).
 export const Route = createFileRoute('/account')({
+  head: () => pageTitle('Account'),
   loader: async () => {
     const viewer = await getViewerFn()
     if (!viewer) throw redirect({ to: '/login', search: { redirect: '/account' } })
@@ -144,8 +146,9 @@ function NameForm({ name }: { name: string }) {
           required
           defaultValue={name}
           aria-invalid={error?.field || undefined}
+          aria-describedby={error?.field ? 'account-name-error' : undefined}
         />
-        {error?.field && <FieldError>{error.text}</FieldError>}
+        {error?.field && <FieldError id="account-name-error">{error.text}</FieldError>}
       </Field>
       {error && !error.field && <FieldError>{error.text}</FieldError>}
       {saved && (
@@ -298,8 +301,9 @@ function DeleteAccountDialog({
             readOnly={busy}
             autoComplete="current-password"
             aria-invalid={error?.field || undefined}
+            aria-describedby={error?.field ? 'delete-password-error' : undefined}
           />
-          {error?.field && <FieldError>{error.text}</FieldError>}
+          {error?.field && <FieldError id="delete-password-error">{error.text}</FieldError>}
         </Field>
         {error && !error.field && <FieldError>{error.text}</FieldError>}
         <AlertDialogFooter>

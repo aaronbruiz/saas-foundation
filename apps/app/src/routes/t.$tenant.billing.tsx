@@ -6,6 +6,7 @@ import { messageOf, useHydrated } from '../lib/ui'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FieldError } from '@/components/ui/field'
+import { pageTitle } from '@/lib/title'
 
 type Search = { checkout?: 'success'; portal?: 'return' }
 
@@ -13,6 +14,7 @@ type Search = { checkout?: 'success'; portal?: 'return' }
 // (policy + capability matrix); the page only renders it. The return markers from Polar only choose
 // the page's wording: they're never read as a payment and grant nothing (invariant 6).
 export const Route = createFileRoute('/t/$tenant/billing')({
+  head: () => pageTitle('Billing'),
   validateSearch: (search: Record<string, unknown>): Search => ({
     ...(search.checkout === 'success' ? { checkout: 'success' as const } : {}),
     ...(search.portal === 'return' ? { portal: 'return' as const } : {}),

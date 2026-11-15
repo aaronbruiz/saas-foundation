@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { legalDocuments, legalEntity } from '../lib/legal'
 import { LegalPage, Section } from '../lib/legal-page'
+import { pageTitle } from '@/lib/title'
 
-export const Route = createFileRoute('/terms')({ component: Terms })
+export const Route = createFileRoute('/terms')({
+  head: () => pageTitle(legalDocuments.terms.title),
+  component: Terms,
+})
 
 const { name, product, contactEmail, governingLaw, courts } = legalEntity
 

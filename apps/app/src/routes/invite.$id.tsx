@@ -6,9 +6,11 @@ import { messageOf, useHydrated, usePending } from '../lib/ui'
 import { AuthLayout } from '@/components/ui/auth-layout'
 import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
+import { pageTitle } from '@/lib/title'
 
 // The link returned by inviteMember. Sign-in (or sign-up) first, then accept explicitly.
 export const Route = createFileRoute('/invite/$id')({
+  head: () => pageTitle('Join organization'),
   loader: async ({ params }) => {
     const viewer = await getViewerFn()
     if (!viewer) throw redirect({ to: '/login', search: { redirect: `/invite/${params.id}` } })

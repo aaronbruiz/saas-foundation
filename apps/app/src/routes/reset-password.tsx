@@ -6,10 +6,12 @@ import { AuthLayout, authInlineLink } from '@/components/ui/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 // Target of the reset email (ADR-0016): /reset-password?token=…. The token is kept in state and
 // dropped from the address bar right away, so it doesn't linger in history or get shared.
 export const Route = createFileRoute('/reset-password')({
+  head: () => pageTitle('Choose a new password'),
   validateSearch: (s: Record<string, unknown>) => ({
     token: typeof s.token === 'string' ? s.token : undefined,
   }),

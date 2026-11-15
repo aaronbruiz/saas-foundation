@@ -102,6 +102,7 @@ test('deleting an organization: the pending dialog stays open, a refusal keeps i
   await submit.click()
   await expect(dialog.getByText("That doesn't match the organization's name")).toBeVisible()
   await expect(confirm).toHaveAttribute('aria-invalid', 'true')
+  await expect(confirm).toHaveAccessibleDescription("That doesn't match the organization's name")
   await expect(confirm).toHaveValue(name)
   await page.unrouteAll()
 

@@ -179,6 +179,10 @@ test('deleting the account: a wrong password is refused, and fields stay out of 
     'aria-invalid',
     'true',
   )
+  // The error is the field's description, so it's read again when the field gets focus.
+  await expect(page.getByLabel('Password to delete your account')).toHaveAccessibleDescription(
+    /Incorrect password\./,
+  )
   expect(page.url()).not.toContain('password')
 })
 
