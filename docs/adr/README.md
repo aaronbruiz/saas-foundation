@@ -48,3 +48,4 @@ One file per decision: `NNNN-kebab-title.md` with Status/Date, Context, Decision
 - [ADR-0044](0044-account-deletion.md): Self-service account deactivation, purge after 90 days, and a billing access gate. Accepted for the smoke-test-only environment.
 - [ADR-0045](0045-app-security-headers.md): Security headers and a nonce-based Content Security Policy on every app response; new third-party origins go into the policy in the same PR (amended 2026-11-11: two style hash directives)
 - [ADR-0046](0046-ui-foundation.md): UI foundation: shadcn on Base UI, brand tokens in `packages/brand`, under the strict CSP
+- [ADR-0047](0047-developer-handbook.md): Developer handbook: a task-based index (`docs/README.md`) over the repository's Markdown, with guides, integrations, troubleshooting and the design system (proposed)

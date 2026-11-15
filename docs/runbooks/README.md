@@ -1,5 +1,7 @@
 # Runbooks
 
+Starting from a symptom rather than a procedure: [troubleshooting](../troubleshooting/README.md). All documents by task: [handbook index](../README.md).
+
 Starting a new product from this foundation: [start-new-product.md](start-new-product.md).
 
 ## Previews (ADR-0021)

@@ -1,6 +1,6 @@
 # Glossary
 
-Foundation terms and the distinctions that matter when changing the code. Each entry links the file or ADR that defines it; those stay the definition of record, and the PR that introduces or renames a term updates its entry here. A product's own terms go in `docs/product/glossary.md` ([ADR-0041](adr/0041-product-owned-documentation-and-agent-instructions.md)).
+Foundation terms and the distinctions that matter when changing the code. Each entry links the file or ADR that defines it; those stay the definition of record, and the PR that introduces or renames a term updates its entry here. A product's own terms go in `docs/product/glossary.md` ([ADR-0041](adr/0041-product-owned-documentation-and-agent-instructions.md)). How these terms relate, and their lifecycles: [domain model](architecture/domain-model.md). All documents by task: [handbook index](README.md).
 
 ## Tenancy and access
 
