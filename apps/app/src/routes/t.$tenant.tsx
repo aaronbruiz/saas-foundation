@@ -6,6 +6,7 @@ import { getTenantFn, getViewerFn } from '../modules/organizations/functions'
 import { authClient } from '../lib/auth-client'
 import { messageOf } from '../lib/ui'
 import { FieldError } from '@/components/ui/field'
+import { InsideMain } from '@/lib/error-page'
 
 // Tenant layout (ADR-0010). The loader re-verifies membership; unknown or foreign tenants get
 // the root not-found page (404). This is UX: every server function re-checks on its own.
@@ -104,7 +105,9 @@ function TenantLayout() {
         </nav>
       </header>
       <main>
-        <Outlet />
+        <InsideMain.Provider value>
+          <Outlet />
+        </InsideMain.Provider>
       </main>
     </div>
   )

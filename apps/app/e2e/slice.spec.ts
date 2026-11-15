@@ -156,6 +156,8 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   await carol.goto(`/t/${orgA}/billing`)
   await expect(carol.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
   await expect(carol.getByRole('link', { name: 'Go home' })).toBeVisible()
+  // The error page inside the tenant shell keeps one main landmark (accessibility.spec.ts).
+  await expectAccessible(carol, 'error page inside the tenant shell')
   await expect(carol.getByTestId('plan-name')).toHaveCount(0)
   // The server-rendered page is the same one, before any script runs (not the framework's
   // default boundary, which prints the error).
