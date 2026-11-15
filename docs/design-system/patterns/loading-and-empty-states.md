@@ -6,9 +6,9 @@ A blank area can mean loading, nothing yet, nothing matching, or a failure. Each
 
 **Current:** page data comes from route loaders that run before the page renders, on the server for a first load and during navigation for later ones. So pages render with their data and have no loading state of their own; a slow loader delays the navigation. Actions that wait are covered in [saving and submitting](saving-and-submitting.md#pending).
 
-The exception is data fetched after render: the organization menu loads the member's other organizations when it opens. Until the answer arrives the list shows only "New organization", with no loading indication, and a failure shows its message in a `FieldError` (**Gap**, research scenario 6: a slow answer reads like "no other organizations").
+The exception is data fetched after render: the organization menu loads the member's other organizations each time it opens. While it waits it says "Loading organizations…" (`role="status"`); then it shows the other organizations, nothing more when there are none, or the error (`role="alert"`), with "New organization" there throughout; an answer to an earlier opening is dropped (Current, [`t.$tenant.tsx`](../../../apps/app/src/routes/t.$tenant.tsx); research scenario 6).
 
-For content fetched after render, show that it's loading (the unused `Skeleton`, or words), then the content, an empty state or the error: never an empty list while waiting (**Proposal**).
+For content fetched after render, show that it's loading (words, or the unused `Skeleton`), then the content, an empty state or the error: never an empty list while waiting (the organization menu does this; a rule only if another page needs it).
 
 ## Empty
 

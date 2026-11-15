@@ -1,8 +1,18 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { authClient } from '../lib/auth-client'
 import { getViewerFn } from '../modules/organizations/functions'
 import { messageOf, useHydrated } from '../lib/ui'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
@@ -171,16 +181,75 @@ function deleteRefusalText({ code, message, left = [] }: DeleteRefusal) {
   return `Your account wasn't deleted.${done} ${message ?? 'Please try again.'}`
 }
 
+/**
+ * Account deletion is confirmed in a dialog with the password (AGENTS.md "UI": confirm by
+ * consequence). Better Auth checks the password and ADR-0044's gates decide; the dialog stays open
+ * while the request runs, so its outcome is shown in it.
+ */
 function DeleteAccountForm() {
+  const hydrated = useHydrated()
+  const [open, setOpen] = useState(false)
+  // Each opening mounts a new dialog body, so a reopened dialog starts empty.
+  const [opened, setOpened] = useState(0)
+  // Cancel and Escape return focus here, the page's Delete account button.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const pending = useRef(false)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">
+        Your account stops working at once, and you leave your organizations. If you solely own one,
+        transfer or delete it first. Your data is removed later, as the{' '}
+        <Link to="/privacy" className="underline">
+          Privacy Policy
+        </Link>{' '}
+        describes. You can sign up again with the same email, as a new, empty account.
+      </p>
+      <div>
+        <Button
+          ref={triggerRef}
+          type="button"
+          variant="destructive"
+          disabled={!hydrated}
+          onClick={() => {
+            setOpened((n) => n + 1)
+            setOpen(true)
+          }}
+        >
+          Delete account
+        </Button>
+      </div>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && pending.current) return
+          setOpen(next)
+        }}
+      >
+        <DeleteAccountDialog key={opened} pending={pending} finalFocus={triggerRef} />
+      </AlertDialog>
+    </div>
+  )
+}
+
+function DeleteAccountDialog({
+  pending,
+  finalFocus,
+}: {
+  pending: RefObject<boolean>
+  finalFocus: RefObject<HTMLButtonElement | null>
+}) {
   const hydrated = useHydrated()
   // `field`: a wrong password, the one answer about the typed value; any other refusal is a
   // form-level alert (AGENTS.md "UI").
   const [error, setError] = useState<{ text: string; field: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
-  const pending = useRef(false)
+  // The consequences are met first: focus starts on the title, not on the field.
+  const titleRef = useRef<HTMLHeadingElement>(null)
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    // The ref, not state: a second Enter can arrive before the re-render that disables the button.
     if (pending.current) return
     setError(null)
     pending.current = true
@@ -208,34 +277,44 @@ function DeleteAccountForm() {
   }
 
   return (
-    <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Your account stops working at once, and you leave your organizations. If you solely own one,
-        transfer or delete it first. Your data is removed later, as the{' '}
-        <Link to="/privacy" className="underline">
-          Privacy Policy
-        </Link>{' '}
-        describes. You can sign up again with the same email, as a new, empty account.
-      </p>
-      <Field data-invalid={error?.field || undefined}>
-        <FieldLabel htmlFor="delete-password">Password to delete your account</FieldLabel>
-        <Input
-          id="delete-password"
-          name="password"
-          type="password"
-          required
-          autoComplete="current-password"
-          aria-invalid={error?.field || undefined}
-        />
-        {error?.field && <FieldError>{error.text}</FieldError>}
-      </Field>
-      {error && !error.field && <FieldError>{error.text}</FieldError>}
-      <div>
-        <Button type="submit" variant="destructive" disabled={!hydrated || busy}>
-          Delete account
-        </Button>
-      </div>
-    </form>
+    <AlertDialogContent initialFocus={titleRef} finalFocus={finalFocus}>
+      <form method="post" onSubmit={onSubmit} className="grid gap-6">
+        <AlertDialogHeader className="place-items-start text-left">
+          <AlertDialogTitle ref={titleRef} tabIndex={-1} className="outline-none">
+            Delete your account?
+          </AlertDialogTitle>
+          <AlertDialogDescription className="text-pretty">
+            Your account stops working at once, and you leave every organization you belong to. This
+            can&apos;t be undone: signing up again creates a new, empty account.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Field data-invalid={error?.field || undefined}>
+          <FieldLabel htmlFor="delete-password">Password to delete your account</FieldLabel>
+          <Input
+            id="delete-password"
+            name="password"
+            type="password"
+            required
+            readOnly={busy}
+            autoComplete="current-password"
+            aria-invalid={error?.field || undefined}
+          />
+          {error?.field && <FieldError>{error.text}</FieldError>}
+        </Field>
+        {error && !error.field && <FieldError>{error.text}</FieldError>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            type="submit"
+            variant="destructiveSolid"
+            disabled={!hydrated || busy}
+            aria-busy={busy || undefined}
+          >
+            {busy ? 'Deleting…' : 'Delete account'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </form>
+    </AlertDialogContent>
   )
 }
 

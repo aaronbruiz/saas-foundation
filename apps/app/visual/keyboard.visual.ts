@@ -7,8 +7,9 @@ import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
 // indicator, the transfer picker answers arrow keys and Escape without losing focus, and the
 // rename toast doesn't take focus. Runs in every `pnpm test:visual` mode; it takes no screenshots.
-// The settings page's transfer and deletion dialogs keep Tab inside them, and Cancel and Escape
-// close them, return focus to the page's button and send nothing. No page uses a menu yet.
+// The settings page's transfer and deletion dialogs, the project's deletion dialog and the account's
+// keep Tab inside them, and Cancel and Escape close them, return focus to the page's button and send
+// nothing. No page uses a menu yet.
 
 const settingsControls = [
   'Organization name',
@@ -39,6 +40,53 @@ for (const theme of themes)
       // The page's own controls, in reading order (the nav and footer links around them vary by
       // browser: WebKit skips links on Tab by default).
       expect(names.filter((n) => settingsControls.includes(n))).toEqual(settingsControls)
+    })
+
+    // Shared by every dialog below: Tab wraps inside it (Base UI's focus guard holds focus for a
+    // moment at the wrap, so this waits for it to settle), then Escape or Cancel closes it and
+    // focus is back on the page's button.
+    async function dialogKeepsFocus(page: Page, trigger: ReturnType<Page['locator']>) {
+      const dialog = page.getByRole('alertdialog')
+      for (const close of ['Escape', 'Cancel'] as const) {
+        await trigger.click()
+        await expect(dialog).toBeVisible()
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press('Tab')
+          await expect
+            .poll(() => dialog.evaluate((d) => d.contains(document.activeElement)))
+            .toBe(true)
+        }
+        if (close === 'Escape') await page.keyboard.press('Escape')
+        else await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect(trigger).toBeFocused()
+      }
+    }
+
+    test('project: the deletion dialog keeps focus inside, and Cancel and Escape send nothing', async ({
+      page,
+    }) => {
+      await setTheme(page, theme)
+      await page.goto(`/t/${team().slug}/projects/${team().projectId}`)
+      const trigger = page.getByRole('button', { name: 'Delete project' })
+      await expect(trigger).toBeEnabled(hydrated)
+      await dialogKeepsFocus(page, trigger)
+      // Nothing was sent: the project is still there.
+      await page.reload()
+      await expect(page.getByRole('button', { name: 'Delete project' })).toBeVisible()
+    })
+
+    test('account: the deletion dialog keeps focus inside, and Cancel and Escape send nothing', async ({
+      page,
+    }) => {
+      await setTheme(page, theme)
+      let sent = 0
+      await page.route('**/api/auth/delete-account', (route) => (sent++, route.abort()))
+      await page.goto('/account')
+      const trigger = page.getByRole('button', { name: 'Delete account' })
+      await expect(trigger).toBeEnabled(hydrated)
+      await dialogKeepsFocus(page, trigger)
+      expect(sent).toBe(0)
     })
 
     test('settings: the transfer dialog keeps focus inside, and Cancel and Escape send nothing', async ({

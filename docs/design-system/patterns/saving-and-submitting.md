@@ -10,14 +10,15 @@ Make the scope of the submit clear: one form, one button, its label naming the a
 
 ## Pending
 
-| Page or action                                                                          | While waiting (Current)                                                                                              |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Sign-in, sign-up, password reset, account forms, all of settings                        | the submit is disabled (`busy`) and a second submit is ignored (`useAction` in settings, a `pending` ref on account) |
-| Project create and save, invitation accept, billing buttons, member and invitation rows | **Gap:** disabled only until hydration; a second click sends a second request                                        |
+| Page or action                                                                          | While waiting (Current)                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in, sign-up, password reset, account forms, all of settings                        | the submit is disabled (`busy`) and a second submit is ignored (`useAction` in settings, a `pending` ref on account)                                                                                                                        |
+| Project create and save, invitation accept, the invite form, member and invitation rows | disabled from the first click until the answer, labelled ("Creating…", "Saving…"), `aria-busy`; guarded before the first `await` (`usePending`, [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx)), so a second click or Enter sends nothing |
+| Billing Upgrade and Manage billing                                                      | the same, and they stay disabled while the browser leaves for Polar ("Opening Polar…"); a page restored by Back from Polar enables them again                                                                                               |
 
 A disabled button prevents a second click from this page; it isn't server-side deduplication. Whether a repeated request is harmful depends on the operation: a second "Create project" creates a second project; a second invitation acceptance is a 404; a second checkout opens a second session ([billing](../../integrations/billing.md#retry-safety)).
 
-**Proposal** (research scenario 1): every action shows that it's pending, at least by disabling its control, and the same request can't be sent twice from the page. Words such as "Saving…" are optional; there's no spinner component (progress is excluded by the CSP).
+Every action on these pages shows that it's pending and can't be sent twice from the page (Current; research scenario 1). There's no spinner component (progress is excluded by the CSP). **Server-side duplicate protection** (idempotency keys, status endpoints) isn't built (owner, 2026-11-15: documented only): another tab, or a second device, can still send the same request.
 
 ## Result
 
@@ -41,7 +42,8 @@ A request can reach the server and commit, and its answer still be lost (a dropp
 - **Rule (AGENTS.md "Working rules", for operators):** an external mutation whose result is unclear is UNKNOWN until checked; it isn't retried blindly.
 - **Current, in the interface:** account deletion and organization deletion distinguish it. Answers that prove nothing changed get their reason; anything else says "We couldn't confirm your account was deleted. Try signing in again to check." ([`account.tsx`](../../../apps/app/src/routes/account.tsx)) or "We couldn't confirm <name> was deleted. Reload the page to check, and try again if it's still there." (`deleteFailure` in [`t.$tenant.settings.tsx`](../../../apps/app/src/routes/t.$tenant.settings.tsx), with the known refusals in [`lib/deletion-refusals.ts`](../../../apps/app/src/lib/deletion-refusals.ts)). Other pages show the error's message, which for a lost response is the generic "Something went wrong" from `messageOf`.
 - **What a person can do today:** reload the page and look. The loaders read fresh data on every load (uncached database), so the page shows what committed.
-- **Proposal:** where a repeat would duplicate something (create), say "It may have been saved. Check the list before trying again." rather than inviting a retry. Not implemented; no idempotency keys, polling or undo exist, and none is implied here.
+- **Current, create:** an answer to "Create project" that isn't one of its refusals (invalid input, the plan's limit, `forbidden`) reads "We couldn't confirm the project was created. Check the list before trying again.", keeps the input and refreshes the list, so a project that was created appears ([`t.$tenant.projects.index.tsx`](../../../apps/app/src/routes/t.$tenant.projects.index.tsx)). No idempotency keys or undo exist, and none is implied here.
+- **Confirmed write, failed refresh:** a write that answered success is reported as done; the refresh after it is separate, and its failure isn't the write's.
 
 ## Interruption and unsaved work
 

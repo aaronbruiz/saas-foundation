@@ -35,6 +35,8 @@ export async function getBillingOverview(headers: Headers, input: unknown) {
         currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
       },
       canManage: can(ctx.role, 'billing:manage'),
+      // Whether the subscription keeps a paid plan (policy): the page waits for it after checkout.
+      live: isLive(sub),
       // A new checkout only when nothing live exists; the portal once there's a customer.
       prices: isLive(sub) ? [] : purchasablePrices(),
       trialDays: trialDaysFor(sub),
@@ -123,7 +125,8 @@ export async function openBillingPortal(
           customerId: sub.providerCustomerId,
           userId: ctx.userId,
           customerEmail: ctx.email,
-          returnUrl: `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing`,
+          // The marker only chooses the page's wording; the page reads the plan from the overview.
+          returnUrl: `${env.BETTER_AUTH_URL}/t/${ctx.slug}/billing?portal=return`,
         }),
       isMemberWriteUnknown,
     )
