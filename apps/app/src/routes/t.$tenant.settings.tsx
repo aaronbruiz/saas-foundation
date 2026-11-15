@@ -10,7 +10,6 @@ import {
   transferOwnershipFn,
 } from '../modules/organizations/functions'
 import { messageOf, useHydrated } from '../lib/ui'
-import { UNEXPECTED_MESSAGE } from '../server/log'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -462,9 +461,14 @@ function DeleteDialog({
             <p>
               This can&apos;t be undone. Deleted data isn&apos;t erased immediately: backups and our
               billing provider&apos;s order records keep copies for a limited time, as the{' '}
-              <Link to="/privacy" className="underline">
-                Privacy Policy
-              </Link>{' '}
+              {/* Not a link while the request runs: leaving would hide its outcome. */}
+              {busy ? (
+                'Privacy Policy'
+              ) : (
+                <Link to="/privacy" className="underline">
+                  Privacy Policy
+                </Link>
+              )}{' '}
               describes.
             </p>
           </AlertDialogDescription>
@@ -505,16 +509,32 @@ function DeleteDialog({
   )
 }
 
+const MISMATCH = "That doesn't match the organization's name"
+
 /**
- * The server's answers that establish nothing was deleted keep their message (a 400 mismatch marks
- * the field). Its generic error, or no answer, can follow ADR-0043's commit: the outcome is unknown.
+ * The deletion path's refusals, each of which establishes that nothing was deleted: the service's
+ * checks, the billing hooks (packages/auth) and ADR-0043's gate (server/auth.ts). Only the message
+ * reaches the page (the server-function response drops the error's name and status), so they're
+ * matched by text. Anything else (the server's generic error, a proxy's error page, no answer, or a
+ * refusal added later and not listed here) can follow the gate's commit: the outcome is unknown,
+ * which is the safe default.
  */
+const REFUSALS = new Set([
+  MISMATCH,
+  'invalid input',
+  'forbidden',
+  'This organization has an active subscription. Cancel it in Billing first.',
+  "A checkout for this organization hasn't finished, or its outcome is unknown. Try again shortly; if this persists, contact support.",
+  'A checkout for this organization is still open. Try again once it completes or expires.',
+  'This organization changed while it was being deleted. Try again shortly.',
+  "Billing access couldn't be updated. Try again in a moment.",
+])
+
 function deleteFailure(err: unknown, name: string) {
-  const text = err instanceof Error && err.name !== 'TypeError' ? err.message : null
-  if (text === null || text === UNEXPECTED_MESSAGE)
-    return {
-      text: `We couldn't confirm ${name} was deleted. Reload the page to check, and try again if it's still there.`,
-      field: false,
-    }
-  return { text, field: text === "That doesn't match the organization's name" }
+  if (err instanceof Error && REFUSALS.has(err.message))
+    return { text: err.message, field: err.message === MISMATCH }
+  return {
+    text: `We couldn't confirm ${name} was deleted. Reload the page to check, and try again if it's still there.`,
+    field: false,
+  }
 }

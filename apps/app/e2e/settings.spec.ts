@@ -70,6 +70,9 @@ test('an owner renames, cannot leave as the only owner, and deletes with the typ
   await expect(
     page.getByRole('region', { name: /Notifications/ }).getByText(`${name} was deleted.`),
   ).toBeVisible()
+  // Back skips the replaced settings entry (older entries, like the projects page, remain).
+  await page.goBack()
+  await expect(page).not.toHaveURL(new RegExp(`/t/${slug}/settings$`))
   await page.goto(`/t/${slug}/settings`)
   await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible()
 })
@@ -117,6 +120,7 @@ test('deleting an organization: the pending dialog stays open, a refusal keeps i
   await expect(submit).toBeDisabled()
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled()
   await expect(confirm).toHaveAttribute('readonly', '')
+  await expect(dialog.getByRole('link')).toHaveCount(0)
   await confirm.press('Enter')
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()

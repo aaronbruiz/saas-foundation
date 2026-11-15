@@ -86,9 +86,19 @@ for (const theme of themes)
         await remove.click()
         await expect(dialog).toBeVisible()
         await expect(dialog.getByRole('heading')).toBeFocused()
-        // The field, Cancel, the Privacy Policy link and the title: more presses than stops, so
-        // Tab wraps; at the wrap Base UI's focus guard holds focus for a moment (as above).
-        for (let i = 0; i < 5; i++) {
+        // Reading order: the Privacy Policy link in the consequences, the field, Cancel (Delete is
+        // disabled while the field is empty).
+        for (const stop of [
+          dialog.getByRole('link', { name: 'Privacy Policy' }),
+          dialog.getByRole('textbox'),
+          dialog.getByRole('button', { name: 'Cancel' }),
+        ]) {
+          await page.keyboard.press('Tab')
+          await expect(stop).toBeFocused()
+        }
+        // More presses than stops, so Tab wraps; at the wrap Base UI's focus guard holds focus
+        // for a moment (as above).
+        for (let i = 0; i < 4; i++) {
           await page.keyboard.press('Tab')
           await expect
             .poll(() => dialog.evaluate((d) => d.contains(document.activeElement)))
