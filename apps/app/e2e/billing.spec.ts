@@ -43,6 +43,47 @@ test.describe('returning from Polar', () => {
     await expect(page.getByRole('status')).toHaveCount(0)
   })
 
+  test('a loader refresh during the wait: the applied plan is the one shown', async ({ page }) => {
+    await page.goto('/orgs/new')
+    const slug = await createOrg(page, 'refresh')
+    // The page's first background read is held before it reaches the server, so the order is
+    // fixed: the loader refreshes (still Free), the plan changes, then the held read answers (Pro).
+    let holding = true
+    let held: () => void = () => {}
+    const readHeld = new Promise<void>((resolve) => {
+      void page.route('**/_serverFn/**', async (route) => {
+        if (!holding || route.request().method() !== 'GET') return route.fallback()
+        holding = false
+        const release = new Promise<void>((r) => (held = r))
+        resolve()
+        await release
+        await route.fallback()
+      })
+    })
+    await page.goto(`/t/${slug}/billing?checkout=success`)
+    await expect(page.getByRole('status')).toHaveText(/^Checking for your new plan/)
+    await readHeld
+
+    // The router's own refresh (`router.invalidate()`, which the app calls after its writes) on the
+    // mounted page: new loader data (still Free), the same component. `sync` waits for the reload,
+    // which otherwise runs in the background and could answer after the plan changed.
+    await page.evaluate(() => {
+      document.querySelector('h2')!.dataset.mounted = 'first'
+      type Router = { invalidate(opts: { sync: boolean }): Promise<void> }
+      return (window as unknown as { __TSR_ROUTER__: Router }).__TSR_ROUTER__.invalidate({
+        sync: true,
+      })
+    })
+    await expect(page.getByTestId('plan-name')).toHaveText('Free')
+    await applySubscription(slug)
+    held()
+
+    await expect(page.getByRole('status')).toHaveText('Your plan is now Pro.')
+    await expect(page.getByTestId('plan-name')).toHaveText('Pro')
+    // Still the page that was waiting, not a new one that loaded Pro by itself.
+    await expect(page.locator('h2[data-mounted="first"]')).toHaveCount(1)
+  })
+
   test('when the plan is still unchanged after the wait, the page says so and never that it failed', async ({
     page,
   }) => {
