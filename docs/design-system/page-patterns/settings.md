@@ -6,18 +6,18 @@
 
 1. `h2` "Settings".
 2. One `Section` (a `Card` with an `h3` and a description) per independent form, each with its own submit: Name, then Transfer ownership, each shown only to roles that can use it.
-3. A "Danger zone" `section` with an `h3`, holding Leave and Delete organization as `h4` sections with a destructive ring.
+3. A "Danger zone" `section` with an `h3` and one card with a destructive ring, holding Leave and Delete organization as `h4` rows separated by a `Separator`, each with its consequence, its action and its alert.
 
 Each form runs one action at a time (`useAction`: busy, error, which answers are field errors) and keeps its own error. Saving is explicit and per section; nothing saves on change ([saving and submitting](../patterns/saving-and-submitting.md)).
 
 ## Actions
 
-| Action              | Who          | Confirmation                                                                                           | Result                                                           |
-| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| Rename              | owner, admin | none                                                                                                   | toast "Name saved."; the header updates                          |
-| Transfer ownership  | owner        | `AlertDialog`, `destructiveSolid` ([dialogs](../components/dialogs.md#example-the-ownership-transfer)) | toast; you're now an admin and the page reflects it              |
-| Leave               | any member   | none                                                                                                   | to `/`; a sole owner is refused with what to do first            |
-| Delete organization | owner        | type the exact name                                                                                    | to `/`; refused while billing is live or a checkout may complete |
+| Action              | Who          | Confirmation                                                                                                                     | Result                                                           |
+| ------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Rename              | owner, admin | none                                                                                                                             | toast "Name saved."; the header updates                          |
+| Transfer ownership  | owner        | `AlertDialog`, `destructiveSolid` ([dialogs](../components/dialogs.md#example-the-ownership-transfer))                           | toast; you're now an admin and the page reflects it              |
+| Leave               | any member   | none                                                                                                                             | to `/`; a sole owner is refused with what to do first            |
+| Delete organization | owner        | `AlertDialog`: consequences, then the exact name typed in it ([dialogs](../components/dialogs.md#example-organization-deletion)) | to `/`; refused while billing is live or a checkout may complete |
 
 The account page has the same shape: name, password, the person's organizations, and a danger zone with account deletion (password, with the unknown-outcome message, [destructive actions](../patterns/destructive-actions.md)).
 

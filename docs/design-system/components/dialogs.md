@@ -23,14 +23,26 @@ The APG describes both patterns' keyboard and focus model ([dialog](https://www.
 
 Proved by the keyboard pass: Tab stays inside the dialog, Cancel and Escape close it, focus returns to the page's button, and nothing is sent ([`visual/keyboard.visual.ts`](../../../apps/app/visual/keyboard.visual.ts)). E2E scopes to the `alertdialog` when a name repeats behind it (the `ui-page` skill).
 
+## Example: organization deletion
+
+`DeleteSection` and `DeleteDialog` in [`t.$tenant.settings.tsx`](../../../apps/app/src/routes/t.$tenant.settings.tsx) (owner decisions 2026-11-14, #290):
+
+1. The danger zone's row states the consequence and has a tinted "Delete organization" button that only opens the dialog.
+2. The dialog starts with focus on its title, so the consequences are met first; it lists who loses access (with the member count the page loaded, a snapshot), what's deleted and that Polar's billing account is removed.
+3. The person types the organization's exact name; the `destructiveSolid` final action stays disabled until it matches, and while the request runs (`aria-busy`). The server checks the name and authorization again.
+4. While the request runs, the dialog can't be closed, so its outcome is shown in it: a known refusal ([`lib/deletion-refusals.ts`](../../../apps/app/src/lib/deletion-refusals.ts)) in the field or as a form alert, anything else as an unknown outcome. Success goes to `/` with a toast.
+5. Cancel and Escape return focus to the row's button (`finalFocus`); a reopened dialog starts empty.
+
+Tests: [`e2e/settings.spec.ts`](../../../apps/app/e2e/settings.spec.ts), the keyboard pass.
+
 ## What the dialog guarantees and what it doesn't
 
 The primitives trap focus, restore it to the trigger on close, label the dialog from its title and description, and close on Escape. They don't:
 
-- **cancel the server's work.** Closing a dialog after its action was sent doesn't undo the request; keep the action disabled until the answer arrives (the transfer form does) and show the result on the page. Keeping the dialog open with the failure inside it, as Primer's delete pattern suggests, is a **Proposal**, not what the app does.
+- **cancel the server's work.** Closing a dialog after its action was sent doesn't undo the request; keep the action disabled until the answer arrives (the transfer form does) and show the result on the page. Organization deletion goes further: its dialog stays open until the answer and shows the outcome inside it (above); the transfer closes first and shows it on the page.
 - **move focus somewhere sensible when the trigger is gone.** If the action removed the item whose button opened the dialog, the page moves focus to a stable place (the list or the page heading). No page does this yet (**Gap**: removal of a member or project isn't behind a dialog today).
 - **render without inline styles on the server.** They render under the CSP as configured (`CSPProvider` in `__root.tsx`); a new dialog page still goes through e2e and visual tests.
 
 ## Where confirmations are missing
 
-Organization deletion is confirmed by typing the name, not by a dialog. Project deletion, member removal, invitation revocation and account deletion have no confirmation dialog. No canonical rule requires one (AGENTS.md "UI" only restricts `destructiveSolid` to a dialog's final action); the `ui-page` skill's build step asks for one, which is a **Proposal** until the owner adopts it ([destructive actions](../patterns/destructive-actions.md)). Don't copy these pages as the model for a new irreversible action without deciding that first.
+Organization deletion and ownership transfer are confirmed in an `AlertDialog`. Project deletion, member removal, invitation revocation and account deletion have no confirmation dialog. No canonical rule requires one (AGENTS.md "UI" only restricts `destructiveSolid` to a dialog's final action); the `ui-page` skill's build step asks for one, which is a **Proposal** until the owner adopts it ([destructive actions](../patterns/destructive-actions.md)). Don't copy these pages as the model for a new irreversible action without deciding that first.
