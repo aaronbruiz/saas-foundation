@@ -34,6 +34,7 @@ import {
   type TestUser,
 } from './helpers'
 import { testBotProtection } from './turnstile-fake'
+import { DELETION_REFUSALS } from '../src/lib/deletion-refusals'
 
 // Organization settings (owner decisions 2026-10-31) and ADR-0043's two safeguards: an owner's row
 // can't be changed so that an organization has no owner, and a deletion can't race a subscription.
@@ -356,11 +357,14 @@ describe('deleting an organization', () => {
 
   it('refuses a wrong or missing name with 400 and changes nothing', async () => {
     const { owner, slug, orgId } = await team()
-    await expectStatus(
-      () => deleteOrganization(owner.headers, { tenant: slug, confirmName: 'wrong' }),
-      400,
-    )
-    await expectStatus(() => deleteOrganization(owner.headers, { tenant: slug }), 400)
+    // Exact messages: the settings page recognises refusals by text (lib/deletion-refusals.ts).
+    await expect(
+      deleteOrganization(owner.headers, { tenant: slug, confirmName: 'wrong' }),
+    ).rejects.toMatchObject({ status: 400, message: DELETION_REFUSALS.mismatch })
+    await expect(deleteOrganization(owner.headers, { tenant: slug })).rejects.toMatchObject({
+      status: 400,
+      message: DELETION_REFUSALS.invalidInput,
+    })
     expect(await roleOf(orgId, owner)).toBe('owner')
   })
 
@@ -368,7 +372,10 @@ describe('deleting an organization', () => {
     const { owner, admin, member, outsider, slug } = await team()
     const { name } = await getTenant(owner.headers, { tenant: slug })
     const input = { tenant: slug, confirmName: name }
-    await expectStatus(() => deleteOrganization(admin.headers, input), 403)
+    await expect(deleteOrganization(admin.headers, input)).rejects.toMatchObject({
+      status: 403,
+      message: DELETION_REFUSALS.forbidden,
+    })
     await expectStatus(() => deleteOrganization(member.headers, input), 403)
     await expectStatus(() => deleteOrganization(outsider.headers, input), 404)
   })
@@ -688,13 +695,13 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     const attempt = buy(owner, slug, provider)
     await vi.waitFor(() => expect(provider.checkout).toHaveBeenCalled())
     // However long this takes: no timestamp is stored, so nothing here can expire.
-    expect(await begin(orgId, providerWith())).toMatch(/hasn't finished/)
+    expect(await begin(orgId, providerWith())).toBe(DELETION_REFUSALS.checkoutInFlight)
     expect(await begin(orgId, providerWith())).toMatch(/hasn't finished/)
     session.resume('https://checkout.example/late')
     await expect(attempt).resolves.toEqual({ url: 'https://checkout.example/late' })
     // Finished: the session is at the provider now, so its state decides.
     const open = { subscriptions: [], hasPendingCheckout: true }
-    expect(await begin(orgId, providerWith(open))).toMatch(/still open/)
+    expect(await begin(orgId, providerWith(open))).toBe(DELETION_REFUSALS.checkoutOpen)
     expect(await begin(orgId, providerWith())).toBeNull()
   })
 
@@ -708,7 +715,7 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
     await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
     // Its read says nothing is there: it was true when taken, and it's stale now.
     read.resume(quiet)
-    await expect(deletion).resolves.toMatch(/changed while/)
+    await expect(deletion).resolves.toBe(DELETION_REFUSALS.concurrentChange)
     await expect(buy(owner, slug, providerWith())).resolves.toBeDefined()
   })
 
@@ -852,7 +859,7 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
       await reached.promise
       account.subscriptions.push({ status: 'active', checkout_id: 'c1' })
       gate.resume()
-      await expect(deletion).resolves.toMatch(/active subscription/)
+      await expect(deletion).resolves.toBe(DELETION_REFUSALS.liveSubscription)
     })
 
     it('paid, with the subscription not listed yet: refused until it is', async () => {
@@ -992,7 +999,9 @@ describe('a deletion and a subscription (ADR-0043)', { timeout: 60_000 }, () => 
         throw new Error('provider down: secret detail')
       })
       expect(res.status).toBe(503)
-      expect(await res.text()).not.toContain('secret detail')
+      const body = await res.text()
+      expect(body).not.toContain('secret detail')
+      expect(JSON.parse(body).message).toBe(DELETION_REFUSALS.billingUnavailable)
       expect(await exists(orgId)).toBe(true)
     })
 

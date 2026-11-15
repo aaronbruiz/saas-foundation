@@ -7,8 +7,8 @@ import { hydrated, setTheme, tabWalk, team, themes } from './pages'
 // the tab order reaches the page's controls in reading order, each one shows a visible focus
 // indicator, the transfer picker answers arrow keys and Escape without losing focus, and the
 // rename toast doesn't take focus. Runs in every `pnpm test:visual` mode; it takes no screenshots.
-// The settings page's transfer dialog keeps Tab inside it, and Cancel and Escape close it, return
-// focus to the page's button and send nothing. No page uses a menu yet.
+// The settings page's transfer and deletion dialogs keep Tab inside them, and Cancel and Escape
+// close them, return focus to the page's button and send nothing. No page uses a menu yet.
 
 const settingsControls = [
   'Organization name',
@@ -16,7 +16,6 @@ const settingsControls = [
   'New owner',
   'Transfer ownership',
   'Leave organization',
-  'Organization name to confirm',
   'Delete organization',
 ]
 
@@ -73,6 +72,47 @@ for (const theme of themes)
       await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
       await expect(page.getByText('member', { exact: true })).toHaveCount(2)
       await expect(page.getByText('owner', { exact: true })).toHaveCount(1)
+    })
+
+    test('settings: the deletion dialog starts on its title, keeps focus inside, and Cancel and Escape send nothing', async ({
+      page,
+      allowWebKitSelect,
+    }) => {
+      await openSettings(page)
+      await allowWebKitSelect(page)
+      const remove = page.getByRole('button', { name: 'Delete organization' })
+      const dialog = page.getByRole('alertdialog')
+      for (const close of ['Escape', 'Cancel'] as const) {
+        await remove.click()
+        await expect(dialog).toBeVisible()
+        await expect(dialog.getByRole('heading')).toBeFocused()
+        // Reading order: the Privacy Policy link in the consequences, the field, Cancel (Delete is
+        // disabled while the field is empty).
+        for (const stop of [
+          dialog.getByRole('link', { name: 'Privacy Policy' }),
+          dialog.getByRole('textbox'),
+          dialog.getByRole('button', { name: 'Cancel' }),
+        ]) {
+          await page.keyboard.press('Tab')
+          await expect(stop).toBeFocused()
+        }
+        // More presses than stops, so Tab wraps; at the wrap Base UI's focus guard holds focus
+        // for a moment (as above).
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press('Tab')
+          await expect
+            .poll(() => dialog.evaluate((d) => d.contains(document.activeElement)))
+            .toBe(true)
+        }
+        if (close === 'Escape') await page.keyboard.press('Escape')
+        else await dialog.getByRole('button', { name: 'Cancel' }).click()
+        await expect(dialog).toHaveCount(0)
+        await expect(remove).toBeFocused()
+      }
+      // Nothing was sent: the organization still answers. Checked on another page (WebKit's
+      // <select> refusals are allowed once per page URL).
+      await page.goto(`/t/${team().slug}/members`)
+      await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
     })
 
     test('settings: the transfer picker answers arrow keys and Escape, and keeps focus', async ({

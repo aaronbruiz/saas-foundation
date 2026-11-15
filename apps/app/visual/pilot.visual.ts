@@ -44,6 +44,16 @@ for (const view of views)
             await snap(`settings-picker-${view.name}-${theme}.png`, { fullPage: true, mask })
             await page.keyboard.press('Escape')
           }
+          // The deletion dialog, empty. The organization's name is in its title, first line and
+          // label.
+          await page.getByRole('button', { name: 'Delete organization' }).click()
+          const dialog = page.getByRole('alertdialog')
+          await expect(dialog).toBeVisible()
+          await snap(`settings-delete-${view.name}-${theme}.png`, {
+            fullPage: true,
+            mask: [...mask, dialog.getByRole('heading'), dialog.locator('li').first()],
+          })
+          await page.keyboard.press('Escape')
         })
       })
     })
