@@ -1,6 +1,7 @@
 // ADR-0022 POC: the real Polar adapter (providers/polar.ts) against the Polar sandbox. Not part of
-// `pnpm test`; run with `vitest run --config vitest.eval.config.ts --reporter=verbose` (the default
-// reporter hides console output) and POLAR_EVAL_RUN=<slug>.
+// `pnpm test`; run with `vitest run --config vitest.eval.config.ts --reporter=verbose` (run by an
+// AI agent, Vitest's `agent` reporter hides passing tests' console output) and
+// POLAR_EVAL_RUN=<slug>.
 // Uses the sandbox token and eval emails from apps/app/.dev.vars; removes its customer only on success
 // (a failure stops with the sandbox left as it is, for the owner to decide).
 import { env } from 'cloudflare:workers'
