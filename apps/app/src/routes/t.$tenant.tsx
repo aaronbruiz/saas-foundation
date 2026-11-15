@@ -103,7 +103,9 @@ function TenantLayout() {
           </div>
         </nav>
       </header>
-      <Outlet />
+      <main>
+        <Outlet />
+      </main>
     </div>
   )
 }

@@ -9,8 +9,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { pageTitle } from '@/lib/title'
 
-export const Route = createFileRoute('/subprocessors')({ component: Subprocessors })
+export const Route = createFileRoute('/subprocessors')({
+  head: () => pageTitle(legalDocuments.subprocessors.title),
+  component: Subprocessors,
+})
 
 /** Cells wrap their text. Below `sm` a stacked list replaces the table (same data). */
 const cell = 'align-top whitespace-normal'

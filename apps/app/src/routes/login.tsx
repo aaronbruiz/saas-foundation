@@ -9,8 +9,10 @@ import { AuthLayout, authInlineLink, authStandaloneLink } from '@/components/ui/
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 export const Route = createFileRoute('/login')({
+  head: () => pageTitle('Sign in'),
   // `verified` / `error`: where a verification link lands (ADR-0016); Better Auth appends `error`
   // when the link is invalid or expired. Only their presence is used, never their text.
   validateSearch: (

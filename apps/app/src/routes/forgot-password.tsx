@@ -8,9 +8,11 @@ import { AuthLayout, authStandaloneLink } from '@/components/ui/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 // Password reset request (ADR-0016). The answer is the same whether or not the account exists.
 export const Route = createFileRoute('/forgot-password')({
+  head: () => pageTitle('Reset your password'),
   loader: () => getTurnstileConfigFn(),
   component: ForgotPassword,
 })

@@ -28,10 +28,12 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { pageTitle } from '@/lib/title'
 
 // Organization settings (owner decisions 2026-10-31). The capabilities from the layout only pick
 // the sections shown; every server function checks them again.
 export const Route = createFileRoute('/t/$tenant/settings')({
+  head: () => pageTitle('Settings'),
   loader: async ({ params, parentMatchPromise }) => {
     const { loaderData } = await parentMatchPromise
     const capabilities = loaderData?.capabilities ?? []
@@ -189,8 +191,9 @@ function RenameForm({ name }: { name: string }) {
             maxLength={120}
             defaultValue={name}
             aria-invalid={fieldError || undefined}
+            aria-describedby={fieldError ? 'organization-name-error' : undefined}
           />
-          {fieldError && <FieldError>{error}</FieldError>}
+          {fieldError && <FieldError id="organization-name-error">{error}</FieldError>}
         </Field>
         {!fieldError && <FieldError>{error}</FieldError>}
         <div>
@@ -268,7 +271,9 @@ function TransferForm({
               className="w-full sm:w-96"
               value={selected?.id ?? ''}
               onChange={(e) => setSelectedId(e.currentTarget.value)}
-              aria-describedby="new-owner-selected"
+              aria-describedby={
+                fieldError ? 'new-owner-selected new-owner-error' : 'new-owner-selected'
+              }
               aria-invalid={fieldError || undefined}
             >
               {candidates.map((m) => (
@@ -283,7 +288,7 @@ function TransferForm({
                 Selected: {selected.email} ({selected.role})
               </p>
             )}
-            {fieldError && <FieldError>{error}</FieldError>}
+            {fieldError && <FieldError id="new-owner-error">{error}</FieldError>}
           </Field>
           {!fieldError && <FieldError>{error}</FieldError>}
           <div>
@@ -505,8 +510,9 @@ function DeleteDialog({
             autoCorrect="off"
             spellCheck={false}
             aria-invalid={error?.field || undefined}
+            aria-describedby={error?.field ? 'confirm-name-error' : undefined}
           />
-          {error?.field && <FieldError>{error.text}</FieldError>}
+          {error?.field && <FieldError id="confirm-name-error">{error.text}</FieldError>}
         </Field>
         {error && !error.field && <FieldError>{error.text}</FieldError>}
         <AlertDialogFooter>
