@@ -31,7 +31,6 @@ const pages: AccountPage[] = [
       'Current password',
       'New password',
       'Change password',
-      'Password to delete your account',
       'Delete account',
     ],
   },

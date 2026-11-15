@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { useState, type SyntheticEvent } from 'react'
+import { useRef, useState, type SyntheticEvent } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { getTenantFn, getViewerFn } from '../modules/organizations/functions'
 import { authClient } from '../lib/auth-client'
@@ -114,17 +114,26 @@ function TenantLayout() {
  */
 function OrganizationMenu({ slug, name }: { slug: string; name: string }) {
   const getViewer = useServerFn(getViewerFn)
-  const [others, setOthers] = useState<{ slug: string; name: string }[]>([])
-  const [error, setError] = useState<string | null>(null)
+  // Loading and a failure are said in words: an empty list only means there are no others.
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'loaded'; others: { slug: string; name: string }[] }
+    | { kind: 'failed'; error: string }
+  >({ kind: 'loading' })
+  // Each opening reads again; an answer to an earlier opening is dropped.
+  const request = useRef(0)
 
   async function onToggle(e: SyntheticEvent<HTMLDetailsElement>) {
     if (!e.currentTarget.open) return
-    setError(null)
+    const current = ++request.current
+    setState({ kind: 'loading' })
     try {
       const viewer = await getViewer()
-      setOthers((viewer?.organizations ?? []).filter((o) => o.slug !== slug))
+      if (current !== request.current) return
+      const others = (viewer?.organizations ?? []).filter((o) => o.slug !== slug)
+      setState({ kind: 'loaded', others })
     } catch (err) {
-      setError(messageOf(err))
+      if (current === request.current) setState({ kind: 'failed', error: messageOf(err) })
     }
   }
 
@@ -139,20 +148,26 @@ function OrganizationMenu({ slug, name }: { slug: string; name: string }) {
       </summary>
       <div className="absolute z-10 mt-2 w-64 space-y-2 rounded-md border bg-popover p-3 text-sm text-popover-foreground shadow">
         <ul className="space-y-2">
-          {others.map((o) => (
-            <li key={o.slug}>
-              <Link to="/t/$tenant/projects" params={{ tenant: o.slug }} className={menuLink}>
-                {o.name}
-              </Link>
-            </li>
-          ))}
+          {state.kind === 'loaded' &&
+            state.others.map((o) => (
+              <li key={o.slug}>
+                <Link to="/t/$tenant/projects" params={{ tenant: o.slug }} className={menuLink}>
+                  {o.name}
+                </Link>
+              </li>
+            ))}
           <li>
             <Link to="/orgs/new" className={menuLink}>
               New organization
             </Link>
           </li>
         </ul>
-        <FieldError>{error}</FieldError>
+        {state.kind === 'loading' && (
+          <p role="status" className="text-muted-foreground">
+            Loading organizations…
+          </p>
+        )}
+        <FieldError>{state.kind === 'failed' ? state.error : null}</FieldError>
       </div>
     </details>
   )

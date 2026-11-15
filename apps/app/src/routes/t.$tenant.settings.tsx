@@ -230,12 +230,20 @@ function TransferForm({
     setConfirming(true)
   }
 
+  // The dialog stays open until the answer (AGENTS.md "UI"), then closes; the outcome is shown on
+  // the page: a toast and the refreshed settings, or the form's error.
+  const sending = useRef(false)
   function onConfirm() {
-    if (!pending) return
+    if (!pending || sending.current) return
+    sending.current = true
     const { id: memberId, email } = pending
-    setConfirming(false)
     void run(async () => {
-      await transfer({ data: { tenant, memberId } })
+      try {
+        await transfer({ data: { tenant, memberId } })
+      } finally {
+        sending.current = false
+        setConfirming(false)
+      }
       toast.success(`Ownership transferred to ${email}.`)
       await router.invalidate()
     })
@@ -285,7 +293,13 @@ function TransferForm({
           </div>
         </form>
       )}
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+      <AlertDialog
+        open={confirming}
+        onOpenChange={(next) => {
+          if (!next && sending.current) return
+          setConfirming(next)
+        }}
+      >
         <AlertDialogContent finalFocus={submitRef}>
           <AlertDialogHeader>
             <AlertDialogTitle className="wrap-anywhere">
@@ -296,14 +310,15 @@ function TransferForm({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={disabled}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               type="button"
               variant="destructiveSolid"
               disabled={disabled}
+              aria-busy={(confirming && disabled) || undefined}
               onClick={onConfirm}
             >
-              Transfer ownership
+              {confirming && disabled ? 'Transferring…' : 'Transfer ownership'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

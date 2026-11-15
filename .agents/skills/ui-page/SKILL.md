@@ -18,7 +18,8 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 - Pick the page's frame: `AuthLayout` for sign-in and onboarding, the tenant shell (`t.$tenant.tsx`) for tenant pages, the account or legal page's frame otherwise. Don't copy a frame's classes into the page.
 - Use `components/ui` and the brand tokens; `NativeSelect` for a simple choice; contract types only (`import type`). Choosing a component: `docs/design-system/components/README.md` (inventory, with which ones no page uses yet); tokens: `docs/design-system/foundations/color.md`.
 - Forms: `method="post"`, submit disabled until hydrated (`useHydrated`), the server's errors placed as `AGENTS.md` "UI" says (a field error at its field, any other failure in a form-level alert, toasts for success only).
-- Destructive actions: the page's own button stays tinted (`destructive`), and `destructiveSolid` appears only as the final action of an `AlertDialog` confirming an action that can't be undone or an ownership transfer (`AGENTS.md` "UI"). Whether a given action needs that dialog is the spec's decision: no rule requires one for every irreversible action (a proposal, `docs/design-system/patterns/destructive-actions.md`); ownership transfer and organization deletion use one today.
+- Destructive actions: the page's own button stays tinted (`destructive`), and `destructiveSolid` appears only as the final action of an `AlertDialog` confirming an action that can't be undone or an ownership transfer. Which actions need that dialog is `AGENTS.md` "UI" ("Confirm by consequence"); the examples are in `docs/design-system/patterns/destructive-actions.md`.
+- Pending states and unknown outcomes: `docs/design-system/patterns/saving-and-submitting.md` (`usePending` in `lib/ui.tsx` guards an action before its first `await`).
 - A new colour pair (a new variant or surface): add it to `scripts/brand-contrast.mjs`.
 
 ## 3. Visual and keyboard tests

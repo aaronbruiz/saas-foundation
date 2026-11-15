@@ -53,7 +53,7 @@ To Polar: the organization's id and name, the customer's email (the owner starti
 | The webhook was applied | `billing_subscription`               | A verified, deduplicated, re-read event changed our copy (outcome `applied`).       |
 | The entitlement changed | computed on each read by `policy.ts` | The organization's limits and features are now the plan's.                          |
 
-The return to `/t/<slug>/billing?checkout=success` proves none of these: the `checkout` marker isn't read and grants nothing. A timeout proves nothing either: a request that didn't answer may still have created a session.
+The return to `/t/<slug>/billing?checkout=success` (or `?portal=return`) proves none of these: the marker only chooses the page's wording while it reads the overview again, and grants nothing ([billing handoffs](../design-system/patterns/billing-handoffs.md)). A timeout proves nothing either: a request that didn't answer may still have created a session, and the page's own wait ending says only that no update has arrived yet.
 
 ## Failures
 
@@ -75,7 +75,7 @@ The return to `/t/<slug>/billing?checkout=success` proves none of these: the `ch
 ## Retry safety
 
 - **Webhooks** are idempotent: deduplicated by event id, and an older event than the one applied is `stale`. Polar's redelivery is safe (runbook "Re-sync one subscription from Polar").
-- **Checkout** is not idempotent at Polar (no idempotency keys or conditional writes, ADR-0043). The billing page's buttons are disabled only until hydration, not while a request is pending, so a second click can start a second attempt and session (read from the source, not reproduced). One subscription per organization is enforced when a subscription exists, not while sessions are open.
+- **Checkout** is not idempotent at Polar (no idempotency keys or conditional writes, ADR-0043). The billing page's buttons are disabled from the first click until the browser leaves (e2e `leaving for Polar`), which prevents a second attempt from that page only: another tab can still start one (server-side deduplication isn't built; owner 2026-11-15: documented only). One subscription per organization is enforced when a subscription exists, not while sessions are open.
 - **Owner changes** call Polar before (revoke) and after (grant) the change. A failed revoke refuses the change; a failed grant leaves less access, repaired by the next checkout or portal call (ADR-0022, ADR-0043).
 
 ## Tests and operations

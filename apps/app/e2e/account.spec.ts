@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { createOrg, PASSWORD, rand } from './helpers'
 import { sessionFile } from './session'
@@ -169,8 +170,9 @@ test('deleting the account: a wrong password is refused, and fields stay out of 
   page,
 }) => {
   await page.goto('/account')
+  await openDeleteDialog(page)
   await page.getByLabel('Password to delete your account').fill('wrong-password-123')
-  await page.getByRole('button', { name: 'Delete account' }).click()
+  await confirmDelete(page)
   await expect(page.getByRole('alert')).toContainText('Incorrect password.')
   // A wrong password is about the typed value: it marks the field.
   await expect(page.getByLabel('Password to delete your account')).toHaveAttribute(
@@ -194,8 +196,9 @@ test('deleting the account: a part-way refusal says what already happened', asyn
     }),
   )
   await page.goto('/account')
+  await openDeleteDialog(page)
   await page.getByLabel('Password to delete your account').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Delete account' }).click()
+  await confirmDelete(page)
   await expect(page.getByRole('alert')).toHaveText(
     "Your account wasn't deleted. You left Acme. You're now the only owner of Beta: transfer or delete it, then try again.",
   )
@@ -216,8 +219,9 @@ test('deleting the account: on success the page leaves for the home page', async
     }),
   )
   await page.goto('/account')
+  await openDeleteDialog(page)
   await page.getByLabel('Password to delete your account').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Delete account' }).click()
+  await confirmDelete(page)
   // The stubbed session is still signed in, so `/` sends it on: it has left this page.
   await expect(page).not.toHaveURL(/\/account$/)
 })
@@ -229,8 +233,9 @@ test("deleting the account: an answer that proves nothing doesn't claim it faile
     route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
   )
   await page.goto('/account')
+  await openDeleteDialog(page)
   await page.getByLabel('Password to delete your account').fill(PASSWORD)
-  await page.getByRole('button', { name: 'Delete account' }).click()
+  await confirmDelete(page)
   await expect(page.getByRole('alert')).toHaveText(
     "We couldn't confirm your account was deleted. Try signing in again to check.",
   )
@@ -247,4 +252,95 @@ test('signed out, the account page sends you to sign in and back', async ({ brow
   await expect(page).toHaveURL(/\/login\?redirect=/)
   expect(new URL(page.url()).searchParams.get('redirect')).toBe('/account')
   await context.close()
+})
+
+// The page's Delete account button only opens the confirmation; the dialog's sends the request.
+async function openDeleteDialog(page: Page) {
+  const button = page.getByRole('button', { name: 'Delete account' })
+  await expect(button).toBeEnabled()
+  await button.click()
+  await expect(page.getByRole('alertdialog')).toBeVisible()
+}
+
+const confirmDelete = (page: Page) =>
+  page.getByRole('alertdialog').getByRole('button', { name: 'Delete account' }).click()
+
+test('deleting the account: Cancel and Escape send nothing and return to the page', async ({
+  page,
+}) => {
+  let sent = 0
+  await page.route('**/api/auth/delete-account', (route) => (sent++, route.abort()))
+  await page.goto('/account')
+  const button = page.getByRole('button', { name: 'Delete account' })
+  for (const close of ['Cancel', 'Escape'] as const) {
+    await openDeleteDialog(page)
+    const dialog = page.getByRole('alertdialog')
+    await expect(dialog.getByRole('heading', { name: 'Delete your account?' })).toBeFocused()
+    await dialog.getByLabel('Password to delete your account').fill(PASSWORD)
+    if (close === 'Escape') await page.keyboard.press('Escape')
+    else await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(button).toBeFocused()
+  }
+  // A reopened dialog starts empty.
+  await openDeleteDialog(page)
+  await expect(page.getByLabel('Password to delete your account')).toHaveValue('')
+  expect(sent).toBe(0)
+})
+
+test('deleting the account: while the request runs the dialog stays open and a second Enter sends nothing', async ({
+  page,
+}) => {
+  let sent = 0
+  let answer: () => void = () => {}
+  await page.route('**/api/auth/delete-account', async (route) => {
+    sent++
+    await new Promise<void>((resolve) => (answer = resolve))
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+  })
+  await page.goto('/account')
+  await openDeleteDialog(page)
+  const dialog = page.getByRole('alertdialog')
+  const field = dialog.getByLabel('Password to delete your account')
+  await field.fill(PASSWORD)
+  await field.press('Enter')
+  await field.press('Enter')
+  await expect(dialog.getByRole('button', { name: 'Deleting…' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  answer()
+  await expect(dialog.getByRole('alert')).toHaveText(
+    "We couldn't confirm your account was deleted. Try signing in again to check.",
+  )
+  expect(sent).toBe(1)
+})
+
+test('the organization menu says it is loading, and a failure is not an empty list', async ({
+  page,
+}) => {
+  await page.goto('/orgs/new')
+  const slug = await createOrg(page, 'menu')
+  let answer: () => void = () => {}
+  let fail = false
+  await page.route('**/_serverFn/**', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await new Promise<void>((resolve) => (answer = resolve))
+    await (fail ? route.abort() : route.fallback())
+  })
+  const menu = page.getByText(`Org ${slug}`, { exact: true })
+  await menu.click()
+  await expect(page.getByRole('status')).toHaveText('Loading organizations…')
+  await expect(page.getByRole('link', { name: 'New organization' })).toBeVisible()
+  answer()
+  await expect(page.getByRole('status')).toHaveCount(0)
+
+  // Closed and opened again: it reads again, and a failure says so, keeping New organization.
+  await menu.click()
+  fail = true
+  await menu.click()
+  await expect(page.getByRole('status')).toHaveText('Loading organizations…')
+  answer()
+  await expect(page.getByRole('alert')).toBeVisible()
+  await expect(page.getByRole('status')).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'New organization' })).toBeVisible()
 })

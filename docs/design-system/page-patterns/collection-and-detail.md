@@ -19,19 +19,20 @@ Creation is inline on the collection page because the form is short and its resu
 
 ## States
 
-| State                                             | Current behaviour                                                                                                                      |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Another tenant's or unknown item, or not a member | the not-found page (invariant 5; the loader's server call answers 404)                                                                 |
-| Role can't delete                                 | no Delete button; a direct call answers 403                                                                                            |
-| Empty collection                                  | a muted sentence and the create form on the same page                                                                                  |
-| At the plan's limit                               | create refused with the limit and "Upgrade to add more." (403)                                                                         |
-| Saving                                            | **Gap:** no pending state; a repeated click sends again ([saving](../patterns/saving-and-submitting.md#pending))                       |
-| Save failed                                       | the server's message in a `FieldError` after the fields; input kept                                                                    |
-| Saved                                             | the heading and list update after `router.invalidate()`; no toast, the change is visible                                               |
-| Deleted                                           | navigates to the collection; no confirmation; adding one is a **Proposal** ([destructive actions](../patterns/destructive-actions.md)) |
-| Edited elsewhere meanwhile                        | last save wins, no warning ([errors and recovery](../patterns/errors-and-recovery.md#stale-pages-and-concurrent-changes))              |
-| Navigating away with unsaved edits                | lost without a warning                                                                                                                 |
-| Loading                                           | none: the loader runs before render                                                                                                    |
+| State                                             | Current behaviour                                                                                                                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Another tenant's or unknown item, or not a member | the not-found page (invariant 5; the loader's server call answers 404)                                                                                                    |
+| Role can't delete                                 | no Delete button; a direct call answers 403                                                                                                                               |
+| Empty collection                                  | a muted sentence and the create form on the same page                                                                                                                     |
+| At the plan's limit                               | create refused with the limit and "Upgrade to add more." (403)                                                                                                            |
+| Saving                                            | the button is disabled and says "Saving…"/"Creating…" until the answer; a repeated click sends nothing ([saving](../patterns/saving-and-submitting.md#pending))           |
+| Create's answer lost                              | "We couldn't confirm the project was created. Check the list before trying again."; input kept, list refreshed                                                            |
+| Save failed                                       | the server's message in a `FieldError` after the fields; input kept                                                                                                       |
+| Saved                                             | the heading and list update after `router.invalidate()`; no toast, the change is visible                                                                                  |
+| Deleted                                           | confirmed in an `AlertDialog` (AGENTS.md "UI"), then navigates to the collection, replacing the history entry ([destructive actions](../patterns/destructive-actions.md)) |
+| Edited elsewhere meanwhile                        | last save wins, no warning ([errors and recovery](../patterns/errors-and-recovery.md#stale-pages-and-concurrent-changes))                                                 |
+| Navigating away with unsaved edits                | lost without a warning                                                                                                                                                    |
+| Loading                                           | none: the loader runs before render                                                                                                                                       |
 
 ## Tests
 

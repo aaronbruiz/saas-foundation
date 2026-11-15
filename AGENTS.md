@@ -84,6 +84,7 @@ Required steps, in [`docs/architecture/recipes.md`](docs/architecture/recipes.md
 - Pages use `components/ui` and the brand tokens (`bg-background`…), never `gray-*`, hex or `style`.
 - Simple choice: `NativeSelect`; Base UI `Select` only for rich ones (ADR-0046).
 - Auth pages: `AuthLayout`. Invalid input: `Field` gets `data-invalid` and a `FieldError`; other failures: a form-level `role="alert"`; toasts: success only. `destructiveSolid`: only an `AlertDialog`'s final action confirming an irreversible action or ownership transfer. Lone and menu links ≥ 24 px (`min-h-6`).
+- Confirm by consequence: deleting what the app can't restore (a project, an organization, your account) and transferring ownership go through an `AlertDialog` that names the object and its consequence, final action `destructiveSolid`, open until the answer; organization deletion also takes its typed name, account deletion its password. Actions that can be redone (removing a member, revoking an invitation, leaving) aren't confirmed: they show their pending state and result.
 - A style the CSP refuses fails e2e and visual tests; allowing it changes the CSP (ADR-0045).
 - `pnpm test:visual --baseline` before, `--compare` after (summary in Checks); procedure: `ui-page` skill.
 

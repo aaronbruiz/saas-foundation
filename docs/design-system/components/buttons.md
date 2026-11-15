@@ -4,15 +4,15 @@
 
 ## Variants
 
-| Variant            | Use                                                                                                                      | Example                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `default`          | the main action of a form or page, one per form                                                                          | "Create project", "Save", "Accept invitation"                                 |
-| `outline`          | a secondary action next to or instead of the main one                                                                    | "Manage billing", "Leave organization"                                        |
-| `secondary`        | a lower-emphasis filled action                                                                                           | no page yet                                                                   |
-| `ghost`            | an action inside a dense row or toolbar                                                                                  | no page yet                                                                   |
-| `destructive`      | **Rule:** page and row actions that remove or delete: tinted, not solid                                                  | "Delete project", "Remove", "Revoke", "Delete organization", "Delete account" |
-| `destructiveSolid` | **Rule:** only the final action of an `AlertDialog` that confirms an action that can't be undone or hands over ownership | "Transfer ownership" in the transfer dialog                                   |
-| `link`             | an action that reads like a link but does something in place                                                             | no page yet                                                                   |
+| Variant            | Use                                                                                                                      | Example                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `default`          | the main action of a form or page, one per form                                                                          | "Create project", "Save", "Accept invitation"                                                    |
+| `outline`          | a secondary action next to or instead of the main one                                                                    | "Manage billing", "Leave organization"                                                           |
+| `secondary`        | a lower-emphasis filled action                                                                                           | no page yet                                                                                      |
+| `ghost`            | an action inside a dense row or toolbar                                                                                  | no page yet                                                                                      |
+| `destructive`      | **Rule:** page and row actions that remove or delete: tinted, not solid                                                  | "Delete project", "Remove", "Revoke", "Delete organization", "Delete account"                    |
+| `destructiveSolid` | **Rule:** only the final action of an `AlertDialog` that confirms an action that can't be undone or hands over ownership | "Transfer ownership", "Delete project", "Delete organization", "Delete account" in their dialogs |
+| `link`             | an action that reads like a link but does something in place                                                             | no page yet                                                                                      |
 
 Sizes: `default` (36 px), `xs`, `sm`, `lg`, and square `icon`, `icon-xs`, `icon-sm`, `icon-lg`. Pages use the default size; member rows use `sm` for their actions.
 
@@ -25,12 +25,12 @@ A control that **navigates** is a link (`Link` from TanStack Router, or `<a>`): 
 ## States
 
 - **Disabled until hydrated** (Rule, invariant 8): every submit and every action button has `disabled={!hydrated}` (`useHydrated`, [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx)). Before hydration a native submit would send the form as a GET.
-- **Busy:** auth pages, account and settings also disable while their request is pending (`busy`). Project, invitation and billing actions don't (**Gap**, [saving and submitting](../patterns/saving-and-submitting.md)).
+- **Busy:** every action also disables while its request is pending, with a label saying so ("Saving…") and `aria-busy` (`usePending` in [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx), settings' `useAction`; [saving and submitting](../patterns/saving-and-submitting.md)).
 - Focus shows the `ring`; `aria-invalid` turns the border destructive; an icon inside is sized by the button.
 
 ## What the page still does
 
-The button doesn't prevent a second submission, show progress, or tell anyone what happened. The page owns pending state, the result message and where focus goes when the button's item disappears ([patterns](../patterns/README.md)). A disabled button explains nothing on its own: say why nearby if the person can do something about it.
+The button doesn't prevent a second submission, show progress, or tell anyone what happened. The page owns pending state (`usePending`), the result message and where focus goes when the button's item disappears ([patterns](../patterns/README.md)). A disabled button explains nothing on its own: say why nearby if the person can do something about it.
 
 ## Accessible names
 

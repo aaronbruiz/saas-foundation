@@ -748,4 +748,23 @@ describe('billing actions', () => {
     await startCheckout(owner.headers, { tenant: slug, price }, provider)
     expect(calls.checkout[0]).toMatchObject({ customerId: 'polar-customer-test', trialDays: 0 })
   })
+
+  it('the overview says whether the plan is live, and the portal returns to the page with its marker', async () => {
+    const owner = await signUp()
+    const slug = await createOrg(owner, 'bill-live')
+    const orgId = await orgIdOf(slug)
+    const { provider, calls } = fakeProvider()
+    const live = async () => (await getBillingOverview(owner.headers, { tenant: slug })).live
+    expect(await live()).toBe(false)
+
+    const subId = await upgrade(orgId, 'past_due')
+    expect(await live()).toBe(true)
+    await openBillingPortal(owner.headers, { tenant: slug }, provider)
+    expect(calls.portal[0]?.returnUrl).toBe(
+      `${env.BETTER_AUTH_URL}/t/${slug}/billing?portal=return`,
+    )
+
+    await deliver(subscriptionEvent({ orgId, subId, status: 'canceled' }))
+    expect(await live()).toBe(false)
+  })
 })

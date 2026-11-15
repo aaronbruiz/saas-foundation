@@ -22,9 +22,16 @@ test('an owner sees the members and revokes a pending invitation', async ({ page
   await expect(page.getByText('owner', { exact: true })).toBeVisible()
   const revoke = page.getByRole('button', { name: `Revoke invitation for ${invitee}` })
   await expect(revoke).toBeEnabled()
-  await revoke.click()
+  let sent = 0
+  page.on('request', (r) => {
+    if (r.url().includes('/_serverFn/') && r.method() === 'POST') sent++
+  })
+  await revoke.dblclick()
   await expect(page.getByText('No pending invitations.')).toBeVisible()
   await expect(page.getByText(invitee)).toHaveCount(0)
+  expect(sent).toBe(1)
+  // The row and its focused button are gone: focus is on the list's heading.
+  await expect(page.getByRole('heading', { name: 'Pending invitations' })).toBeFocused()
 })
 
 test('the invite form marks the email only when the server rejects the email', async ({ page }) => {

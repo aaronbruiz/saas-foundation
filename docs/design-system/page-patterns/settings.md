@@ -19,7 +19,7 @@ Each form runs one action at a time (`useAction`: busy, error, which answers are
 | Leave               | any member   | none                                                                                                                             | to `/`; a sole owner is refused with what to do first            |
 | Delete organization | owner        | `AlertDialog`: consequences, then the exact name typed in it ([dialogs](../components/dialogs.md#example-organization-deletion)) | to `/`; refused while billing is live or a checkout may complete |
 
-The account page has the same shape: name, password, the person's organizations, and a danger zone with account deletion (password, with the unknown-outcome message, [destructive actions](../patterns/destructive-actions.md)).
+The account page has the same shape: name, password, the person's organizations, and a danger zone with account deletion (an `AlertDialog` with the password and the unknown-outcome message, [destructive actions](../patterns/destructive-actions.md)).
 
 The billing page is a settings page whose changes happen at the provider ([billing handoffs](../patterns/billing-handoffs.md)).
 

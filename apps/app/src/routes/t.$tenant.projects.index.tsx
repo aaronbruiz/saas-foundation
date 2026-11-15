@@ -2,7 +2,7 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
 import { useState, type FormEvent } from 'react'
 import { createProjectFn, listProjectsFn } from '../modules/projects/functions'
-import { messageOf, useHydrated } from '../lib/ui'
+import { messageOf, useHydrated, usePending } from '../lib/ui'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
@@ -20,25 +20,32 @@ function Projects() {
   const router = useRouter()
   const create = useServerFn(createProjectFn)
   const [error, setError] = useState<string | null>(null)
+  const { run, busy } = usePending()
 
-  async function onCreate(e: FormEvent<HTMLFormElement>) {
+  function onCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formEl = e.currentTarget
     const form = new FormData(formEl)
     const description = String(form.get('description') ?? '').trim()
-    try {
-      await create({
-        data: {
-          tenant,
-          project: { name: String(form.get('name')), ...(description ? { description } : {}) },
-        },
-      })
-      formEl.reset()
+    void run(async () => {
       setError(null)
+      try {
+        await create({
+          data: {
+            tenant,
+            project: { name: String(form.get('name')), ...(description ? { description } : {}) },
+          },
+        })
+      } catch (err) {
+        setError(createFailure(err))
+        // A project that was created despite the lost answer shows up in the refreshed list.
+        if (!isCreateRefusal(err)) await router.invalidate()
+        return
+      }
+      // Created: the refresh that follows is separate, and its failure isn't the create's.
+      formEl.reset()
       await router.invalidate()
-    } catch (err) {
-      setError(messageOf(err))
-    }
+    })
   }
 
   return (
@@ -79,8 +86,8 @@ function Projects() {
             </Field>
             <FieldError>{error}</FieldError>
             <div>
-              <Button type="submit" disabled={!hydrated}>
-                Create project
+              <Button type="submit" disabled={!hydrated || busy} aria-busy={busy || undefined}>
+                {busy ? 'Creating…' : 'Create project'}
               </Button>
             </div>
           </form>
@@ -89,3 +96,16 @@ function Projects() {
     </section>
   )
 }
+
+// The create path's refusals (modules/projects/service.ts, server/permissions.ts), each proving
+// nothing was created. Any other answer may follow a commit: a repeat would create a second project.
+const isCreateRefusal = (err: unknown) =>
+  err instanceof Error &&
+  (err.message === 'invalid input' ||
+    err.message === 'forbidden' ||
+    err.message.startsWith('Your plan allows '))
+
+const createFailure = (err: unknown) =>
+  isCreateRefusal(err)
+    ? messageOf(err)
+    : "We couldn't confirm the project was created. Check the list before trying again."

@@ -128,3 +128,18 @@ body {
     color: var(--primary);
   }
 }
+
+/*
+ * Reduced motion (WCAG 2.3.3's intent; docs/design-system/foundations/motion.md): overlays, the
+ * organization menu's chevron and the skeleton stop moving. Near-zero rather than `none`, so the
+ * animation and transition end events Base UI waits for before unmounting a closed overlay still fire.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
