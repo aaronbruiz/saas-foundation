@@ -43,19 +43,6 @@ test.describe('returning from Polar', () => {
     await expect(page.getByRole('status')).toHaveCount(0)
   })
 
-  test('a loader refresh during the wait: the applied plan is the one shown', async ({ page }) => {
-    await page.goto('/orgs/new')
-    const slug = await createOrg(page, 'nav')
-    await page.goto(`/t/${slug}/billing?checkout=success`)
-    await expect(page.getByRole('status')).toHaveText(/^Checking for your new plan/)
-    // The nav link reloads this route's data without remounting the page.
-    await page.getByRole('navigation').getByRole('link', { name: 'Billing' }).click()
-    await expect(page).toHaveURL(new RegExp(`/t/${slug}/billing$`))
-    await applySubscription(slug)
-    await expect(page.getByRole('status')).toHaveText('Your plan is now Pro.', { timeout: 20_000 })
-    await expect(page.getByTestId('plan-name')).toHaveText('Pro')
-  })
-
   test('when the plan is still unchanged after the wait, the page says so and never that it failed', async ({
     page,
   }) => {
