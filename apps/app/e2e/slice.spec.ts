@@ -2,6 +2,8 @@ import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { verificationLink, verifiesEmail } from './mailbox'
 import { createAccount, createOrg, PASSWORD, rand, verifyAndSignIn } from './helpers'
+import { expectAccessible } from './accessibility'
+import { productTitle } from '../src/lib/title'
 import { sessionFile } from './session'
 
 // Vertical Slice 001 end to end (spec §8/§11): sign-up → organization → project → invite →
@@ -132,6 +134,12 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   await createAccount(carol, 'Carol', carolEmail)
   await verifyAndSignIn(carol, carolEmail)
   await expect(carol).toHaveURL(new RegExp(`${invitePath}$`))
+  // The invitee's page passes the accessibility checks (accessibility.spec.ts has no sign-in left).
+  await expect(carol.getByRole('button', { name: 'Accept invitation' })).toBeEnabled({
+    timeout: 15_000,
+  })
+  await expect(carol).toHaveTitle(`Join organization · ${productTitle}`)
+  await expectAccessible(carol, 'invitation accept page')
   await carol.getByRole('button', { name: 'Accept invitation' }).click()
   await expect(carol).toHaveURL(new RegExp(`/t/${orgA}/projects$`))
   await expect(carol.getByRole('link', { name: 'Alpha' })).toBeVisible()
@@ -148,6 +156,8 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   await carol.goto(`/t/${orgA}/billing`)
   await expect(carol.getByRole('heading', { name: 'Something went wrong' })).toBeVisible()
   await expect(carol.getByRole('link', { name: 'Go home' })).toBeVisible()
+  // The error page inside the tenant shell keeps one main landmark (accessibility.spec.ts).
+  await expectAccessible(carol, 'error page inside the tenant shell')
   await expect(carol.getByTestId('plan-name')).toHaveCount(0)
   // The server-rendered page is the same one, before any script runs (not the framework's
   // default boundary, which prints the error).
@@ -212,6 +222,9 @@ test('sign-up, organization, projects, invitation, managing members and tenant i
   // Not about the chosen member: a form-level alert, the picker's field unmarked.
   await expect(aliceLate.locator('[data-slot="field"]:has(#new-owner)')).not.toHaveAttribute(
     'data-invalid',
+  )
+  await expect(aliceLate.getByLabel('New owner')).toHaveAccessibleDescription(
+    `Selected: ${carolEmail} (member)`,
   )
   await expect(
     aliceLate.getByRole('region', { name: /Notifications/ }).getByText(/^Ownership transferred/),

@@ -4,13 +4,14 @@ import appCss from '../styles.css?url'
 import { CSPProvider } from '@base-ui/react/csp-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { productTitle } from '@/lib/title'
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'saas-foundation' },
+      { title: productTitle },
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
   }),

@@ -17,10 +17,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 // A project id from another tenant (or unknown) is a 404 here too: the service scopes by tenant.
 export const Route = createFileRoute('/t/$tenant/projects/$id')({
   loader: ({ params }) => getProjectFn({ data: { tenant: params.tenant, id: params.id } }),
+  head: ({ loaderData }) => pageTitle(loaderData?.name ?? 'Project'),
   component: ProjectDetail,
 })
 

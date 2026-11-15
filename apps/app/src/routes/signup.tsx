@@ -9,8 +9,10 @@ import { AuthLayout, authInlineLink } from '@/components/ui/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 export const Route = createFileRoute('/signup')({
+  head: () => pageTitle('Create account'),
   validateSearch: (s: Record<string, unknown>) => ({ redirect: safeRedirect(s.redirect) }),
   loader: () => getTurnstileConfigFn(),
   component: Signup,

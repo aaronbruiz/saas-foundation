@@ -7,9 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 // The invitee is also emailed when delivery is configured (ADR-0016); the link stays shareable here.
-export const Route = createFileRoute('/t/$tenant/invite')({ component: Invite })
+export const Route = createFileRoute('/t/$tenant/invite')({
+  head: () => pageTitle('Invite a member'),
+  component: Invite,
+})
 
 function Invite() {
   const hydrated = useHydrated()
@@ -51,8 +55,9 @@ function Invite() {
                 type="email"
                 required
                 aria-invalid={fieldError ? true : undefined}
+                aria-describedby={fieldError ? 'invitee-email-error' : undefined}
               />
-              {fieldError && <FieldError>{error}</FieldError>}
+              {fieldError && <FieldError id="invitee-email-error">{error}</FieldError>}
             </Field>
             {error && !fieldError && (
               <p role="alert" className="text-sm text-destructive">

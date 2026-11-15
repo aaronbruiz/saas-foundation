@@ -12,11 +12,13 @@ import { messageOf, useHydrated, usePending } from '../lib/ui'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FieldError } from '@/components/ui/field'
+import { pageTitle } from '@/lib/title'
 
 // Every member sees the members; pending invitations only with `member:invite` (owner decision
 // 2026-10-29). Owner rows have no actions (owner decision 2026-10-30). The capabilities from the
 // layout are UI hints: the server functions check them again.
 export const Route = createFileRoute('/t/$tenant/members')({
+  head: () => pageTitle('Members'),
   loader: async ({ params, parentMatchPromise }) => {
     const { loaderData } = await parentMatchPromise
     const data = { data: { tenant: params.tenant } }

@@ -7,8 +7,10 @@ import { AuthLayout, authStandaloneLink } from '@/components/ui/auth-layout'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { pageTitle } from '@/lib/title'
 
 export const Route = createFileRoute('/orgs/new')({
+  head: () => pageTitle('New organization'),
   loader: async () => {
     const viewer = await getViewerFn()
     if (!viewer) throw redirect({ to: '/login', search: { redirect: '/orgs/new' } })
