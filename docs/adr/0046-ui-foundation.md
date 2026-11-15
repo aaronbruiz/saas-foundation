@@ -2,7 +2,7 @@
 
 Status: Accepted (owner decisions 2026-11-10 and 2026-11-11) · Date: 2026-11-11
 
-Owner 2026-11-10: decisions 1–7 of the UI foundation brief; 2026-11-11: the "Stone and teal" preset, the two CSP hash directives (ADR-0045, as amended), NativeSelect for simple choices, and the WebKit `<select>` exclusion in visual tests. Research and experiment results: `.local/research/website-ui-research-2026-11-10.md`, `.local/ui-experiment-2026-11-10/` (git-ignored, kept by the owner).
+Owner 2026-11-10: decisions 1–7 of the UI foundation brief; 2026-11-11: the "Stone and teal" preset, the two CSP hash directives (ADR-0045, as amended), NativeSelect for simple choices, and the WebKit `<select>` exclusion in visual tests. Research and experiment results: `.local/research/website-ui-research-2026-11-10.md`, `.local/archive/ui-experiment-2026-11-10/` (git-ignored, kept by the owner).
 
 ## Context
 
