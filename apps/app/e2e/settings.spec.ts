@@ -136,3 +136,83 @@ test('deleting an organization: the pending dialog stays open, a refusal keeps i
   await page.goto(`/t/${slug}/settings`)
   await expect(page.getByRole('heading', { name: 'Settings', level: 2 })).toBeVisible()
 })
+
+// The server's refusals on the deletion path (403, ADR-0043's 409s, the billing hooks' 503), and
+// its generic error. Each answer is a real refusal from the server (the request carries another
+// name, so nothing is deleted) whose message is swapped in its serialized body: the page receives
+// exactly what the server sends for that refusal, without seeding billing state.
+const MISMATCH = "That doesn't match the organization's name"
+const REFUSALS = [
+  ['403', 'forbidden'],
+  [
+    '409, live subscription',
+    'This organization has an active subscription. Cancel it in Billing first.',
+  ],
+  [
+    '409, checkout in flight',
+    "A checkout for this organization hasn't finished, or its outcome is unknown. Try again shortly; if this persists, contact support.",
+  ],
+  [
+    '409, checkout open',
+    'A checkout for this organization is still open. Try again once it completes or expires.',
+  ],
+  [
+    '409, concurrent change',
+    'This organization changed while it was being deleted. Try again shortly.',
+  ],
+  ['503', "Billing access couldn't be updated. Try again in a moment."],
+] as const
+
+test('deleting an organization: each refusal keeps the dialog open with its advice and usable controls; an unexpected error says the outcome is unknown', async ({
+  page,
+}) => {
+  await page.goto('/orgs/new')
+  const slug = await createOrg(page, 'sr')
+  const name = `Org ${slug}`
+  await page.goto(`/t/${slug}/settings`)
+  await expect(page.getByRole('button', { name: 'Save name' })).toBeEnabled()
+  const dialog = page.getByRole('alertdialog')
+  const confirm = dialog.getByLabel(`Type ${name} to confirm`)
+  const submit = dialog.getByRole('button', { name: 'Delete organization' })
+  const cancel = dialog.getByRole('button', { name: 'Cancel' })
+  await page.getByRole('button', { name: 'Delete organization' }).click()
+  await confirm.fill(name)
+
+  let answer = ''
+  await page.route('**/_serverFn/**', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const postData = route.request().postData()!.replace(name, `${name}x`)
+    const response = await route.fetch({ postData })
+    const body = await response.text()
+    // The serialized message as the server encodes it: fail loudly if the format changes.
+    expect(body).toContain("doesn't match the organization")
+    await route.fulfill({ response, body: body.replace(MISMATCH, answer) })
+  })
+
+  const unknown = `We couldn't confirm ${name} was deleted. Reload the page to check, and try again if it's still there.`
+  for (const [label, message] of [
+    ...REFUSALS,
+    ['unexpected error', 'Something went wrong. Please try again.'],
+  ] as const) {
+    answer = message
+    await submit.click()
+    await expect(dialog.getByRole('alert'), label).toHaveText(
+      label === 'unexpected error' ? unknown : message,
+    )
+    // Still open, the typed value kept, the field unmarked and editable, every control usable.
+    await expect(dialog).toBeVisible()
+    await expect(confirm).toHaveValue(name)
+    await expect(confirm).not.toHaveAttribute('aria-invalid')
+    await expect(confirm).toBeEditable()
+    await expect(submit).toBeEnabled()
+    await expect(cancel).toBeEnabled()
+    await expect(dialog.getByRole('link', { name: 'Privacy Policy' })).toBeVisible()
+  }
+  await page.unrouteAll()
+
+  // Cancel still closes it; nothing was deleted.
+  await cancel.click()
+  await expect(dialog).toHaveCount(0)
+  await page.goto(`/t/${slug}/settings`)
+  await expect(page.getByRole('heading', { name: 'Settings', level: 2 })).toBeVisible()
+})
