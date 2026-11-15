@@ -25,7 +25,7 @@ A control that **navigates** is a link (`Link` from TanStack Router, or `<a>`): 
 ## States
 
 - **Disabled until hydrated** (Rule, invariant 8): every submit and every action button has `disabled={!hydrated}` (`useHydrated`, [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx)). Before hydration a native submit would send the form as a GET.
-- **Busy:** every action also disables while its request is pending, with a label saying so ("Saving…") and `aria-busy` (`usePending` in [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx), settings' `useAction`; [saving and submitting](../patterns/saving-and-submitting.md)).
+- **Busy:** auth pages, account and settings disable while their request is pending (`busy`). The project, invitation, member-row and billing actions and the deletion dialogs also say so on the button ("Saving…", "Deleting…") with `aria-busy` (`usePending` in [`lib/ui.tsx`](../../../apps/app/src/lib/ui.tsx); [saving and submitting](../patterns/saving-and-submitting.md)). Sign out has no pending state.
 - Focus shows the `ring`; `aria-invalid` turns the border destructive; an icon inside is sized by the button.
 
 ## What the page still does

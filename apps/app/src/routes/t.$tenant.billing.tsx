@@ -30,6 +30,8 @@ type Overview = Awaited<ReturnType<typeof getBillingFn>>
  * gate stay the server's).
  */
 const CHECKOUT_WAITS_MS = [2000, 3000, 5000, 8000, 12000]
+/** The wait ends here even if a read hasn't answered (a stalled read can't hold it open). */
+const CHECKOUT_DEADLINE_MS = CHECKOUT_WAITS_MS.reduce((a, b) => a + b) + 5000
 
 type Return = 'checking' | 'applied' | 'delayed' | 'portal' | null
 
@@ -49,6 +51,10 @@ function Billing() {
   // A read made by this page, used until the loader answers again.
   const [fresh, setFresh] = useState<{ base: Overview; data: Overview } | null>(null)
   const billing = fresh?.base === loaded ? fresh.data : loaded
+  // A read is accepted against the loader data current when it answers, never an older one: the
+  // state it sets ("applied") and the overview shown come from the same answer.
+  const latestLoaded = useRef(loaded)
+  latestLoaded.current = loaded
   // Fixed when the page opens: removing the marker afterwards doesn't end the message.
   const [returned, setReturned] = useState<Return>(() =>
     search.checkout ? (loaded.live ? 'applied' : 'checking') : search.portal ? 'portal' : null,
@@ -71,7 +77,7 @@ function Billing() {
     try {
       const data = await read({ data: { tenant } })
       if (!isCurrent()) return null
-      setFresh({ base: loaded, data })
+      setFresh({ base: latestLoaded.current, data })
       setReadFailed(false)
       return data.live
     } catch {
@@ -80,27 +86,38 @@ function Billing() {
     }
   }
 
-  // The automatic wait after checkout. Leaving the page cancels the next read; one in flight
-  // finishes, and its answer is dropped.
+  // The automatic wait after checkout. Leaving the page, or the deadline, cancels the next read; one
+  // in flight finishes, and its answer is dropped.
   const waiting = returned === 'checking'
   useEffect(() => {
     if (!waiting) return
     let current = true
+    let inFlight = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    const step = (i: number) => {
-      timer = setTimeout(async () => {
-        const live = await readOnce(() => current)
-        if (!current) return
-        if (live) return setReturned('applied')
-        if (i + 1 < CHECKOUT_WAITS_MS.length) step(i + 1)
-        else setReturned('delayed')
-      }, CHECKOUT_WAITS_MS[i])
-    }
-    step(0)
-    return () => {
+    const stop = () => {
       current = false
       clearTimeout(timer)
+      clearTimeout(deadline)
     }
+    const step = (i: number) => {
+      timer = setTimeout(async () => {
+        inFlight = true
+        const live = await readOnce(() => current)
+        inFlight = false
+        if (!current) return
+        if (i + 1 < CHECKOUT_WAITS_MS.length && !live) return step(i + 1)
+        stop()
+        setReturned(live ? 'applied' : 'delayed')
+      }, CHECKOUT_WAITS_MS[i])
+    }
+    const deadline = setTimeout(() => {
+      // A read still unanswered: say the page couldn't check, not that nothing changed.
+      if (inFlight) setReadFailed(true)
+      stop()
+      setReturned('delayed')
+    }, CHECKOUT_DEADLINE_MS)
+    step(0)
+    return stop
     // Started once per checking phase; reads use the latest tenant through the closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting])

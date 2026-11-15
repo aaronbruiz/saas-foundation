@@ -43,22 +43,43 @@ test.describe('returning from Polar', () => {
     await expect(page.getByRole('status')).toHaveCount(0)
   })
 
+  test('a loader refresh during the wait: the applied plan is the one shown', async ({ page }) => {
+    await page.goto('/orgs/new')
+    const slug = await createOrg(page, 'nav')
+    await page.goto(`/t/${slug}/billing?checkout=success`)
+    await expect(page.getByRole('status')).toHaveText(/^Checking for your new plan/)
+    // The nav link reloads this route's data without remounting the page.
+    await page.getByRole('navigation').getByRole('link', { name: 'Billing' }).click()
+    await expect(page).toHaveURL(new RegExp(`/t/${slug}/billing$`))
+    await applySubscription(slug)
+    await expect(page.getByRole('status')).toHaveText('Your plan is now Pro.', { timeout: 20_000 })
+    await expect(page.getByTestId('plan-name')).toHaveText('Pro')
+  })
+
   test('when the plan is still unchanged after the wait, the page says so and never that it failed', async ({
     page,
   }) => {
     await page.goto('/orgs/new')
     const slug = await createOrg(page, 'slow')
-    // Every background read fails: the page keeps what it loaded and says it couldn't check.
+    // The background reads fail, and the last one never answers: the page keeps what it loaded,
+    // and its own deadline still ends the wait.
     let failing = true
-    await page.route('**/_serverFn/**', (route) =>
-      failing && route.request().method() === 'GET' ? route.abort() : route.fallback(),
-    )
+    let reads = 0
+    await page.route('**/_serverFn/**', (route) => {
+      if (!failing || route.request().method() !== 'GET') return route.fallback()
+      if (++reads < 5) return route.abort()
+      // Stalled: answered only after the page has stopped waiting, and then ignored.
+      return new Promise<void>((resolve) => setTimeout(resolve, 10_000)).then(() =>
+        route.fallback(),
+      )
+    })
     await page.goto(`/t/${slug}/billing?checkout=success`)
     const status = page.getByRole('status')
     await expect(status).toHaveText('Checking for your new plan. This can take a moment.')
     await expect(status).toHaveText("We couldn't check for an update just now.", {
       timeout: 45_000,
     })
+    expect(reads).toBe(5)
     await expect(page.getByTestId('plan-name')).toHaveText('Free')
     await expect(page.getByRole('button', { name: /^Upgrade to Pro \(monthly\)/ })).toBeEnabled()
 

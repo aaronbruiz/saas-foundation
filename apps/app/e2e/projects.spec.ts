@@ -130,3 +130,28 @@ test("deleting a project: while it runs the dialog stays open, and a lost answer
     "We couldn't confirm Unsure was deleted. Reload the page to check, and try again if it's still there.",
   )
 })
+
+test('saving a project: a second Enter while it runs sends nothing', async ({ page }) => {
+  await page.goto('/orgs/new')
+  await createOrg(page, 'save')
+  await page.getByLabel('Project name').fill('Draft')
+  await page.getByRole('button', { name: 'Create project' }).click()
+  await page.getByRole('link', { name: 'Draft' }).click()
+  let sent = 0
+  let answer: () => void = () => {}
+  await page.route('**/_serverFn/**', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    sent++
+    await new Promise<void>((resolve) => (answer = resolve))
+    await route.fallback()
+  })
+  await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled()
+  const name = page.getByLabel('Project name')
+  await name.fill('Final')
+  await name.press('Enter')
+  await name.press('Enter')
+  await expect(page.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+  answer()
+  await expect(page.getByRole('heading', { name: 'Final' })).toBeVisible()
+  expect(sent).toBe(1)
+})
