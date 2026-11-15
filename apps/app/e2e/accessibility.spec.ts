@@ -48,6 +48,29 @@ test('the signed-out pages have their titles, pass axe and reflow, with an error
 test.describe('signed in', () => {
   test.use({ storageState: sessionFile })
 
+  test('the routes outside these workflows have their titles too', async ({ page }) => {
+    for (const [path, name] of [
+      ['/privacy', 'Privacy Policy'],
+      ['/terms', 'Terms of Service'],
+      ['/subprocessors', 'Subprocessors'],
+    ] as const) {
+      await page.goto(path)
+      await expect(page).toHaveTitle(title(name))
+    }
+    await page.goto('/orgs/new')
+    const slug = await createOrg(page, 'ttl')
+    await page.goto(`/t/${slug}/billing`)
+    await expect(page).toHaveTitle(title('Billing'))
+    // The project's page is titled with the project's name, from its loader.
+    await page.goto(`/t/${slug}/projects`)
+    await expect(page.getByRole('button', { name: 'Create project' })).toBeEnabled(hydrated)
+    await page.getByLabel('Project name').fill('Titled project')
+    await page.getByRole('button', { name: 'Create project' }).click()
+    await page.getByRole('link', { name: 'Titled project' }).click()
+    await expect(page.getByRole('heading', { name: 'Titled project' })).toBeVisible()
+    await expect(page).toHaveTitle(title('Titled project'))
+  })
+
   test('the invite and members pages pass axe and reflow, and the email error describes its field', async ({
     page,
   }) => {
