@@ -435,11 +435,11 @@ function DeleteDialog({
   return (
     <AlertDialogContent initialFocus={titleRef} finalFocus={finalFocus}>
       <form method="post" onSubmit={onSubmit} className="grid gap-6">
-        <AlertDialogHeader>
+        <AlertDialogHeader className="place-items-start text-left">
           <AlertDialogTitle ref={titleRef} tabIndex={-1} className="wrap-anywhere outline-none">
             Delete {name}?
           </AlertDialogTitle>
-          <AlertDialogDescription render={<div />} className="flex flex-col gap-3 text-left">
+          <AlertDialogDescription render={<div />} className="flex flex-col gap-3 text-pretty">
             <ul className="list-disc space-y-1 pl-5 wrap-anywhere">
               <li>
                 Everyone loses access to {name} at once, you included.
