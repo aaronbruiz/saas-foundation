@@ -11,6 +11,7 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 
 - Read those rules and the page's spec (the PR description; `feature-spec` writes one).
 - Find the page's kind in the design system's page patterns (`docs/design-system/page-patterns/`), and the scenario patterns its actions need (`docs/design-system/patterns/`: destructive actions, saving, errors, loading and empty, invitations and access, billing handoffs). They explain the rules and list current gaps; the rules stay where this skill cites them.
+- Choosing or checking a web-platform technique those patterns don't settle (a CSS feature, a browser API, an accessibility or performance technique): look it up in Modern Web Guidance first, with the pinned, telemetry-off CLI in `docs/design-system/modern-web-guidance.md`. Check its advice against the browser floor's explicit versions, the CSP and the component choices before using it, and record the guide IDs in Checks. Work the repository's patterns already settle needs no lookup.
 - Take a visual baseline at `main`: `scripts/test-lock.sh visual --baseline`. It takes about 12 minutes and loads the machine: start it when the load average (`cat /proc/loadavg`) is below about 3.
 
 ## 2. Build

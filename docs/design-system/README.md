@@ -25,6 +25,8 @@ Every page here marks what kind each statement is when it matters: **Rule** (wit
 4. [Patterns](patterns/README.md): whole tasks, including failure and interruption: [destructive actions](patterns/destructive-actions.md), [saving and submitting](patterns/saving-and-submitting.md), [errors and recovery](patterns/errors-and-recovery.md), [loading and empty states](patterns/loading-and-empty-states.md), [invitations and access](patterns/invitations-and-access.md), [billing handoffs](patterns/billing-handoffs.md).
 5. [Page patterns](page-patterns/README.md): [authentication](page-patterns/authentication.md), [onboarding](page-patterns/onboarding.md), [collection and detail](page-patterns/collection-and-detail.md), [settings](page-patterns/settings.md).
 
+6. [Modern Web Guidance](modern-web-guidance.md): looking up a web-platform technique (Google's guidance, external evidence) and checking it against our browser floor, CSP and components.
+
 Starting a page? Read the page pattern for its kind, then the patterns its actions need, then the components. Building one: the `ui-page` skill.
 
 ## Surfaces
