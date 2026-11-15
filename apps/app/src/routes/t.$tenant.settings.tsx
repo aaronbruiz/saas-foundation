@@ -1,6 +1,6 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import {
   deleteOrganizationFn,
   getViewerFn,
@@ -10,6 +10,7 @@ import {
   transferOwnershipFn,
 } from '../modules/organizations/functions'
 import { messageOf, useHydrated } from '../lib/ui'
+import { UNEXPECTED_MESSAGE } from '../server/log'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 
 // Organization settings (owner decisions 2026-10-31). The capabilities from the layout only pick
@@ -65,8 +67,15 @@ function Settings() {
         <h3 id="danger-zone" className="text-base font-semibold text-destructive">
           Danger zone
         </h3>
-        <LeaveSection />
-        {canDelete && <DeleteForm name={name} />}
+        <Card className="gap-0 py-0 ring-destructive/40">
+          <LeaveSection />
+          {canDelete && (
+            <>
+              <Separator />
+              <DeleteSection name={name} otherMembers={canTransfer ? candidates.length : null} />
+            </>
+          )}
+        </Card>
       </section>
     </div>
   )
@@ -97,34 +106,55 @@ function useAction(fieldErrors: string[] = []) {
   return { run, error, fieldError, disabled: !hydrated || busy }
 }
 
-/**
- * A settings section: its heading is an h3 under the page's h2, or an h4 inside the danger zone,
- * so the page keeps one outline.
- */
+/** A settings section: its heading is an h3 under the page's h2, so the page keeps one outline. */
 function Section({
   title,
   description,
-  danger = false,
-  level = 3,
   children,
 }: {
   title: string
   description?: ReactNode
-  danger?: boolean
-  level?: 3 | 4
   children: ReactNode
 }) {
-  const Heading = level === 4 ? 'h4' : 'h3'
   return (
-    <Card className={danger ? 'ring-destructive/40' : undefined}>
+    <Card>
       <CardHeader>
         <CardTitle>
-          <Heading className={danger ? 'text-base text-destructive' : 'text-base'}>{title}</Heading>
+          <h3 className="text-base">{title}</h3>
         </CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  )
+}
+
+/**
+ * One action in the danger zone: an h4 under its h3, the consequence, the action, and below them
+ * the action's form-level alert, if any.
+ */
+function DangerRow({
+  title,
+  description,
+  alert,
+  children,
+}: {
+  title: string
+  description: string
+  alert?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="flex flex-col gap-1">
+          <h4 className="text-base font-medium">{title}</h4>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <div className="shrink-0">{children}</div>
+      </div>
+      {alert}
+    </div>
   )
 }
 
@@ -289,82 +319,202 @@ function LeaveSection() {
   const { run, error, disabled } = useAction()
 
   return (
-    <Section
+    <DangerRow
       title="Leave"
-      level={4}
       description="You lose access to this organization and its projects."
+      alert={<FieldError>{error}</FieldError>}
     >
-      <div className="flex flex-col gap-3">
-        <FieldError>{error}</FieldError>
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled}
-            onClick={() =>
-              void run(async () => {
-                await leave({ data: { tenant } })
-                await router.navigate({ to: '/' })
-              })
-            }
-          >
-            Leave organization
-          </Button>
-        </div>
-      </div>
-    </Section>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled}
+        onClick={() =>
+          void run(async () => {
+            await leave({ data: { tenant } })
+            await router.navigate({ to: '/' })
+          })
+        }
+      >
+        Leave organization
+      </Button>
+    </DangerRow>
   )
 }
 
-function DeleteForm({ name }: { name: string }) {
+/**
+ * Deletion is confirmed in a dialog (owner decisions 2026-11-14): consequences first, then the
+ * organization's exact name. The server checks the name and authorization again; ADR-0043's gate
+ * decides whether the deletion can happen. `otherMembers` is the list this page loaded: a snapshot.
+ */
+function DeleteSection({ name, otherMembers }: { name: string; otherMembers: number | null }) {
+  const hydrated = useHydrated()
+  const [open, setOpen] = useState(false)
+  // Each opening mounts a new dialog body, so a reopened dialog starts empty.
+  const [opened, setOpened] = useState(0)
+  // Cancel and Escape return focus here, the page's Delete organization button.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  // While the request runs, the dialog can't be closed: its outcome is shown in it.
+  const busyRef = useRef(false)
+
+  return (
+    <DangerRow
+      title="Delete organization"
+      description="Everyone loses access, and its projects, invitations and memberships are deleted. This can't be undone."
+    >
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="destructive"
+        disabled={!hydrated}
+        onClick={() => {
+          setOpened((n) => n + 1)
+          setOpen(true)
+        }}
+      >
+        Delete organization
+      </Button>
+      <AlertDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && busyRef.current) return
+          setOpen(next)
+        }}
+      >
+        <DeleteDialog
+          key={opened}
+          name={name}
+          otherMembers={otherMembers}
+          busyRef={busyRef}
+          finalFocus={triggerRef}
+        />
+      </AlertDialog>
+    </DangerRow>
+  )
+}
+
+function DeleteDialog({
+  name,
+  otherMembers,
+  busyRef,
+  finalFocus,
+}: {
+  name: string
+  otherMembers: number | null
+  busyRef: RefObject<boolean>
+  finalFocus: RefObject<HTMLButtonElement | null>
+}) {
   const { tenant } = Route.useParams()
   const router = useRouter()
   const remove = useServerFn(deleteOrganizationFn)
-  const { run, error, fieldError, disabled } = useAction([
-    'invalid input',
-    "That doesn't match the organization's name",
-  ])
+  const hydrated = useHydrated()
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<{ text: string; field: boolean } | null>(null)
+  // The consequences are met first: focus starts on the title, not on the field (APG modal dialog).
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const matches = typed === name
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const confirmName = String(new FormData(e.currentTarget).get('confirmName'))
-    void run(async () => {
-      await remove({ data: { tenant, confirmName } })
-      await router.navigate({ to: '/' })
-    })
+    // The ref, not state: a second Enter can arrive before the re-render that disables the button.
+    if (!matches || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      await remove({ data: { tenant, confirmName: typed } })
+      busyRef.current = false
+      await router.navigate({ to: '/', replace: true })
+      toast.success(`${name} was deleted.`)
+    } catch (err) {
+      busyRef.current = false
+      setBusy(false)
+      setError(deleteFailure(err, name))
+    }
   }
 
   return (
-    <Section
-      title="Delete organization"
-      danger
-      level={4}
-      description={
-        <>
-          This deletes its members, invitations, projects and billing record. Type{' '}
-          <strong className="text-foreground">{name}</strong> to confirm.
-        </>
-      }
-    >
-      <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4">
-        <Field data-invalid={fieldError || undefined}>
-          <FieldLabel htmlFor="confirm-name">Organization name to confirm</FieldLabel>
+    <AlertDialogContent initialFocus={titleRef} finalFocus={finalFocus}>
+      <form method="post" onSubmit={onSubmit} className="grid gap-6">
+        <AlertDialogHeader>
+          <AlertDialogTitle ref={titleRef} tabIndex={-1} className="wrap-anywhere outline-none">
+            Delete {name}?
+          </AlertDialogTitle>
+          <AlertDialogDescription render={<div />} className="flex flex-col gap-3 text-left">
+            <ul className="list-disc space-y-1 pl-5 wrap-anywhere">
+              <li>
+                Everyone loses access to {name} at once, you included.
+                {otherMembers !== null && otherMembers > 0 && (
+                  <>
+                    {' '}
+                    {otherMembers === 1
+                      ? '1 other member had access when this page loaded.'
+                      : `${otherMembers} other members had access when this page loaded.`}
+                  </>
+                )}
+              </li>
+              <li>
+                Its projects, invitations and memberships are deleted, and its billing account with
+                Polar is removed.
+              </li>
+              <li>Your account and your other organizations aren&apos;t affected.</li>
+            </ul>
+            <p>
+              This can&apos;t be undone. Deleted data isn&apos;t erased immediately: backups and our
+              billing provider&apos;s order records keep copies for a limited time, as the{' '}
+              <Link to="/privacy" className="underline">
+                Privacy Policy
+              </Link>{' '}
+              describes.
+            </p>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Field data-invalid={error?.field || undefined}>
+          <FieldLabel htmlFor="confirm-name" className="block wrap-anywhere">
+            Type <strong className="text-foreground">{name}</strong> to confirm
+          </FieldLabel>
           <Input
             id="confirm-name"
             name="confirmName"
             required
+            value={typed}
+            onChange={(e) => setTyped(e.currentTarget.value)}
+            readOnly={busy}
             autoComplete="off"
-            aria-invalid={fieldError || undefined}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={error?.field || undefined}
           />
-          {fieldError && <FieldError>{error}</FieldError>}
+          {error?.field && <FieldError>{error.text}</FieldError>}
         </Field>
-        {!fieldError && <FieldError>{error}</FieldError>}
-        <div>
-          <Button type="submit" variant="destructive" disabled={disabled}>
-            Delete organization
-          </Button>
-        </div>
+        {error && !error.field && <FieldError>{error.text}</FieldError>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            type="submit"
+            variant="destructiveSolid"
+            disabled={!hydrated || !matches || busy}
+            aria-busy={busy || undefined}
+          >
+            {busy ? 'Deleting…' : 'Delete organization'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
       </form>
-    </Section>
+    </AlertDialogContent>
   )
+}
+
+/**
+ * The server's answers that establish nothing was deleted keep their message (a 400 mismatch marks
+ * the field). Its generic error, or no answer, can follow ADR-0043's commit: the outcome is unknown.
+ */
+function deleteFailure(err: unknown, name: string) {
+  const text = err instanceof Error && err.name !== 'TypeError' ? err.message : null
+  if (text === null || text === UNEXPECTED_MESSAGE)
+    return {
+      text: `We couldn't confirm ${name} was deleted. Reload the page to check, and try again if it's still there.`,
+      field: false,
+    }
+  return { text, field: text === "That doesn't match the organization's name" }
 }
