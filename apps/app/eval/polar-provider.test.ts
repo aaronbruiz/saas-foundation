@@ -1,5 +1,7 @@
 // ADR-0022 POC: the real Polar adapter (providers/polar.ts) against the Polar sandbox. Not part of
-// `pnpm test`; run with `vitest run --config vitest.eval.config.ts` and POLAR_EVAL_RUN=<slug>.
+// `pnpm test`; run with `vitest run --config vitest.eval.config.ts --reporter=verbose` (run by an
+// AI agent, Vitest's `agent` reporter hides passing tests' console output) and
+// POLAR_EVAL_RUN=<slug>.
 // Uses the sandbox token and eval emails from apps/app/.dev.vars; removes its customer only on success
 // (a failure stops with the sandbox left as it is, for the owner to decide).
 import { env } from 'cloudflare:workers'
@@ -435,9 +437,12 @@ describe.runIf(run !== '' && paidModes.includes(paid))('paid checkout', () => {
 // checks it's listed as soon as the create answers (a); run it once per scenario (paid, abandoned,
 // declined), noting the id it prints. =status prints every session and subscription (read-only),
 // for (b) and (c). =paid checks the paid session's subscription carries its `checkout_id` and is
-// listed by customer (b). =freeportal creates a customer with no subscription and prints its portal
-// link (d). =cleanup deletes both customers (Polar cancels their subscriptions) and reads each
-// subscription back to show it ended; sessions can't be deleted and stay as Polar holds them.
+// listed by customer (b); it fails while any other session of the customer is still open (neither
+// succeeded nor expired), because the account state then reports no subscriptions (fails closed,
+// ADR-0043): run it after those expire (=status shows them). =freeportal creates a customer with
+// no subscription and prints its portal link (d). =cleanup deletes both customers (Polar cancels
+// their subscriptions) and reads each subscription back to show it ended; sessions can't be
+// deleted and stay as Polar holds them.
 // Checkout and portal links carry session credentials (the checkout's client secret, the portal's
 // customer session token and the member's email): they're printed only with
 // POLAR_EVAL_SHOW_LINKS=1, for the owner's own terminal, never in saved evidence.
