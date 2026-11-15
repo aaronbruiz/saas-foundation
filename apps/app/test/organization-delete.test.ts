@@ -10,6 +10,7 @@ import { authFor } from '../src/server/auth'
 import { withDb } from '../src/server/db'
 import { createOrg, joinAs, randomIp, signUp, type TestUser } from './helpers'
 import { testBotProtection } from './turnstile-fake'
+import { DELETION_REFUSALS } from '../src/lib/deletion-refusals'
 
 // Deleting an organization is one database transaction: Better Auth's adapter deletes its members,
 // invitations and the organization (projects and the billing record follow by FK cascade), and a
@@ -244,7 +245,12 @@ describe('organization deletion and the Polar member sync (ADR-0022)', () => {
     const { owner, orgId } = await populatedOrg()
     await setSubscription(orgId, 'active')
     const sync = fakeMembers()
-    expect((await deleteOrgWithPolar(owner, orgId, sync.members)).status).toBe(409)
+    const res = await deleteOrgWithPolar(owner, orgId, sync.members)
+    expect(res.status).toBe(409)
+    // The exact message the settings page recognises (lib/deletion-refusals.ts).
+    expect(((await res.json()) as { message: string }).message).toBe(
+      DELETION_REFUSALS.liveSubscription,
+    )
     expect(sync.calls).toEqual([])
     expect(await rowsOf(orgId)).toEqual(WHOLE)
   })
