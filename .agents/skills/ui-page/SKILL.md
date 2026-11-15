@@ -10,14 +10,15 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 ## 1. Before
 
 - Read those rules and the page's spec (the PR description; `feature-spec` writes one).
+- Find the page's kind in the design system's page patterns (`docs/design-system/page-patterns/`), and the scenario patterns its actions need (`docs/design-system/patterns/`: destructive actions, saving, errors, loading and empty, invitations and access, billing handoffs). They explain the rules and list current gaps; the rules stay where this skill cites them.
 - Take a visual baseline at `main`: `scripts/test-lock.sh visual --baseline`. It takes about 12 minutes and loads the machine: start it when the load average (`cat /proc/loadavg`) is below about 3.
 
 ## 2. Build
 
 - Pick the page's frame: `AuthLayout` for sign-in and onboarding, the tenant shell (`t.$tenant.tsx`) for tenant pages, the account or legal page's frame otherwise. Don't copy a frame's classes into the page.
-- Use `components/ui` and the brand tokens; `NativeSelect` for a simple choice; contract types only (`import type`).
+- Use `components/ui` and the brand tokens; `NativeSelect` for a simple choice; contract types only (`import type`). Choosing a component: `docs/design-system/components/README.md` (inventory, with which ones no page uses yet); tokens: `docs/design-system/foundations/color.md`.
 - Forms: `method="post"`, submit disabled until hydrated (`useHydrated`), the server's errors placed as `AGENTS.md` "UI" says (a field error at its field, any other failure in a form-level alert, toasts for success only).
-- An action that can't be undone, or an ownership transfer: confirm it in an `AlertDialog` whose final action is `destructiveSolid`; the page's own button stays tinted (`AGENTS.md` "UI").
+- Destructive actions: the page's own button stays tinted (`destructive`), and `destructiveSolid` appears only as the final action of an `AlertDialog` confirming an action that can't be undone or an ownership transfer (`AGENTS.md` "UI"). Whether a given action needs that dialog is the spec's decision: no rule requires one for every irreversible action (a proposal, `docs/design-system/patterns/destructive-actions.md`); ownership transfer and organization deletion use one today.
 - A new colour pair (a new variant or surface): add it to `scripts/brand-contrast.mjs`.
 
 ## 3. Visual and keyboard tests
@@ -37,7 +38,7 @@ Trial skill (ADR-0042 Notes). A procedure: the rules are in `AGENTS.md` "UI (ADR
 ## 5. e2e
 
 - Select by role and accessible name. When a name repeats behind a dialog, scope to the `alertdialog`.
-- Cover each Behaviour line, its failure case included. A changed or corrected test gets its reason in Checks (`AGENTS.md` "Working rules").
+- Cover each Behaviour line, its failure case included. The review cases to walk (slow response, repeated click, lost response, Back and reload, expired session, changed role, keyboard only): `docs/design-system/patterns/README.md`. A changed or corrected test gets its reason in Checks (`AGENTS.md` "Working rules").
 
 ## 6. When a run fails
 

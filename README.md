@@ -2,6 +2,7 @@
 
 Multi-tenant SaaS foundation on Cloudflare Workers: TanStack Start, Neon Postgres via Hyperdrive, Better Auth, Drizzle.
 
+- Developer handbook (start here): [`docs/README.md`](docs/README.md)
 - Agent and contributor rules: [`AGENTS.md`](AGENTS.md)
 - Architecture decisions: [`docs/adr/`](docs/adr/)
 - Testing and troubleshooting: [`docs/testing.md`](docs/testing.md)
