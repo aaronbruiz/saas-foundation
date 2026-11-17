@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.6.0...app-v0.7.0) (2026-11-17)
+
+
+### Features
+
+* **app:** confirm organization deletion in a dialog that states its consequences ([#290](https://github.com/aaronbruiz/saas-foundation/issues/290)) ([1502dc1](https://github.com/aaronbruiz/saas-foundation/commit/1502dc1b982025d5c1c4d1269c3f11abf3134ea6))
+
+
+### Bug Fixes
+
+* **agents:** test runs record what they ran on; dependency instruction files stay out of sessions ([#300](https://github.com/aaronbruiz/saas-foundation/issues/300)) ([50a25ad](https://github.com/aaronbruiz/saas-foundation/commit/50a25adfa618b6eb4fbe45eafdc664fbab405139))
+* **app:** page titles, a main landmark and linked field errors, with automated accessibility checks ([#295](https://github.com/aaronbruiz/saas-foundation/issues/295)) ([8e37829](https://github.com/aaronbruiz/saas-foundation/commit/8e3782985b52ccdd2d279364ede3ef1b2c379987))
+* **app:** pending states, destructive confirmations, checkout return and menu loading ([#293](https://github.com/aaronbruiz/saas-foundation/issues/293)) ([39102f7](https://github.com/aaronbruiz/saas-foundation/commit/39102f7453f073c6403678895cf13303f5921ab8))
+* **ci:** provenance reads large API answers and rechecks commits a failed run never checked ([#298](https://github.com/aaronbruiz/saas-foundation/issues/298)) ([99c178a](https://github.com/aaronbruiz/saas-foundation/commit/99c178ae30ebdb5c011efa29e9c57f9cb20a5aaa))
+
 ## [0.6.0](https://github.com/aaronbruiz/saas-foundation/compare/app-v0.5.0...app-v0.6.0) (2026-11-14)
 
 
