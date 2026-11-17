@@ -2,7 +2,8 @@ name: Provenance
 
 # Detects a push to main that isn't a squash merge of a PR whose CI was green on its final head
 # (rules and checked range: scripts/check-provenance.mjs; why: start-new-product.md step 9). It
-# blocks nothing: a failed run is the alert, emailed only if GitHub's Actions notification settings
+# blocks nothing: a failed run is the alert (a violation fails "Fail on a violation"; a check that
+# couldn't finish fails "Check provenance", and the next run checks its commits again), emailed only if GitHub's Actions notification settings
 # send failed runs to whoever triggered it. Own workflow, no concurrency group: a later push can't
 # cancel an earlier check (ci.yml cancels on main). The daily run covers `[skip ci]` pushes; GitHub
 # pauses schedules after 60 idle days on a public repo. Read-only token; no install, no secrets.
@@ -30,7 +31,20 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts/check-provenance.mjs
           sparse-checkout-cone-mode: false
+      # Passes when the check finished, with or without violations (the script's exit 3). The
+      # script reads this step's result from earlier runs by this name, to know what they checked.
       - name: Check provenance
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/check-provenance.mjs
+        run: |
+          status=0
+          node scripts/check-provenance.mjs || status=$?
+          if [ "$status" = 3 ]; then
+            echo "violations=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$status"
+      - name: Fail on a violation
+        if: steps.check.outputs.violations == 'true'
+        run: exit 1
