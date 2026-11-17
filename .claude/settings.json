@@ -123,6 +123,7 @@
       }
     ]
   },
+  "claudeMdExcludes": ["**/node_modules/**"],
   "worktree": {
     "baseRef": "head"
   }
