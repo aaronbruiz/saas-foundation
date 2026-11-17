@@ -1,7 +1,7 @@
 // Runs check-provenance.mjs against a fake `gh` on PATH that answers `gh api <path>` from a
 // fixture map, so the policy is tested without a token or GitHub.
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -11,14 +11,14 @@ const SCRIPT = new URL('./check-provenance.mjs', import.meta.url).pathname
 const dir = mkdtempSync(join(tmpdir(), 'check-provenance-'))
 after(() => rmSync(dir, { recursive: true, force: true }))
 
-// Prints FAKE_GH[path] as JSON; an unknown path fails like a 404.
+// Prints FAKE_GH[path] as JSON, followed by FAKE_GH_PAD spaces; an unknown path fails like a 404.
 writeFileSync(
   join(dir, 'gh'),
   `#!/usr/bin/env node
 const [cmd, path] = process.argv.slice(2)
 const answers = JSON.parse(process.env.FAKE_GH)
 if (cmd !== 'api' || !(path in answers)) { console.error('gh: HTTP 404: ' + path); process.exit(1) }
-process.stdout.write(JSON.stringify(answers[path]))
+process.stdout.write(JSON.stringify(answers[path]) + ' '.repeat(Number(process.env.FAKE_GH_PAD ?? 0)))
 `,
 )
 chmodSync(join(dir, 'gh'), 0o755)
@@ -30,12 +30,16 @@ const MERGED = '2026-10-30T12:00:00Z'
 const GREEN = [{ conclusion: 'success', completed: '2026-10-30T11:50:00Z' }]
 
 const job = (completed_at) => ({ completed_at })
-/** A provenance run that finished checking up to head_sha. */
-const finished = (id, head_sha, conclusion = 'success') => ({
-  id,
-  head_sha,
-  status: 'completed',
-  conclusion,
+/** A provenance run that passed: it checked up to head_sha. */
+const finished = (id, head_sha) => ({ id, head_sha, status: 'completed', conclusion: 'success' })
+/** A provenance run that failed, and its jobs: `check` is its "Check provenance" step's result. */
+const failed = (id, head_sha, check) => ({
+  run: { id, head_sha, status: 'completed', conclusion: 'failure' },
+  jobs: {
+    [`${R}/actions/runs/${id}/jobs`]: {
+      jobs: [{ steps: [{ name: 'Check provenance', conclusion: check }] }],
+    },
+  },
 })
 
 /** Answers for a CI run with attempts [{ conclusion, completed }] (completed: ISO time or null). */
@@ -91,7 +95,7 @@ function github(commits, { previous = PREV, provenancePages } = {}) {
 
 const pushEvent = { after: SHA, before: PREV, forced: false, commits: [{ id: SHA }] }
 
-function run(answers, { event = pushEvent, name = 'push', tip = SHA } = {}) {
+function run(answers, { event = pushEvent, name = 'push', tip = SHA, pad = 0 } = {}) {
   const path = join(dir, `event-${Math.random()}.json`)
   writeFileSync(path, JSON.stringify(event))
   const r = spawnSync(process.execPath, [SCRIPT], {
@@ -100,6 +104,7 @@ function run(answers, { event = pushEvent, name = 'push', tip = SHA } = {}) {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
       FAKE_GH: JSON.stringify(answers),
+      FAKE_GH_PAD: String(pad),
       GITHUB_REPOSITORY: 'o/r',
       GITHUB_EVENT_NAME: name,
       GITHUB_EVENT_PATH: path,
@@ -117,8 +122,9 @@ function passes(r) {
   assert.match(r.output, /check-provenance: ok/)
 }
 
-function fails(r, pattern) {
-  assert.equal(r.status, 1, r.output)
+/** Exit 3: the check finished and found a violation. Exit 1: it couldn't finish. */
+function fails(r, pattern, status = 3) {
+  assert.equal(r.status, status, r.output)
   assert.match(r.output, pattern)
   assert.doesNotMatch(r.output, /check-provenance: ok/)
 }
@@ -263,9 +269,41 @@ test("a cancelled or unfinished earlier run isn't taken as checked, so its commi
   )
 })
 
-test('an earlier run that failed counts as checked, since it already alerted', () => {
-  const answers = github([{ sha: SHA }], { provenancePages: [[finished(98, PREV, 'failure')]] })
-  passes(run(answers))
+test('an earlier run that failed on a violation counts as checked, since it already alerted', () => {
+  const earlier = failed(98, PREV, 'success')
+  const answers = github([{ sha: SHA }], { provenancePages: [[earlier.run]] })
+  const r = run({ ...answers, ...earlier.jobs })
+  passes(r)
+  assert.match(r.output, /1 commit\(s\)/)
+})
+
+test("an earlier run that failed before it finished checking isn't taken as checked, so its commits are checked", () => {
+  const earlier = failed(98, 'skipped', 'failure')
+  const answers = github([{ sha: SHA }, { sha: 'skipped', pr: null }], {
+    provenancePages: [[earlier.run, finished(96, PREV)]],
+  })
+  const r = run({ ...answers, ...earlier.jobs }, { event: { ...pushEvent, before: 'skipped' } })
+  fails(r, /no merged pull request into main has skipped/)
+  assert.match(r.output, /c0ffee is #7/)
+})
+
+test("a failed earlier run whose jobs can't be read fails the check instead of trusting it", () => {
+  const earlier = failed(98, PREV, 'success')
+  const answers = github([{ sha: SHA }], { provenancePages: [[earlier.run]] })
+  fails(run(answers), /couldn't check c0ffee: .*HTTP 404/, 1)
+})
+
+test('an API answer larger than 1 MiB is read', () => {
+  passes(run(github([{ sha: SHA }]), { pad: 2 * 1024 * 1024 }))
+})
+
+test('the workflow has the step whose result tells a later run what an earlier one checked', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/provenance.yml', import.meta.url),
+    'utf8',
+  )
+  assert.match(workflow, /^ {6}- name: Check provenance$/m)
+  assert.match(readFileSync(SCRIPT, 'utf8'), /const CHECK_STEP = 'Check provenance'/)
 })
 
 test('a rerun of an old run finds its predecessor on a later page instead of checking only the tip', () => {
@@ -282,11 +320,11 @@ test('a rerun of an old run finds its predecessor on a later page instead of che
 test('no finished run in the latest 1,000 fails instead of checking only the tip', () => {
   const page = Array.from({ length: 100 }, (_, i) => finished(1000 + i, `later-${i}`))
   const answers = github([{ sha: SHA }], { provenancePages: Array(10).fill(page) })
-  fails(run(answers), /no finished provenance run in the latest 1,000/)
+  fails(run(answers), /no finished provenance run in the latest 1,000/, 1)
 })
 
 test('a failed GitHub API call fails the check', () => {
   const answers = github([{ sha: SHA }])
   delete answers[`${R}/commits/${SHA}`]
-  fails(run(answers), /couldn't check c0ffee: .*HTTP 404/)
+  fails(run(answers), /couldn't check c0ffee: .*HTTP 404/, 1)
 })

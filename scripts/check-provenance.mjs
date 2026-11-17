@@ -13,21 +13,30 @@
 //   - CI (ci.yml) on that PR's final head, as it stood at merged_at, wasn't green: of every
 //     attempt of every run whose jobs had all completed by merged_at, the last to complete
 //     decides. Reruns after the merge are ignored, so they can't clear or create a violation.
-// A failed API call fails too. Reads GITHUB_EVENT_NAME, GITHUB_EVENT_PATH, GITHUB_SHA,
-// GITHUB_RUN_ID and GITHUB_REPOSITORY; calls `gh api` (GH_TOKEN).
+// Exit 0: every commit checked, none broke the rule. Exit 3: every commit checked, at least one
+// broke it. Any other status (a failed API call, a crash): the check didn't finish, and its commits
+// stay unchecked. provenance.yml turns a 3 into a passed "Check provenance" step and a failed
+// next step, so a later run can tell the two failures apart (previousHead).
+// Reads GITHUB_EVENT_NAME, GITHUB_EVENT_PATH, GITHUB_SHA, GITHUB_RUN_ID and GITHUB_REPOSITORY;
+// calls `gh api` (GH_TOKEN).
 // Usage: node scripts/check-provenance.mjs
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const LOOKBACK = 20
+const VIOLATION = 3
+// The step in provenance.yml that runs this script (check-provenance.test.mjs keeps the names equal).
+const CHECK_STEP = 'Check provenance'
 const repo = process.env.GITHUB_REPOSITORY
 const tip = process.env.GITHUB_SHA
 const event =
   process.env.GITHUB_EVENT_NAME === 'push'
     ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'))
     : null
-const api = (path) => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8' }))
+// The list of provenance runs passed execFileSync's 1 MiB default at 82 runs (ENOBUFS, 2026-11-16).
+const api = (path) =>
+  JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))
 
 function checkPush() {
   if (event.forced) return [`${event.after} was force-pushed to main`]
@@ -44,10 +53,17 @@ function checkPush() {
   return errors
 }
 
+/** Whether a failed run finished checking: its check step passed and a violation failed the run. */
+function finishedChecking(id) {
+  const { jobs } = api(`repos/${repo}/actions/runs/${id}/jobs`)
+  return jobs.some((j) => j.steps?.some((s) => s.name === CHECK_STEP && s.conclusion === 'success'))
+}
+
 /**
  * The commit the latest earlier provenance run checked, or null for the first run. Only a run that
- * finished checking counts: success, or failure (it already alerted; rerun one that failed on an
- * API error). A cancelled, skipped or unfinished run checked nothing.
+ * finished checking counts: a success, or a failure whose check step passed (it found a violation
+ * and already alerted). A run that failed before it finished (an API error, a crash, a timeout),
+ * or was cancelled, skipped or is unfinished, checked nothing: its commits are checked now.
  */
 function previousHead() {
   const own = Number(process.env.GITHUB_RUN_ID)
@@ -56,11 +72,11 @@ function previousHead() {
       `repos/${repo}/actions/workflows/provenance.yml/runs?branch=main&per_page=100&page=${page}`,
     )
     if (!workflow_runs.length) return null
-    const run = workflow_runs.find(
-      (r) =>
-        r.id < own && r.status === 'completed' && ['success', 'failure'].includes(r.conclusion),
-    )
-    if (run) return run.head_sha
+    for (const r of workflow_runs) {
+      if (r.id >= own || r.status !== 'completed') continue
+      if (r.conclusion === 'success' || (r.conclusion === 'failure' && finishedChecking(r.id)))
+        return r.head_sha
+    }
   }
   throw new Error('no finished provenance run in the latest 1,000; check by hand')
 }
@@ -139,13 +155,15 @@ async function main() {
 }
 
 let errors
+let status = VIOLATION
 try {
   errors = await main()
 } catch (e) {
   // One line, so the whole message stays in the ::error:: annotation.
   errors = [`couldn't check ${tip}: ${e.message.replace(/\s+/g, ' ').trim()}`]
+  status = 1
 }
 for (const e of errors) console.error(`::error::check-provenance: ${e}`)
 if (errors.length && process.env.GITHUB_STEP_SUMMARY)
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, errors.map((e) => `- ${e}\n`).join(''))
-if (errors.length) process.exit(1)
+if (errors.length) process.exit(status)
