@@ -136,7 +136,10 @@ test('a squash merge of a PR whose CI passed on its final head before the merge 
 })
 
 test('a force-push to main fails', () => {
-  fails(run(github([{ sha: SHA }]), { event: { ...pushEvent, forced: true } }), /force-pushed/)
+  fails(
+    run(github([{ sha: SHA }]), { event: { ...pushEvent, forced: true } }),
+    /force-pushed to main; its commits weren't checked, and later runs start after it: check them by hand/,
+  )
 })
 
 test('a push of two commits to main fails', () => {
@@ -234,7 +237,10 @@ test("a previously checked commit that's gone from main's history fails", () => 
     event: {},
     tip: 'n0',
   })
-  fails(r, /previously checked commit rewritten isn't in main's last 20 commits/)
+  fails(
+    r,
+    /previous run's commit rewritten isn't in main's last 20 commits .*older commits weren't checked, and later runs start after n0: check them by hand/,
+  )
 })
 
 test('the first run checks only the tip', () => {
@@ -285,6 +291,22 @@ test("an earlier run that failed before it finished checking isn't taken as chec
   const r = run({ ...answers, ...earlier.jobs }, { event: { ...pushEvent, before: 'skipped' } })
   fails(r, /no merged pull request into main has skipped/)
   assert.match(r.output, /c0ffee is #7/)
+})
+
+test('when no earlier run finished checking, the commits back to the oldest of them are checked', () => {
+  const first = failed(97, 'a1', 'failure')
+  const second = { id: 98, head_sha: 'b2', status: 'completed', conclusion: 'cancelled' }
+  const answers = github(
+    [{ sha: SHA }, { sha: 'b2' }, { sha: 'a1', pr: null }, { sha: 'older', pr: null }],
+    {
+      provenancePages: [[second, first.run]],
+    },
+  )
+  const r = run({ ...answers, ...first.jobs }, { event: { ...pushEvent, before: 'b2' } })
+  fails(r, /no merged pull request into main has a1/)
+  assert.match(r.output, /c0ffee is #7/)
+  assert.match(r.output, /b2 is #7/)
+  assert.doesNotMatch(r.output, /older/)
 })
 
 test("a failed earlier run whose jobs can't be read fails the check instead of trusting it", () => {

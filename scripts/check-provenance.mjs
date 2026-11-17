@@ -13,10 +13,14 @@
 //   - CI (ci.yml) on that PR's final head, as it stood at merged_at, wasn't green: of every
 //     attempt of every run whose jobs had all completed by merged_at, the last to complete
 //     decides. Reruns after the merge are ignored, so they can't clear or create a violation.
-// Exit 0: every commit checked, none broke the rule. Exit 3: every commit checked, at least one
-// broke it. Any other status (a failed API call, a crash): the check didn't finish, and its commits
-// stay unchecked. provenance.yml turns a 3 into a passed "Check provenance" step and a failed
-// next step, so a later run can tell the two failures apart (previousHead).
+// Exit 0: every commit checked, none broke the rule. Exit 3: the check ran to its end and reported
+// at least one violation. Any other status (a failed API call, a crash): the check didn't finish,
+// and its commits stay unchecked. provenance.yml turns a 3 into a passed "Check provenance" step
+// and a failed next step, so a later run can tell the two failures apart (previousHead).
+// Two violations leave commits that no run checks, and their messages say so: a force-push (none
+// of its commits) and a previous commit outside the last 20 (the older ones). The next run starts
+// after them all the same: there is no way to reset the starting point by hand, so failing closed
+// would fail every later run.
 // Reads GITHUB_EVENT_NAME, GITHUB_EVENT_PATH, GITHUB_SHA, GITHUB_RUN_ID and GITHUB_REPOSITORY;
 // calls `gh api` (GH_TOKEN).
 // Usage: node scripts/check-provenance.mjs
@@ -39,7 +43,10 @@ const api = (path) =>
   JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))
 
 function checkPush() {
-  if (event.forced) return [`${event.after} was force-pushed to main`]
+  if (event.forced)
+    return [
+      `${event.after} was force-pushed to main; its commits weren't checked, and later runs start after it: check them by hand`,
+    ]
   const errors = []
   if (event.commits?.length !== 1)
     errors.push(
@@ -60,39 +67,49 @@ function finishedChecking(id) {
 }
 
 /**
- * The commit the latest earlier provenance run checked, or null for the first run. Only a run that
- * finished checking counts: a success, or a failure whose check step passed (it found a violation
- * and already alerted). A run that failed before it finished (an API error, a crash, a timeout),
- * or was cancelled, skipped or is unfinished, checked nothing: its commits are checked now.
+ * Where this run stops walking main's history: `{ sha, checked }`, or null for the first run.
+ * `checked: true` is the commit the latest earlier run finished checking: a success, or a failure
+ * whose check step passed (it reported a violation and already alerted). A run that failed before
+ * it finished (an API error, a crash, a timeout), or was cancelled, skipped or is unfinished,
+ * checked nothing: its commits are checked now. When no earlier run finished, `checked: false` is
+ * the oldest earlier run's commit, which is checked too: that run, as the first, owed only its tip.
  */
 function previousHead() {
   const own = Number(process.env.GITHUB_RUN_ID)
+  let oldestUnfinished = null
   for (let page = 1; page <= 10; page++) {
     const { workflow_runs } = api(
       `repos/${repo}/actions/workflows/provenance.yml/runs?branch=main&per_page=100&page=${page}`,
     )
-    if (!workflow_runs.length) return null
+    if (!workflow_runs.length) return oldestUnfinished && { sha: oldestUnfinished, checked: false }
     for (const r of workflow_runs) {
-      if (r.id >= own || r.status !== 'completed') continue
-      if (r.conclusion === 'success' || (r.conclusion === 'failure' && finishedChecking(r.id)))
-        return r.head_sha
+      if (r.id >= own) continue
+      const finished =
+        r.status === 'completed' &&
+        (r.conclusion === 'success' || (r.conclusion === 'failure' && finishedChecking(r.id)))
+      if (finished) return { sha: r.head_sha, checked: true }
+      oldestUnfinished = r.head_sha
     }
   }
   throw new Error('no finished provenance run in the latest 1,000; check by hand')
 }
 
-/** Main's first-parent commits from the tip back to `stop` (excluded), at most LOOKBACK. */
-function commitsSince(stop) {
+/**
+ * Main's first-parent commits from the tip back to `previous.sha`, at most LOOKBACK: that commit
+ * is left out when an earlier run checked it, and is the last one included when none did.
+ */
+function commitsSince(previous) {
+  const stop = previous?.sha
   const commits = []
-  for (let sha = tip; sha && sha !== stop;) {
+  for (let sha = tip; sha && (sha !== stop || !previous.checked);) {
     if (commits.length === LOOKBACK)
       return {
         commits,
-        error: `the previously checked commit ${stop} isn't in main's last ${LOOKBACK} commits (history rewritten, or more unchecked commits)`,
+        error: `the previous run's commit ${stop} isn't in main's last ${LOOKBACK} commits (history rewritten, or more unchecked commits); older commits weren't checked, and later runs start after ${tip}: check them by hand`,
       }
     const { parents } = api(`repos/${repo}/commits/${sha}`)
     commits.push({ sha, parents })
-    if (!stop) break
+    if (!stop || sha === stop) break
     sha = parents[0]?.sha
   }
   return { commits, error: null }
