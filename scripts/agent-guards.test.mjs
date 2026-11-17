@@ -119,7 +119,10 @@ test("a run's log records the commit it ran on and the tests' exit status", () =
   const r = lock(stubPnpm('echo full-output\nexit 7'))
   assert.equal(r.status, 7)
   assert.match(r.log, new RegExp(`^test-lock: pnpm test at ${head}$`, 'm'))
-  assert.match(r.log, new RegExp(`at the start the working tree matches ${head}`))
+  assert.match(
+    r.log,
+    new RegExp(`at the start the working tree matches ${head} \\(ignored files not compared\\)`),
+  )
   assert.match(r.log, /after the run, HEAD and the compared files are as they were at the start/)
   assert.match(r.log, new RegExp(`^test-lock: tests exit 7 at ${head}$`, 'm'))
   assert.match(r.stdout, /test-lock: full output in .+\n$/)
@@ -226,10 +229,11 @@ test("closing the lock's output doesn't end the tests or change their exit statu
   assert.match(log, /^test-lock: tests exit 7 at [0-9a-f]{40}$/m)
 })
 
-test('a Git setting naming a diff, textconv or untracked-files option changes nothing the lock runs or records', () => {
+test('a Git setting naming a diff, fsmonitor or untracked-files option changes nothing the lock runs or records', () => {
   const { repo, lock } = committedClone()
   const ran = join(repo, '.git/helper-ran')
   git(repo, 'config', 'diff.external', `touch "${ran}"; true`)
+  git(repo, 'config', 'core.fsmonitor', `touch "${ran}"; false`)
   git(repo, 'config', 'status.showUntrackedFiles', 'no')
   writeFileSync(join(repo, 'new.test.ts'), 'x\n')
   writeFileSync(join(repo, 'apps/app/vitest.config.ts'), `${SECRET_URL_LINE}\n// edited\n`)

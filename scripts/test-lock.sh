@@ -34,7 +34,8 @@ echo "test-lock: full output in $log"
 logged=yes
 say() { printf '%s\n' "$@" | tee -a -p "$log" || logged=no; }
 # No external diff, textconv or fsmonitor program: reading the state runs nothing a Git setting names.
-status_now() { git -c core.fsmonitor=false status --porcelain --untracked-files=normal; }
+quiet_git() { git -c core.fsmonitor=false "$@"; }
+status_now() { quiet_git status --porcelain --untracked-files=normal; }
 # HEAD, the working tree's difference from it and the untracked files that aren't ignored, by
 # content; fails when any of it can't be read. Not compared: ignored files (.dev.vars,
 # node_modules, build output), the index apart from the working tree, files Git is told to assume
@@ -46,8 +47,8 @@ state() {
   {
     echo "$base" &&
       status_now &&
-      git diff --binary --no-ext-diff --no-textconv "$base" &&
-      git ls-files -o --exclude-standard -z | xargs -0 -r sha1sum
+      quiet_git diff --binary --no-ext-diff --no-textconv "$base" &&
+      quiet_git ls-files -o --exclude-standard -z | xargs -0 -r sha1sum
   } | sha1sum | cut -d' ' -f1
 }
 # The lock is held from here to this script's exit. What the run covers is read only once it is
