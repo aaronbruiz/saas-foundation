@@ -121,7 +121,8 @@ test("a run's log records the commit it ran on and the tests' exit status", () =
   assert.match(r.log, new RegExp(`^test-lock: pnpm test  at ${head}$`, 'm'))
   assert.match(r.log, new RegExp(`at the start the working tree matches ${head}`))
   assert.match(r.log, /after the run, HEAD and the compared files are as they were at the start/)
-  assert.match(r.log, new RegExp(`^test-lock: tests exit 7 at ${head}, full output in `, 'm'))
+  assert.match(r.log, new RegExp(`^test-lock: tests exit 7 at ${head}$`, 'm'))
+  assert.match(r.stdout, /test-lock: full output in .+\n$/)
   assert.match(r.log, /full-output/)
 })
 
@@ -132,7 +133,10 @@ test("a run on uncommitted or untracked files says its result covers no commit, 
   const env = stubPnpm('exit 0')
   const r = lock(env)
   assert.equal(r.status, 0)
-  assert.match(r.log, /covers no commit/)
+  assert.match(
+    r.log,
+    /differs from [0-9a-f]{40} \(ignored files not compared\), so this result covers no commit/,
+  )
   assert.match(r.log, /^ M apps\/app\/vitest\.config\.ts$/m)
   assert.match(r.log, /^\?\? new\.test\.ts$/m)
   const locks = readdirSync(join(env.HOME, '.cache/saas-foundation/locks')).join('\n')
@@ -180,12 +184,99 @@ test("a log that can't be written is reported apart from the tests' exit status"
   assert.equal(failing.status, 7)
   assert.equal(failing.log, null)
   assert.match(failing.stdout, /full-output/)
-  assert.match(failing.stdout, /^test-lock: tests exit 7 at [0-9a-f]{40}$/m)
+  assert.match(failing.stdout, /^test-lock: tests exit 7 at [0-9a-f]{40}\n$/m)
   assert.match(failing.stderr, /couldn't be written or is incomplete; that isn't a test result/)
   const passing = lock(stubPnpm('exit 0'))
   assert.equal(passing.status, 0)
   assert.match(passing.stderr, /couldn't be written or is incomplete/)
   chmodSync(join(repo, '.git/test-logs'), 0o755)
+})
+
+test('a log that stops being writable during the run is reported, even when only its last lines fail', () => {
+  const { lock } = committedClone()
+  const r = lock(stubPnpm('echo full-output\nsleep 0.3\nchmod 444 .git/test-logs/*.log\nexit 7'))
+  assert.equal(r.status, 7)
+  assert.match(r.log, /full-output/)
+  assert.doesNotMatch(r.log, /tests exit/)
+  assert.match(r.stdout, /^test-lock: tests exit 7 at [0-9a-f]{40}\n$/m)
+  assert.doesNotMatch(r.stdout, /tests exit 7[^]*full output in/)
+  assert.match(r.stderr, /couldn't be written or is incomplete; that isn't a test result/)
+})
+
+test("closing the lock's output doesn't end the tests or change their exit status", () => {
+  const { repo } = committedClone()
+  const done = join(repo, '.git/done')
+  const env = stubPnpm(
+    `for i in 1 2 3 4 5; do echo line-$i; sleep 0.1; done\necho done > "${done}"\nexit 7`,
+  )
+  const r = spawnSync(
+    'bash',
+    ['-c', 'bash "$0" test | head -n 1; echo "lock exit ${PIPESTATUS[0]}"', LOCK],
+    {
+      cwd: repo,
+      env,
+      encoding: 'utf8',
+    },
+  )
+  assert.match(r.stdout, /lock exit 7/)
+  assert.equal(existsSync(done), true)
+  const [name] = readdirSync(join(repo, '.git/test-logs'))
+  const log = readFileSync(join(repo, '.git/test-logs', name), 'utf8')
+  assert.match(log, /line-5/)
+  assert.match(log, /^test-lock: tests exit 7 at [0-9a-f]{40}$/m)
+})
+
+test('a Git setting naming a diff, textconv or untracked-files option changes nothing the lock runs or records', () => {
+  const { repo, lock } = committedClone()
+  const ran = join(repo, '.git/helper-ran')
+  git(repo, 'config', 'diff.external', `touch "${ran}"; true`)
+  git(repo, 'config', 'status.showUntrackedFiles', 'no')
+  writeFileSync(join(repo, 'new.test.ts'), 'x\n')
+  writeFileSync(join(repo, 'apps/app/vitest.config.ts'), `${SECRET_URL_LINE}\n// edited\n`)
+  const r = lock(stubPnpm('exit 0'))
+  assert.equal(r.status, 0)
+  assert.equal(existsSync(ran), false)
+  assert.match(r.log, /^\?\? new\.test\.ts$/m)
+  assert.match(r.log, /covers no commit/)
+})
+
+test('in a repository with no commit the run happens, records "no commit" and still sees a staged file change', () => {
+  const repo = clone(SECRET_URL_LINE)
+  git(repo, 'add', '-A')
+  const r = spawnSync('bash', [LOCK, 'test'], {
+    cwd: repo,
+    env: stubPnpm('echo "// changed" >> apps/app/vitest.config.ts'),
+    encoding: 'utf8',
+  })
+  assert.equal(r.status, 0)
+  assert.match(r.stdout, /^test-lock: pnpm test  at no commit$/m)
+  assert.match(r.stdout, /covers no commit/)
+  assert.match(r.stdout, /changed during the run/)
+  const again = spawnSync('bash', [LOCK, 'test'], {
+    cwd: repo,
+    env: stubPnpm('echo "// changed again" >> apps/app/vitest.config.ts'),
+    encoding: 'utf8',
+  })
+  assert.match(again.stdout, /changed during the run/)
+})
+
+test('each accepted command runs its pnpm script with the given arguments, and nothing else', () => {
+  for (const [kind, script] of [
+    ['test', 'test'],
+    ['e2e', 'test:e2e'],
+    ['visual', 'test:visual'],
+  ]) {
+    const r = spawnSync('bash', [LOCK, kind, '--one', 'two words'], {
+      cwd: clone(),
+      env: stubPnpm('for a in "$@"; do echo "arg[$a]"; done'),
+      encoding: 'utf8',
+    })
+    assert.equal(r.status, 0)
+    assert.match(
+      r.stdout,
+      new RegExp(`arg\\[${script}\\]\\narg\\[--one\\]\\narg\\[two words\\]\\n`),
+    )
+  }
 })
 
 test('the lock is named from the test database and leaves out its credentials', () => {
