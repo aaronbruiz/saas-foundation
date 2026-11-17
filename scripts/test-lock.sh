@@ -28,7 +28,65 @@ mkdir -p "$locks" "$common/test-logs"
 log="$common/test-logs/$(basename "$top")-$kind-$(date +%Y%m%dT%H%M%S)-$$.log"
 # Printed first as well: a tool that truncates long output may lose the last line.
 echo "test-lock: full output in $log"
-status=0
-flock "$locks/$database.lock" pnpm "$script" "$@" 2>&1 | tee "$log" || status=$?
-echo "test-lock: exit $status, full output in $log"
+# Prints its arguments and appends them to the log. A log that can't be written is reported at the
+# end; it never changes the tests' exit status. `tee -p` keeps writing the log and reading the
+# tests' output when this script's own output is closed, so that can't end the tests either.
+logged=yes
+say() { printf '%s\n' "$@" | tee -a -p "$log" || logged=no; }
+# No external diff, textconv or fsmonitor program: reading the state runs nothing a Git setting names.
+quiet_git() { git -c core.fsmonitor=false "$@"; }
+status_now() { quiet_git status --porcelain --untracked-files=normal; }
+# HEAD, the working tree's difference from it and the untracked files that aren't ignored, by
+# content; fails when any of it can't be read. Not compared: ignored files (.dev.vars,
+# node_modules, build output), the index apart from the working tree, files Git is told to assume
+# unchanged, a nested repository's content, modes of untracked files. Two readings, not a watch.
+state() {
+  local base
+  # No commit yet: the difference from the empty tree.
+  base=$(git rev-parse -q --verify HEAD || git hash-object -t tree /dev/null) || return 1
+  {
+    echo "$base" &&
+      status_now &&
+      quiet_git diff --binary --no-ext-diff --no-textconv "$base" &&
+      quiet_git ls-files -o --exclude-standard -z | xargs -0 -r sha1sum
+  } | sha1sum | cut -d' ' -f1
+}
+# The lock is held from here to this script's exit. What the run covers is read only once it is
+# held: a commit or an edit made during the wait for the lock would make an earlier reading wrong.
+exec 9>"$locks/$database.lock"
+flock 9
+# A repository with no commit yet still runs: its result covers no commit.
+head=$(git rev-parse -q --verify HEAD || echo "no commit")
+before=$(state) || before=unknown
+say "test-lock: pnpm $script${*:+ $*} at $head"
+if ! changes=$(status_now); then
+  say "test-lock: the working tree couldn't be read at the start, so this result covers no commit"
+elif [ -n "$changes" ]; then
+  say "test-lock: at the start the working tree differs from $head (ignored files not compared), so this result covers no commit:" "$changes"
+else
+  say "test-lock: at the start the working tree matches $head (ignored files not compared)"
+fi
+# The tests' own exit status, kept apart from tee's.
+set +e
+pnpm "$script" "$@" 2>&1 | tee -a -p "$log"
+results=("${PIPESTATUS[@]}")
+set -e
+status=${results[0]}
+[ "${results[1]}" = 0 ] || logged=no
+after=$(state) || after=unknown
+if [ "$before" = unknown ] || [ "$after" = unknown ]; then
+  say "test-lock: HEAD and the compared files couldn't be read at the start or after the run, so whether they changed is unknown"
+elif [ "$after" = "$before" ]; then
+  say "test-lock: after the run, HEAD and the compared files are as they were at the start"
+else
+  say "test-lock: HEAD or the compared files changed during the run, so this result covers no single state"
+fi
+say "test-lock: tests exit $status at $head"
+# Decided after the last write to the log. Through cat, so a closed output can't end this script
+# before it exits with the tests' status.
+if [ "$logged" = yes ]; then
+  echo "test-lock: full output in $log" | cat || true
+else
+  echo "test-lock: the log $log couldn't be written or is incomplete; that isn't a test result." >&2 || true
+fi
 exit "$status"
