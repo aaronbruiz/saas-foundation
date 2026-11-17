@@ -118,7 +118,7 @@ test("a run's log records the commit it ran on and the tests' exit status", () =
   const { head, lock } = committedClone()
   const r = lock(stubPnpm('echo full-output\nexit 7'))
   assert.equal(r.status, 7)
-  assert.match(r.log, new RegExp(`^test-lock: pnpm test  at ${head}$`, 'm'))
+  assert.match(r.log, new RegExp(`^test-lock: pnpm test at ${head}$`, 'm'))
   assert.match(r.log, new RegExp(`at the start the working tree matches ${head}`))
   assert.match(r.log, /after the run, HEAD and the compared files are as they were at the start/)
   assert.match(r.log, new RegExp(`^test-lock: tests exit 7 at ${head}$`, 'm'))
@@ -171,9 +171,9 @@ test('a run that waited for the lock records the commit it ran on, not the one i
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'later')
   const later = git(repo, 'rev-parse', 'HEAD')
   assert.notEqual(later, head)
-  assert.match(await first, new RegExp(`pnpm test  at ${head}`))
+  assert.match(await first, new RegExp(`pnpm test at ${head}`))
   assert.match(await first, /changed during the run/)
-  assert.match(await second, new RegExp(`pnpm test  at ${later}`))
+  assert.match(await second, new RegExp(`pnpm test at ${later}`))
 })
 
 test("a log that can't be written is reported apart from the tests' exit status", () => {
@@ -249,7 +249,7 @@ test('in a repository with no commit the run happens, records "no commit" and st
     encoding: 'utf8',
   })
   assert.equal(r.status, 0)
-  assert.match(r.stdout, /^test-lock: pnpm test  at no commit$/m)
+  assert.match(r.stdout, /^test-lock: pnpm test at no commit$/m)
   assert.match(r.stdout, /covers no commit/)
   assert.match(r.stdout, /changed during the run/)
   const again = spawnSync('bash', [LOCK, 'test'], {

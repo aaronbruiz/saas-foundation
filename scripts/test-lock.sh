@@ -57,7 +57,7 @@ flock 9
 # A repository with no commit yet still runs: its result covers no commit.
 head=$(git rev-parse -q --verify HEAD || echo "no commit")
 before=$(state) || before=unknown
-say "test-lock: pnpm $script $* at $head"
+say "test-lock: pnpm $script${*:+ $*} at $head"
 if ! changes=$(status_now); then
   say "test-lock: the working tree couldn't be read at the start, so this result covers no commit"
 elif [ -n "$changes" ]; then
