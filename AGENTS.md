@@ -77,7 +77,7 @@ kill -9 $(lsof -t -i:3000)
 
 ## Recipes
 
-Required steps, in [`docs/architecture/recipes.md`](docs/architecture/recipes.md): add a tenant-owned table (and a child of one), a plan limit or feature (ADR-0020), a tenant-scoped server function, a Cloudflare binding (invariant 14), a deployable or runtime (ADR-0027).
+Required steps, in [`docs/architecture/recipes.md`](docs/architecture/recipes.md): add a tenant-owned table (and a child of one), a plan limit or feature (ADR-0020), a tenant-scoped server function, a Cloudflare binding (invariant 14), a deployable or runtime (ADR-0027), a guard script or CI workflow, a runbook.
 
 ## UI (ADR-0046)
 

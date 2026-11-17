@@ -22,6 +22,7 @@ Approved: <owner>, <time>, <scope>, <where said> / pending / not required (<why>
 Owns: <paths>
 Must not touch: <paths>
 Integrator: <yes: migrations, contracts, generated files, lockfile, wrangler.jsonc / no>
+Read first: <files this task needs, e.g. .agents/skills/ui-page/SKILL.md, docs/architecture/recipes.md>
 
 ## Risk
 
