@@ -28,7 +28,51 @@ mkdir -p "$locks" "$common/test-logs"
 log="$common/test-logs/$(basename "$top")-$kind-$(date +%Y%m%dT%H%M%S)-$$.log"
 # Printed first as well: a tool that truncates long output may lose the last line.
 echo "test-lock: full output in $log"
-status=0
-flock "$locks/$database.lock" pnpm "$script" "$@" 2>&1 | tee "$log" || status=$?
-echo "test-lock: exit $status, full output in $log"
+# Prints its arguments and appends them to the log. A log that can't be written is reported at the
+# end; it never changes the tests' exit status.
+logged=yes
+say() { printf '%s\n' "$@" | tee -a "$log" || logged=no; }
+# HEAD, tracked changes and untracked files that aren't ignored, by content. Ignored inputs
+# (.dev.vars, node_modules, build output) aren't compared, and the log says so.
+state() {
+  {
+    git rev-parse -q --verify HEAD || echo "no commit"
+    git status --porcelain
+    git diff --binary HEAD 2>/dev/null || true
+    git ls-files -o --exclude-standard -z | xargs -0 -r sha1sum 2>/dev/null || true
+  } | sha1sum | cut -d' ' -f1
+}
+# The lock is held from here to this script's exit. What the run covers is read only once it is
+# held: a commit or an edit made during the wait for the lock would make an earlier reading wrong.
+exec 9>"$locks/$database.lock"
+flock 9
+# A repository with no commit yet still runs: its result covers no commit.
+head=$(git rev-parse -q --verify HEAD || echo "no commit")
+changes=$(git status --porcelain)
+before=$(state)
+say "test-lock: pnpm $script $* at $head"
+if [ -n "$changes" ]; then
+  say "test-lock: at the start the working tree differs from $head, so this result covers no commit:" "$changes"
+else
+  say "test-lock: at the start the working tree matches $head (ignored files not compared)"
+fi
+# The tests' own exit status, kept apart from tee's.
+set +e
+pnpm "$script" "$@" 2>&1 | tee -a "$log"
+results=("${PIPESTATUS[@]}")
+set -e
+status=${results[0]}
+[ "${results[1]}" = 0 ] || logged=no
+# Compared at the start and now, not watched in between.
+if [ "$(state)" = "$before" ]; then
+  say "test-lock: after the run, HEAD and the compared files are as they were at the start"
+else
+  say "test-lock: HEAD or the compared files changed during the run, so this result covers no single state"
+fi
+if [ "$logged" = yes ]; then
+  say "test-lock: tests exit $status at $head, full output in $log"
+else
+  echo "test-lock: tests exit $status at $head"
+  echo "test-lock: the log $log couldn't be written or is incomplete; that isn't a test result." >&2
+fi
 exit "$status"
